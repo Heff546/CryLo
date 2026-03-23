@@ -1,4 +1,3 @@
-#ifndef _WIN32
 #include "c64_tui.h"
 #include <cstdlib>
 #include <ctime>
@@ -182,7 +181,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
             auto now_poll = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now_poll - last_rpc_poll).count() >= 5) {
                 last_rpc_poll = now_poll;
-                FILE* rpc = popen("curl -s http://127.0.0.1:29641/get_info 2>/dev/null", "r");
+                FILE* rpc = popen("curl -s http://127.0.0.1:19641/get_info 2>/dev/null", "r");
                 if (rpc) {
                     char rb[4096]; std::string rd;
                     while (fgets(rb, sizeof(rb), rpc)) rd += rb;
@@ -612,4 +611,3 @@ void install_tui_log_callback() {
 
 } // namespace c64tui
 
-#endif // _WIN32
