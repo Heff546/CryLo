@@ -70,7 +70,7 @@ target_link_libraries(daemon
     ${GNU_READLINE_LIBRARY}
     ${EXTRA_LIBRARIES}
     ${Blocks}
-    ncursesw)
+    $<$<NOT:$<BOOL:${WIN32}>>:ncursesw>)
 set_property(TARGET daemon
   PROPERTY
     OUTPUT_NAME "c64chaind-mainnet")

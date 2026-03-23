@@ -1,0 +1,88 @@
+{
+  "name": "c64chain-wallet",
+  "version": "1.0.0",
+  "description": "C64 Chain Wallet - Official GUI Wallet",
+  "main": "main.js",
+  "author": {
+    "name": "C64 Chain",
+    "email": "c64chain@gmail.com"
+  },
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build-win": "electron-builder --win --x64",
+    "build-linux": "electron-builder --linux --x64",
+    "build-all": "electron-builder --win --linux --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.c64chain.wallet",
+    "productName": "C64 Chain Wallet",
+    "copyright": "Copyright \u00a9 2025 C64 Chain",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/win",
+        "to": "bin/win",
+        "filter": [
+          "**/*",
+          "!README.txt"
+        ]
+      },
+      {
+        "from": "bin/linux",
+        "to": "bin/linux",
+        "filter": [
+          "**/*",
+          "!README.txt"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "C64 Chain Wallet",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Finance"
+    }
+  },
+  "homepage": "https://c64chain.com"
+}

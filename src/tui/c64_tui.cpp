@@ -1,3 +1,4 @@
+#ifndef _WIN32
 #include "c64_tui.h"
 #include <cstdlib>
 #include <ctime>
@@ -611,3 +612,4 @@ void install_tui_log_callback() {
 
 } // namespace c64tui
 
+#endif // _WIN32

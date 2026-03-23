@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>C64 Chain Wallet</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════════════ SPLASH ══════════════════════ -->
+  <div id="splash">
+    <div class="splash-logo">C64<span>CHAIN</span></div>
+    <div class="splash-subtitle">Official Wallet</div>
+    <div class="splash-status">
+      <div class="status-text" id="splash-msg">Initializing...</div>
+      <div class="progress-bar"><div class="progress-fill" id="splash-progress"></div></div>
+    </div>
+    <div class="error-box hidden" id="splash-error"></div>
+  </div>
+
+  <!-- ══════════════════════ SETUP ═══════════════════════ -->
+  <div id="setup-screen" class="hidden">
+    <div class="setup-header">
+      <h1>C64 CHAIN WALLET</h1>
+      <p>Select an option to get started</p>
+    </div>
+
+    <!-- Card selection -->
+    <div class="setup-cards" id="setup-cards">
+      <div class="setup-card" onclick="App.showSetupForm('create')">
+        <div class="card-icon">✨</div>
+        <h3>Create New Wallet</h3>
+        <p>Generate a fresh wallet with a new seed phrase</p>
+      </div>
+      <div class="setup-card" onclick="App.showSetupForm('open')">
+        <div class="card-icon">📂</div>
+        <h3>Open Wallet</h3>
+        <p>Open an existing wallet file</p>
+      </div>
+      <div class="setup-card" onclick="App.showSetupForm('restore')">
+        <div class="card-icon">🔄</div>
+        <h3>Restore from Seed</h3>
+        <p>Recover a wallet using a 25-word seed phrase</p>
+      </div>
+    </div>
+
+    <!-- Create wallet form -->
+    <div class="setup-form hidden" id="form-create">
+      <h2>✨ Create New Wallet</h2>
+      <div class="form-group">
+        <label>Wallet Name</label>
+        <input type="text" id="create-name" placeholder="my-wallet" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="create-pass" placeholder="Enter password" />
+      </div>
+      <div class="form-group">
+        <label>Confirm Password</label>
+        <input type="password" id="create-pass2" placeholder="Confirm password" />
+      </div>
+      <!-- Seed display after creation -->
+      <div id="create-seed-section" class="hidden">
+        <div class="warning-box">⚠️ Write down your seed phrase! It is the ONLY way to recover your wallet. Never share it with anyone.</div>
+        <div class="form-group" style="margin-top:10px">
+          <label>Your Seed Phrase (25 words)</label>
+          <div class="seed-display" id="create-seed-display"></div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="App.backToSetupCards()">← Back</button>
+        <button class="btn btn-primary" id="create-btn" onclick="App.createWallet()">Create Wallet</button>
+        <button class="btn btn-success hidden" id="create-continue-btn" onclick="App.openMainScreen()">Open Wallet →</button>
+      </div>
+    </div>
+
+    <!-- Open wallet form -->
+    <div class="setup-form hidden" id="form-open">
+      <h2>📂 Open Wallet</h2>
+      <div class="form-group">
+        <label>Select Wallet</label>
+        <select id="open-select">
+          <option value="">Loading wallets...</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="open-pass" placeholder="Enter password" />
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="App.backToSetupCards()">← Back</button>
+        <button class="btn btn-primary" onclick="App.openWallet()">Open Wallet</button>
+      </div>
+    </div>
+
+    <!-- Restore wallet form -->
+    <div class="setup-form hidden" id="form-restore">
+      <h2>🔄 Restore from Seed</h2>
+      <div class="form-group">
+        <label>Wallet Name</label>
+        <input type="text" id="restore-name" placeholder="my-restored-wallet" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label>Seed Phrase (25 words)</label>
+        <textarea id="restore-seed" placeholder="Enter your 25-word seed phrase..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Restore Height <span class="form-hint">(0 = scan from genesis, slower)</span></label>
+        <input type="number" id="restore-height" value="0" min="0" />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="restore-pass" placeholder="Enter password" />
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="App.backToSetupCards()">← Back</button>
+        <button class="btn btn-primary" onclick="App.restoreWallet()">Restore Wallet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ MAIN ════════════════════════ -->
+  <div id="main-screen" class="hidden">
+
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="topbar-logo">C64<span>CHAIN</span></div>
+      <div class="topbar-wallet" onclick="App.switchWallet()" title="Switch wallet">
+        💼 <span class="wallet-name" id="topbar-wallet-name">—</span>
+      </div>
+      <div class="topbar-sync">
+        <div class="sync-dot offline" id="sync-dot"></div>
+        <span id="sync-label">Syncing...</span>
+      </div>
+      <div class="topbar-spacer"></div>
+      <button class="btn btn-ghost btn-sm" onclick="App.refreshAll()" title="Refresh">⟳ Refresh</button>
+    </div>
+
+    <!-- Balance bar -->
+    <div class="balance-bar">
+      <div class="balance-item">
+        <div class="balance-label">Total Balance</div>
+        <div class="balance-amount" id="bal-total">—<span class="balance-unit"> C64</span></div>
+      </div>
+      <div class="balance-item">
+        <div class="balance-label">Unlocked</div>
+        <div class="balance-amount unlocked" id="bal-unlocked">—<span class="balance-unit"> C64</span></div>
+      </div>
+      <div class="balance-item">
+        <div class="balance-label">Locked (vesting)</div>
+        <div class="balance-amount locked" id="bal-locked">—<span class="balance-unit"> C64</span></div>
+      </div>
+    </div>
+
+    <!-- Tab nav -->
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="transactions" onclick="App.switchTab('transactions')">📋 Transactions</button>
+      <button class="tab-btn" data-tab="send"         onclick="App.switchTab('send')">↑ Send</button>
+      <button class="tab-btn" data-tab="receive"      onclick="App.switchTab('receive')">↓ Receive</button>
+      <button class="tab-btn" data-tab="vesting"      onclick="App.switchTab('vesting')">🔒 Vesting</button>
+    </div>
+
+    <!-- Tab content -->
+    <div class="tab-content">
+
+      <!-- Transactions -->
+      <div class="tab-panel active" id="tab-transactions">
+        <div id="tx-list-container">
+          <div class="loading-row"><div class="spinner"></div> Loading transactions...</div>
+        </div>
+      </div>
+
+      <!-- Send -->
+      <div class="tab-panel" id="tab-send">
+        <div class="card send-form">
+          <div class="card-title">↑ Send C64</div>
+          <div class="form-group">
+            <label>Recipient Address</label>
+            <input type="text" id="send-addr" placeholder="C64 address (starts with Wo...)" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">Amount (C64) — <span id="send-max-label" style="color:var(--success);font-size:11px">Available: — C64</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="number" id="send-amount" placeholder="0.000000000000" min="0" step="0.000000001" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:14px;padding:9px 12px;outline:none" />
+              <button class="btn btn-ghost btn-sm" type="button" onclick="App.sendMax()">Max</button>
+            </div>
+            <div id="send-locked-info" class="hidden" style="font-size:11px;color:var(--warning);margin-top:4px"></div>
+          </div>
+          <div style="margin-top:4px">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="App.toggleAdvanced()" id="advanced-toggle">⚙ Advanced options</button>
+          </div>
+          <div id="advanced-fields" class="hidden">
+            <div class="form-group" style="margin-top:10px">
+              <label>Payment ID <span class="form-hint">(optional)</span></label>
+              <input type="text" id="send-pid" placeholder="Optional 16 or 64 hex characters" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label>Note <span class="form-hint">(local only)</span></label>
+              <input type="text" id="send-note" placeholder="Optional note" />
+            </div>
+          </div>
+          <div class="form-actions" style="margin-top:6px">
+            <button class="btn btn-primary" id="send-btn" onclick="App.sendTx()">Send →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Receive -->
+      <div class="tab-panel" id="tab-receive">
+        <div class="card" style="max-width:600px">
+          <div class="card-title">↓ Receive C64</div>
+          <div class="form-group">
+            <label>Your Address</label>
+            <div class="address-display" id="receive-address" onclick="App.copyAddress()" title="Click to copy">Loading...</div>
+          </div>
+          <div style="margin-top:4px">
+            <button class="btn btn-ghost btn-sm" onclick="App.copyAddress()">📋 Copy Address</button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Vesting -->
+      <div class="tab-panel" id="tab-vesting">
+        <!-- Summary stats -->
+        <div class="vesting-summary" id="vesting-summary">
+          <div class="vest-stat">
+            <div class="vest-stat-label">Tier 1 (24h)</div>
+            <div class="vest-stat-value" id="vest-t1">—</div>
+          </div>
+          <div class="vest-stat">
+            <div class="vest-stat-label">Tier 2 (30d)</div>
+            <div class="vest-stat-value" id="vest-t2">—</div>
+          </div>
+          <div class="vest-stat">
+            <div class="vest-stat-label">Tier 3 (60d)</div>
+            <div class="vest-stat-value" id="vest-t3">—</div>
+          </div>
+          <div class="vest-stat">
+            <div class="vest-stat-label">Tier 4 (90d)</div>
+            <div class="vest-stat-value" id="vest-t4">—</div>
+          </div>
+        </div>
+
+        <!-- Vesting table -->
+        <div id="vesting-table-container">
+          <div class="loading-row"><div class="spinner"></div> Loading vesting data...</div>
+        </div>
+      </div>
+
+    </div><!-- /tab-content -->
+
+    <!-- Status bar -->
+    <div class="statusbar">
+      <div class="statusbar-item">⛓ Block: <strong id="sb-height">—</strong></div>
+      <div class="statusbar-item">🔌 Peers: <strong id="sb-peers">—</strong></div>
+      <div class="statusbar-item">💰 Net HR: <strong id="sb-nethr">—</strong></div>
+      <div class="statusbar-spacer"></div>
+      <button class="btn btn-ghost btn-sm" onclick="window.c64.openLogDir()">Logs</button>
+      <button class="btn btn-ghost btn-sm" onclick="window.c64.openDataDir()">Data Dir</button>
+    </div>
+
+  </div><!-- /main-screen -->
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+</div><!-- /app -->
+<script src="app.js"></script>
+</body>
+</html>

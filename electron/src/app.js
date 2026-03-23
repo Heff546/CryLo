@@ -1,0 +1,766 @@
+'use strict';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const COIN = 100000000000; // 10^11 atomic units = 1 C64
+
+// C64 vesting tier unlock delays (in blocks, relative to coinbase height)
+const VESTING_TIERS = [
+  { tier: 1, delay: 288,   label: '~24h',  cls: 't1' },
+  { tier: 2, delay: 8640,  label: '~30d',  cls: 't2' },
+  { tier: 3, delay: 17280, label: '~60d',  cls: 't3' },
+  { tier: 4, delay: 25920, label: '~90d',  cls: 't4' }
+];
+
+// ─── App state ────────────────────────────────────────────────────────────────
+const State = {
+  ready: false,
+  walletOpen: false,
+  walletName: '',
+  currentHeight: 0,
+  activeTab: 'transactions',
+  refreshTimer: null,
+  blockPoller: null,
+  address: '',
+  unlockedBalance: 0
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function fmt(atomic) {
+  // Format atomic units → C64 string with 4 decimal places
+  if (atomic == null || isNaN(atomic)) return '0.0000';
+  const val = Number(atomic) / COIN;
+  return val.toFixed(4);
+}
+
+function fmtFull(atomic) {
+  if (atomic == null || isNaN(atomic)) return '0.000000000000';
+  return (Number(atomic) / COIN).toFixed(12);
+}
+
+function fmtDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts * 1000).toLocaleString();
+}
+
+function shortTxid(txid) {
+  if (!txid) return '—';
+  return txid.slice(0, 8) + '...' + txid.slice(-8);
+}
+
+function el(id) { return document.getElementById(id); }
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+function toast(message, type = 'info', ms = 4000) {
+  const container = el('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = message;
+  container.appendChild(t);
+  setTimeout(() => { t.remove(); }, ms);
+}
+
+// ─── Startup ──────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  // Listen for startup status from main process
+  window.c64.onStartupStatus(({ state, message }) => {
+    el('splash-msg').textContent = message;
+
+    if (state === 'ready') {
+      State.ready = true;
+      // Small delay so the "ready" message is visible briefly
+      setTimeout(showSetupOrMain, 600);
+    } else if (state === 'error') {
+      el('splash-error').textContent = message;
+      el('splash-error').classList.remove('hidden');
+      el('splash-progress').style.animation = 'none';
+      el('splash-progress').style.background = 'var(--danger)';
+      el('splash-progress').style.width = '100%';
+    }
+  });
+
+  // Daemon/wallet-rpc crash notifications
+  window.c64.onDaemonExit((code) => {
+    if (code !== 0 && code !== null) {
+      toast(`Daemon process exited (code ${code}). Please restart the app.`, 'error', 0);
+    }
+  });
+
+  window.c64.onWalletRpcExit((code) => {
+    if (code !== 0 && code !== null) {
+      toast(`Wallet RPC exited (code ${code}). Please restart the app.`, 'error', 0);
+    }
+  });
+});
+
+async function showSetupOrMain() {
+  // Check if any wallets already exist
+  const res = await window.c64.listWallets();
+  const wallets = res.ok ? res.wallets : [];
+
+  hideSplash();
+  if (wallets.length > 0) {
+    showSetup(); // Show setup but with populated open list
+  } else {
+    showSetup();
+  }
+}
+
+function hideSplash() {
+  el('splash').classList.add('hidden');
+}
+
+function showSetup() {
+  el('setup-screen').classList.remove('hidden');
+  el('main-screen').classList.add('hidden');
+  // Reset to cards view
+  backToSetupCards();
+  // Pre-load wallet list for the open form
+  loadWalletList();
+}
+
+// ─── Setup screen ─────────────────────────────────────────────────────────────
+function backToSetupCards() {
+  el('setup-cards').classList.remove('hidden');
+  ['form-create', 'form-open', 'form-restore'].forEach(id => {
+    el(id).classList.add('hidden');
+  });
+}
+
+function showSetupForm(type) {
+  el('setup-cards').classList.add('hidden');
+  ['form-create', 'form-open', 'form-restore'].forEach(id => {
+    el(id).classList.add('hidden');
+  });
+  el(`form-${type}`).classList.remove('hidden');
+
+  if (type === 'create') {
+    el('create-seed-section').classList.add('hidden');
+    el('create-btn').classList.remove('hidden');
+    el('create-continue-btn').classList.add('hidden');
+  }
+}
+
+async function loadWalletList() {
+  const res = await window.c64.listWallets();
+  const sel = el('open-select');
+  sel.innerHTML = '';
+  if (!res.ok || res.wallets.length === 0) {
+    sel.innerHTML = '<option value="">No wallets found</option>';
+    return;
+  }
+  res.wallets.forEach(w => {
+    const opt = document.createElement('option');
+    opt.value = w;
+    opt.textContent = w;
+    sel.appendChild(opt);
+  });
+}
+
+async function createWallet() {
+  const name = el('create-name').value.trim();
+  const pass  = el('create-pass').value;
+  const pass2 = el('create-pass2').value;
+
+  if (!name)           return toast('Please enter a wallet name.', 'error');
+  if (!/^[a-zA-Z0-9_\-]+$/.test(name))
+                       return toast('Name: use only letters, numbers, - or _', 'error');
+  if (pass !== pass2)  return toast('Passwords do not match.', 'error');
+
+  el('create-btn').disabled = true;
+  el('create-btn').textContent = 'Creating...';
+
+  // Close any currently open wallet first (ignore error if none open)
+  await window.c64.walletRpc('close_wallet', { autosave_current: false }).catch(() => {});
+
+  const res = await window.c64.walletRpc('create_wallet', {
+    filename: name,
+    password: pass,
+    language: 'English'
+  });
+
+  if (!res.ok) {
+    el('create-btn').disabled = false;
+    el('create-btn').textContent = 'Create Wallet';
+    return toast(`Failed: ${res.error}`, 'error');
+  }
+  // create_wallet already opens the wallet internally - no need to call open_wallet
+
+  // Get mnemonic seed
+  const seedRes = await window.c64.walletRpc('query_key', { key_type: 'mnemonic' });
+  const seed = seedRes.ok ? seedRes.result.key : '(could not retrieve seed – open the wallet and use "query_key mnemonic" in CLI)';
+
+  el('create-seed-display').textContent = seed;
+  el('create-seed-section').classList.remove('hidden');
+  el('create-btn').classList.add('hidden');
+  el('create-continue-btn').classList.remove('hidden');
+
+  State.walletName = name;
+  toast('Wallet created! Save your seed phrase now.', 'success');
+}
+
+async function openWallet() {
+  const name = el('open-select').value;
+  const pass = el('open-pass').value;
+
+  if (!name) return toast('Please select a wallet.', 'error');
+
+  // Close any currently open wallet first (ignore error if none open)
+  await window.c64.walletRpc('close_wallet', { autosave_current: false }).catch(() => {});
+
+  const res = await window.c64.walletRpc('open_wallet', {
+    filename: name,
+    password: pass
+  });
+
+  if (!res.ok) return toast(`Failed: ${res.error}`, 'error');
+
+  State.walletName = name;
+  openMainScreen();
+}
+
+async function restoreWallet() {
+  const name   = el('restore-name').value.trim();
+  const seed   = el('restore-seed').value.trim();
+  const height = parseInt(el('restore-height').value, 10) || 0;
+  const pass   = el('restore-pass').value;
+
+  if (!name) return toast('Please enter a wallet name.', 'error');
+  if (!seed) return toast('Please enter your seed phrase.', 'error');
+  if (seed.split(/\s+/).length !== 25) return toast('Seed must be exactly 25 words.', 'error');
+
+  const res = await window.c64.walletRpc('restore_deterministic_wallet', {
+    filename: name,
+    seed: seed,
+    password: pass,
+    restore_height: height,
+    language: 'English',
+    autosave_current: true
+  });
+
+  if (!res.ok) return toast(`Failed: ${res.error}`, 'error');
+
+  State.walletName = name;
+  toast('Wallet restored successfully!', 'success');
+  openMainScreen();
+}
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
+function openMainScreen() {
+  el('setup-screen').classList.add('hidden');
+  el('main-screen').classList.remove('hidden');
+
+  el('topbar-wallet-name').textContent = State.walletName;
+
+  // Initial data load - poll a few times to let wallet finish scanning
+  let initAttempts = 0;
+  async function initialLoad() {
+    await refreshAll();
+    initAttempts++;
+    if (initAttempts < 5) setTimeout(initialLoad, 2000);
+  }
+  initialLoad();
+
+  // Auto-refresh every 30s
+  if (State.refreshTimer) clearInterval(State.refreshTimer);
+  State.refreshTimer = setInterval(refreshAll, 30000);
+
+  // Refresh on new block - poll daemon height every 10s
+  if (State.blockPoller) clearInterval(State.blockPoller);
+  State.blockPoller = setInterval(async () => {
+    const res = await window.c64.daemonRpc('get_info');
+    if (!res.ok) return;
+    const newHeight = res.result.height || 0;
+    if (newHeight > State.currentHeight) {
+      State.currentHeight = newHeight;
+      await refreshAll();
+    }
+  }, 10000);
+}
+
+async function refreshAll() {
+  await Promise.all([
+    updateSyncStatus(),
+    updateBalance(),
+    refreshActiveTab()
+  ]);
+}
+
+async function refreshActiveTab() {
+  if (State.activeTab === 'transactions') await loadTransactions();
+  else if (State.activeTab === 'vesting')  await loadVesting();
+  else if (State.activeTab === 'receive')  await loadAddress();
+}
+
+// ─── Sync status ──────────────────────────────────────────────────────────────
+async function updateSyncStatus() {
+  const res = await window.c64.daemonRpc('get_info');
+  if (!res.ok) {
+    el('sync-dot').className = 'sync-dot offline';
+    el('sync-label').textContent = 'Daemon offline';
+    return;
+  }
+  const info = res.result;
+  State.currentHeight = info.height || 0;
+
+  el('sb-height').textContent = (info.height || 0).toLocaleString();
+  el('sb-peers').textContent  = (info.outgoing_connections_count || 0) + '/' + (info.incoming_connections_count || 0);
+
+  // NetHR basé sur les 10 derniers blocs (temps réel) — même méthode que c64chain.com
+  if (info.height > 10) {
+    try {
+      const rangeRes = await window.c64.daemonRpc('get_block_headers_range', {
+        start_height: info.height - 11,
+        end_height:   info.height - 1
+      });
+      if (rangeRes.ok && rangeRes.result.headers && rangeRes.result.headers.length >= 2) {
+        const headers = rangeRes.result.headers;
+        const newest  = headers[headers.length - 1];
+        const oldest  = headers[0];
+        const avgTime = (newest.timestamp - oldest.timestamp) / (headers.length - 1);
+        if (avgTime > 0) {
+          const hr = newest.difficulty / avgTime;
+          el('sb-nethr').textContent = fmtHashrate(hr);
+        }
+      }
+    } catch (_) {
+      // fallback: difficulty / target
+      if (info.difficulty) {
+        el('sb-nethr').textContent = fmtHashrate(info.difficulty / 300);
+      }
+    }
+  } else if (info.difficulty) {
+    el('sb-nethr').textContent = fmtHashrate(info.difficulty / 300);
+  }
+
+  if (info.synchronized) {
+    // Auto-refresh when node just became synced
+    if (el('sync-dot').className !== 'sync-dot synced') {
+      setTimeout(() => { updateBalance(); loadTransactions(); }, 500);
+    }
+    el('sync-dot').className = 'sync-dot synced';
+    el('sync-label').textContent = `Synced · ${(info.height || 0).toLocaleString()}`;
+  } else {
+    const pct = info.target_height > 0
+      ? Math.floor((info.height / info.target_height) * 100)
+      : 0;
+    el('sync-dot').className = 'sync-dot syncing';
+    el('sync-label').textContent = `Syncing ${pct}%`;
+  }
+}
+
+function fmtHashrate(hr) {
+  if (hr >= 1e9)  return (hr / 1e9).toFixed(2)  + ' GH/s';
+  if (hr >= 1e6)  return (hr / 1e6).toFixed(2)  + ' MH/s';
+  if (hr >= 1e3)  return (hr / 1e3).toFixed(2)  + ' KH/s';
+  return hr.toFixed(0) + ' H/s';
+}
+
+// ─── Balance ──────────────────────────────────────────────────────────────────
+async function updateBalance() {
+  const res = await window.c64.walletRpc('get_balance', { account_index: 0 });
+  if (!res.ok) return;
+  const r       = res.result;
+  const total   = r.balance || 0;
+  const unlocked = r.unlocked_balance || 0;
+  const locked  = total - unlocked;
+
+  el('bal-total').innerHTML    = `${fmt(total)}<span class="balance-unit"> C64</span>`;
+  el('bal-unlocked').innerHTML = `${fmt(unlocked)}<span class="balance-unit"> C64</span>`;
+  el('bal-locked').innerHTML   = `${fmt(locked)}<span class="balance-unit"> C64</span>`;
+
+  // Update Send form
+  const maxSendLabel = el('send-max-label');
+  const lockedInfo   = el('send-locked-info');
+  if (maxSendLabel) maxSendLabel.textContent = `Available: ${fmt(unlocked)} C64`;
+  if (lockedInfo) {
+    if (locked > 0) {
+      // CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE = 4 blocks for normal TX
+      // Vesting tiers go up to 25920 blocks
+      const btu = r.blocks_to_unlock || 0;
+      if (btu > 0 && btu <= 4) {
+        lockedInfo.textContent = `⏳ ${fmt(locked)} C64 locked — waiting confirmations (~${btu} blocks)`;
+      } else if (btu > 4) {
+        lockedInfo.textContent = `🔒 ${fmt(locked)} C64 in vesting (${btu} blocks remaining)`;
+      } else {
+        lockedInfo.textContent = `🔒 ${fmt(locked)} C64 locked`;
+      }
+      lockedInfo.classList.remove('hidden');
+    } else {
+      lockedInfo.classList.add('hidden');
+    }
+  }
+  State.unlockedBalance = unlocked;
+}
+
+// ─── Address ──────────────────────────────────────────────────────────────────
+async function loadAddress() {
+  if (State.address) {
+    el('receive-address').textContent = State.address;
+    return;
+  }
+  const res = await window.c64.walletRpc('get_address', { account_index: 0 });
+  if (!res.ok) return;
+  State.address = res.result.address;
+  el('receive-address').textContent = State.address;
+}
+
+function copyAddress() {
+  if (!State.address) return;
+  navigator.clipboard.writeText(State.address).then(() => {
+    toast('Address copied!', 'success', 2000);
+  });
+}
+
+function copyPaymentRequest() {
+  const amount = el('req-amount').value;
+  if (!State.address) return toast('Address not loaded.', 'error');
+  const req = amount
+    ? `c64chain:${State.address}?tx_amount=${amount}`
+    : State.address;
+  navigator.clipboard.writeText(req).then(() => {
+    toast('Payment request copied!', 'success', 2000);
+  });
+}
+
+// ─── Transactions ─────────────────────────────────────────────────────────────
+async function loadTransactions() {
+  const container = el('tx-list-container');
+  container.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading transactions...</div>';
+
+  const res = await window.c64.walletRpc('get_transfers', {
+    in: true,
+    out: true,
+    pending: true,
+    failed: false,
+    pool: true,
+    coinbase: true
+  });
+
+  if (!res.ok) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>${res.error}</div>`;
+    return;
+  }
+
+  // Merge all transfer arrays
+  // r.pending = outgoing unconfirmed (sent but not yet in a block)
+  // r.pool    = incoming unconfirmed
+  // r.out     = outgoing confirmed
+  // r.in      = incoming confirmed
+  const r = res.result;
+  let txs = [
+    ...(r.in      || []),
+    ...(r.out     || []),
+    ...(r.pool    || []),
+    ...(r.pending || [])
+  ];
+
+  if (txs.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div>No transactions yet</div>`;
+    return;
+  }
+
+  // Sort: pending (height=0) first, then by height desc
+  txs.sort((a, b) => {
+    const ha = a.height || 0;
+    const hb = b.height || 0;
+    if (ha === 0 && hb !== 0) return -1;
+    if (hb === 0 && ha !== 0) return 1;
+    return hb - ha;
+  });
+
+  // Detect change: outgoing TX txids
+  const outTxids = new Set(txs.filter(t => t.type === 'out').map(t => t.txid));
+
+  const list = document.createElement('div');
+  list.className = 'tx-list';
+
+  txs.forEach(tx => {
+    const isMined   = tx.type === 'block';
+    const isOut     = tx.type === 'out' || tx.type === 'pending';
+    const isPending = !tx.height || tx.height === 0;
+    // Change = incoming TX with same txid as an outgoing TX
+    const isChange  = tx.type === 'in' && outTxids.has(tx.txid);
+
+    const icon   = isMined ? '⛏' : (isOut ? '↑' : (isChange ? '↩' : '↓'));
+    const cls    = isMined ? 'block' : (isOut ? 'out' : 'in');
+    const amtCls = isMined ? 'mined' : (isOut ? 'negative' : 'positive');
+    const amtSign = isOut ? '-' : '+';
+
+    const isLocked = tx.locked || false;
+
+    let statusBadge = '';
+    if (isPending && !isMined) {
+      statusBadge = '<div class="tx-locked-badge" style="background:rgba(110,69,226,0.2);color:#a78bfa">⏳ Pending</div>';
+    } else if (isChange) {
+      statusBadge = '<div class="tx-locked-badge" style="background:rgba(79,195,247,0.1);color:#4fc3f7">↩ Change</div>';
+    } else if (isLocked) {
+      statusBadge = '<div class="tx-locked-badge">🔒 locked</div>';
+    }
+
+    const item = document.createElement('div');
+    item.className = 'tx-item';
+    item.innerHTML = `
+      <div class="tx-type-badge ${cls}">${icon}</div>
+      <div class="tx-info">
+        <div class="tx-txid">${tx.txid || '(pending)'}</div>
+        <div class="tx-meta">
+          ${isPending ? '<span style="color:var(--accent)">⏳ Unconfirmed</span>' : `Block ${(tx.height||0).toLocaleString()}`} · 
+          ${fmtDate(tx.timestamp)}
+          ${tx.confirmations != null && !isPending ? ` · ${tx.confirmations} conf` : ''}
+        </div>
+      </div>
+      ${statusBadge}
+      <div class="tx-amount ${amtCls}">${amtSign}${fmt(tx.amount)} C64</div>
+    `;
+    item.title = `TXID: ${tx.txid}\nAmount: ${fmtFull(tx.amount)} C64\nUnlock: ${tx.unlock_time || 0}`;
+    list.appendChild(item);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(list);
+}
+
+// ─── Send ─────────────────────────────────────────────────────────────────────
+async function sendTx() {
+  const addr   = el('send-addr').value.trim();
+  const amount = parseFloat(el('send-amount').value);
+  const pid    = el('send-pid').value.trim();
+  const note   = el('send-note').value.trim();
+
+  if (!addr)         return toast('Please enter a recipient address.', 'error');
+  if (!amount || amount <= 0) return toast('Please enter a valid amount.', 'error');
+
+  const confirmed = await window.c64.confirm({
+    title: 'Confirm Send',
+    message: `Send ${amount} C64 to:\n${addr}\n\nThis cannot be undone.`,
+    buttons: ['Send', 'Cancel']
+  });
+  if (!confirmed) return;
+
+  el('send-btn').disabled = true;
+  el('send-btn').textContent = 'Sending...';
+
+  const destinations = [{ amount: Math.round(amount * COIN), address: addr }];
+  const params = { destinations, account_index: 0 };
+  if (pid) params.payment_id = pid;
+  if (note) params.tx_extra = note;
+
+  const res = await window.c64.walletRpc('transfer', params);
+
+  el('send-btn').disabled = false;
+  el('send-btn').textContent = 'Send →';
+
+  if (!res.ok) return toast(`Send failed: ${res.error}`, 'error');
+
+  toast(`Sent! TXID: ${res.result.tx_hash.slice(0, 16)}...`, 'success', 6000);
+  // Clear fields
+  el('send-addr').value   = '';
+  el('send-amount').value = '';
+  el('send-pid').value    = '';
+  el('send-note').value   = '';
+  // Refresh balance
+  setTimeout(updateBalance, 3000);
+}
+
+// ─── Vesting ──────────────────────────────────────────────────────────────────
+async function loadVesting() {
+  const container = el('vesting-table-container');
+  container.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading vesting data...</div>';
+
+  // Fetch all incoming coinbase transfers
+  const res = await window.c64.walletRpc('get_transfers', {
+    in: true,
+    out: false,
+    pending: false,
+    failed: false,
+    pool: false,
+    coinbase: true
+  });
+
+  if (!res.ok) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>${res.error}</div>`;
+    return;
+  }
+
+  // Filter only coinbase (type === 'block')
+  const allIn  = res.result.in || [];
+  const mined  = allIn.filter(tx => tx.type === 'block');
+
+  if (mined.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⛏</div>No mined blocks found</div>`;
+    // Reset summary
+    ['t1','t2','t3','t4'].forEach(t => { el(`vest-${t}`).textContent = '0.0000 C64'; });
+    return;
+  }
+
+  const curH = State.currentHeight;
+
+  // Build per-tier totals and rows
+  const tierTotals = [0, 0, 0, 0];
+  const rows = [];
+
+  mined.forEach(tx => {
+    const blockH = tx.height || 0;
+    // 4 vesting outputs, each = tx.amount / 4
+    // (the wallet-rpc shows total amount for whole coinbase tx)
+    const tierAmount = tx.amount / 4;
+
+    VESTING_TIERS.forEach((tier, i) => {
+      const unlockH = blockH + tier.delay;
+      const unlocked = curH >= unlockH;
+      const blocksLeft = unlocked ? 0 : unlockH - curH;
+
+      tierTotals[i] += tierAmount;
+
+      rows.push({
+        txid:       tx.txid,
+        blockH,
+        tier:       tier.tier,
+        tierLabel:  tier.label,
+        tierCls:    tier.cls,
+        amount:     tierAmount,
+        unlockH,
+        unlocked,
+        blocksLeft,
+        timestamp:  tx.timestamp
+      });
+    });
+  });
+
+  // Update summary
+  VESTING_TIERS.forEach((t, i) => {
+    el(`vest-t${t.tier}`).textContent = fmt(tierTotals[i]) + ' C64';
+  });
+
+  // Build table
+  const wrap = document.createElement('div');
+  wrap.className = 'vesting-table-wrap';
+
+  const table = document.createElement('table');
+  table.className = 'vesting-table';
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Block</th>
+        <th>Date</th>
+        <th>Tier</th>
+        <th>Amount</th>
+        <th>Unlock Block</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+  `;
+
+  const tbody = document.createElement('tbody');
+
+  // Sort: newest block first, then tier
+  rows.sort((a, b) => b.blockH - a.blockH || a.tier - b.tier);
+
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+
+    let statusHtml;
+    if (r.unlocked) {
+      statusHtml = '<span class="status-unlocked">✓ Unlocked</span>';
+    } else if (r.blocksLeft < 1000) {
+      statusHtml = `<span class="status-locked">🔒 ${r.blocksLeft.toLocaleString()} blocks</span>`;
+    } else {
+      statusHtml = `<span class="status-wait">⏳ ${r.blocksLeft.toLocaleString()} blocks</span>`;
+    }
+
+    tr.innerHTML = `
+      <td>${r.blockH.toLocaleString()}</td>
+      <td>${fmtDate(r.timestamp)}</td>
+      <td><span class="tier-badge ${r.tierCls}">T${r.tier} ${r.tierLabel}</span></td>
+      <td class="text-coin">${fmt(r.amount)} C64</td>
+      <td>${r.unlockH.toLocaleString()}</td>
+      <td>${statusHtml}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  container.innerHTML = '';
+  container.appendChild(wrap);
+}
+
+// ─── Tab switching ────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  State.activeTab = tab;
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.id === `tab-${tab}`);
+  });
+
+  // Load data on first switch
+  if (tab === 'transactions') loadTransactions();
+  if (tab === 'vesting')      loadVesting();
+  if (tab === 'receive')      loadAddress();
+}
+
+async function switchWallet() {
+  const confirmed = await window.c64.confirm({
+    title: 'Switch Wallet',
+    message: 'Close current wallet and go back to wallet selection?',
+    buttons: ['Yes', 'Cancel']
+  });
+  if (!confirmed) return;
+
+  // Close current wallet
+  await window.c64.walletRpc('close_wallet', { autosave_current: true });
+
+  // Reset state
+  State.walletName = '';
+  State.address    = '';
+  if (State.refreshTimer) {
+    clearInterval(State.refreshTimer);
+    State.refreshTimer = null;
+  }
+  if (State.blockPoller) {
+    clearInterval(State.blockPoller);
+    State.blockPoller = null;
+  }
+
+  showSetup();
+}
+
+// ─── Expose to HTML ───────────────────────────────────────────────────────────
+function sendMax() {
+  if (!State.unlockedBalance) return;
+  const fee = Math.round(0.02 * COIN);
+  const maxAmount = Math.max(0, State.unlockedBalance - fee);
+  el('send-amount').value = (maxAmount / COIN).toFixed(9);
+}
+
+function toggleAdvanced() {
+  const fields = el('advanced-fields');
+  const btn = el('advanced-toggle');
+  if (fields.classList.contains('hidden')) {
+    fields.classList.remove('hidden');
+    btn.textContent = '⚙ Hide advanced options';
+  } else {
+    fields.classList.add('hidden');
+    btn.textContent = '⚙ Advanced options';
+  }
+}
+
+window.App = {
+  sendMax,
+  toggleAdvanced,
+  showSetupForm,
+  backToSetupCards,
+  createWallet,
+  openWallet,
+  restoreWallet,
+  openMainScreen,
+  refreshAll,
+  switchTab,
+  switchWallet,
+  sendTx,
+  copyAddress,
+  copyPaymentRequest
+};

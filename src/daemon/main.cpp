@@ -296,7 +296,9 @@ int main(int argc, char const * argv[])
       mlog_set_log(command_line::get_arg(vm, daemon_args::arg_log_level).c_str());
 
     // Install C64 TUI log callback
+#ifndef _WIN32
     c64tui::install_tui_log_callback();
+#endif
     }
 
     // after logs initialized

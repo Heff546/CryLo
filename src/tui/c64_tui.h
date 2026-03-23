@@ -1,6 +1,8 @@
 #pragma once
 
+#ifndef _WIN32
 #include <ncurses.h>
+#endif
 #include <string>
 #include <deque>
 #include <mutex>
