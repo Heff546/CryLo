@@ -30,10 +30,7 @@
 
 #include <memory>
 #include <thread>
-#ifndef _WIN32
 #include <fcntl.h>
-#include <unistd.h>
-#endif
 #include <stdexcept>
 #include <boost/algorithm/string/split.hpp>
 #include "misc_log_ex.h"
@@ -196,48 +193,22 @@ bool t_daemon::run(bool interactive)
 
   try
   {
-#ifndef _WIN32
-    if (getenv("C64_NO_TUI") == nullptr) {
-      // C64 CHAIN: Play Datasette animation (uses raw ANSI on stderr)
-      c64tui::play_datasette_animation();
+    // C64 CHAIN: Play Datasette animation (uses raw ANSI on stderr)
+    c64tui::play_datasette_animation();
 
-      // Start TUI in background thread (uses /dev/tty directly)
-      std::thread tui_thread([&stop]() {
-        c64tui::run_tui(stop);
-      });
+    // Start TUI in background thread (uses /dev/tty directly)
+    std::thread tui_thread([&stop]() {
+      c64tui::run_tui(stop);
+    });
 
-      // Let ncurses initialize on /dev/tty
-      usleep(300000);
+    // Let ncurses initialize on /dev/tty
+    usleep(300000);
 
-      // Redirect stdout+stderr to /dev/null (ncurses uses /dev/tty now)
-      int devnull = open("/dev/null", O_WRONLY);
-      dup2(devnull, STDOUT_FILENO);
-      dup2(devnull, STDERR_FILENO);
-      close(devnull);
-
-      // Wait for TUI to exit
-      if (tui_thread.joinable())
-        tui_thread.join();
-
-      // TUI exited — stop everything
-    } else {
-      // No TUI (Electron) - start services then wait for stop signal
-      if (!mp_internals->core.run()) return false;
-      for(auto& rpc: mp_internals->rpcs) rpc->run();
-      if (mp_internals->zmq) mp_internals->zmq->server.run();
-      else MINFO("ZMQ server disabled");
-      if (public_rpc_port > 0) mp_internals->p2p.get().set_rpc_port(public_rpc_port);
-      std::thread p2p_thread_notui([this]() { mp_internals->p2p.run(); });
-      while (!stop)
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      shutdown.store(true);
-      this->stop_p2p();
-      if (p2p_thread_notui.joinable()) p2p_thread_notui.join();
-      if (mp_internals->zmq) mp_internals->zmq->server.stop();
-      for(auto& rpc : mp_internals->rpcs) rpc->stop();
-      return true;
-    }
-#endif // _WIN32
+    // Redirect stdout+stderr to /dev/null (ncurses uses /dev/tty now)
+    int devnull = open("/dev/null", O_WRONLY);
+    dup2(devnull, STDOUT_FILENO);
+    dup2(devnull, STDERR_FILENO);
+    close(devnull);
 
     if (!mp_internals->core.run())
       return false;
@@ -260,11 +231,11 @@ bool t_daemon::run(bool interactive)
       mp_internals->p2p.run();
     });
 
-#ifdef _WIN32
-    // Windows: no TUI, wait until stop signal received
-    while (!stop)
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-#endif // _WIN32
+    // Wait for TUI to exit
+    if (tui_thread.joinable())
+      tui_thread.join();
+
+    // TUI exited - stop everything
     shutdown.store(true);
     this->stop_p2p();
 
