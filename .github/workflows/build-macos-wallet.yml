@@ -18,13 +18,14 @@ jobs:
 
       - name: Install Homebrew dependencies
         run: |
-          brew install cmake boost openssl@3 zeromq miniupnpc hidapi libusb protobuf libuv pkg-config
+          brew install cmake boost openssl@3 zeromq miniupnpc hidapi libusb libuv pkg-config
 
       - name: Build c64chaind and c64chain-wallet-rpc
         run: |
           mkdir -p build-mac && cd build-mac
           cmake \
             -DCMAKE_BUILD_TYPE=Release \
+            -DUSE_DEVICE_TREZOR=OFF \
             -DBOOST_ROOT=$(brew --prefix boost) \
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
             -DZeroMQ_DIR=$(brew --prefix zeromq)/lib/cmake/ZeroMQ \
