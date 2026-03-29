@@ -160,6 +160,7 @@
       <button class="tab-btn" data-tab="send"         onclick="App.switchTab('send')">↑ Send</button>
       <button class="tab-btn" data-tab="receive"      onclick="App.switchTab('receive')">↓ Receive</button>
       <button class="tab-btn" data-tab="vesting"      onclick="App.switchTab('vesting')">🔒 Vesting</button>
+      <button class="tab-btn" data-tab="mining"      onclick="App.switchTab('mining')">⛏ Mining</button>
     </div>
 
     <!-- Tab content -->
@@ -250,6 +251,40 @@
         </div>
       </div>
 
+
+    <!-- Mining -->
+    <div class="tab-panel" id="tab-mining">
+      <div class="form-group">
+        <label>Wallet Address</label>
+        <input type="text" id="mining-address" placeholder="Your C64 wallet address (Wo...)" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label>Worker Name</label>
+        <input type="text" id="mining-worker" placeholder="my-desktop" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label>Pool</label>
+        <input type="text" id="mining-pool" value="stratum+tcp://c64.suprnova.cc:6465" readonly style="opacity:0.6;cursor:default" />
+      </div>
+      <div class="form-group">
+        <label>CPU Threads — <span id="mining-mem-info" style="color:var(--accent2)">detecting...</span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="range" id="mining-threads" min="1" max="8" value="2" style="flex:1"
+            oninput="document.getElementById('mining-threads-val').textContent=this.value" />
+          <span id="mining-threads-val" style="font-family:var(--font-mono);color:var(--coin);min-width:20px">2</span>
+        </div>
+      </div>
+      <div id="mining-status" style="text-align:center;padding:12px;font-size:13px;color:var(--text-dim)">Miner stopped</div>
+      <div id="mining-hashrate" style="text-align:center;font-size:24px;font-weight:700;color:var(--accent2);display:none">0 H/s</div>
+      <div id="mining-shares" style="text-align:center;font-size:12px;color:var(--text-dim);display:none">
+        ✅ <span id="shares-accepted">0</span> accepted &nbsp;|&nbsp; ❌ <span id="shares-rejected">0</span> rejected
+      </div>
+      <button class="btn btn-primary" id="mining-btn" onclick="App.toggleMining()">⛏ Start Mining</button>
+      <div style="font-size:11px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.6">
+        Track your earnings at the pool dashboard:<br>
+        <a href="https://c64.suprnova.cc/index.php" style="color:var(--accent2)">c64.suprnova.cc</a>
+      </div>
+    </div>
     </div><!-- /tab-content -->
 
     <!-- Status bar -->

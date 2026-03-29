@@ -20,34 +20,34 @@
 /* ─── Variables ──────────────────────────────────────────────────────────── */
 :root {
   /* ── Fonds dérivés du bleu marine de l'icône #000177 ── */
-  --bg0:        #00000f;   /* ultra sombre — teinte bleue de #000177 */
-  --bg1:        #000118;   /* fond cards — dérivé de #000177 */
-  --bg2:        #000225;   /* fond inputs — dérivé de #000177 */
-  --bg3:        #030540;   /* fond actifs — approche #000177 */
-  --border:     #0c1260;   /* bordures — dérivé de #000177 éclairci */
+  --bg0:        #0d0d1a;   /* ultra sombre — teinte bleue de #000177 */
+  --bg1:        #13132b;   /* fond cards — dérivé de #000177 */
+  --bg2:        #1a1a35;   /* fond inputs — dérivé de #000177 */
+  --bg3:        #22224a;   /* fond actifs — approche #000177 */
+  --border:     #2a2a55;   /* bordures — dérivé de #000177 éclairci */
 
   /* ── Accents EXACTS de l'icône ── */
-  --accent:     #5D5AE9;   /* violet — EXACT icône (565px) */
-  --accent2:    #B2B1F5;   /* lavande — EXACT icône (32px transition) */
+  --accent:     #6e45e2;   /* violet — EXACT icône (565px) */
+  --accent2:    #4fc3f7;   /* lavande — EXACT icône (32px transition) */
 
   /* ── Sémantique (inchangée — fonctionnelle) ── */
   --success:    #43e97b;
-  --warning:    #f9a825;
-  --danger:     #ef5350;
+  --warning:    #f5861e;
+  --danger:     #eb1a82;
 
   /* ── Marque ── */
-  --coin:       #ffd700;   /* doré — couleur de la monnaie C64 */
+  --coin:       #ffffff;   /* doré — couleur de la monnaie C64 */
 
   /* ── Tiers vesting — NE PAS INVERSER ── */
-  --tier1:      #43e97b;
-  --tier2:      #B2B1F5;   /* lavande icône pour T2 */
-  --tier3:      #f9a825;
-  --tier4:      #ef5350;
+  --tier1:      #43e9b7;
+  --tier2:      #4fc3f7;   /* lavande icône pour T2 */
+  --tier3:      #f5861e;
+  --tier4:      #e44b14;
 
   /* ── Texte — dérivé de la lavande icône ── */
-  --text:       #E0E0FF;   /* légèrement teinté lavande comme l'icône */
-  --text-dim:   #8888BB;   /* intermédiaire vers #B2B1F5 */
-  --text-muted: #6666aa;   /* foncé, teinte navy */
+  --text:       #ffffff;   /* légèrement teinté lavande comme l'icône */
+  --text-dim:   #8888aa;   /* intermédiaire vers #B2B1F5 */
+  --text-muted: #55557a;   /* foncé, teinte navy */
 
   /* ❌ NE PAS MODIFIER */
   --font-mono:  'Courier New', Courier, monospace;

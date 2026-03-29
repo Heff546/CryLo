@@ -21,7 +21,9 @@ const State = {
   refreshTimer: null,
   blockPoller: null,
   address: '',
-  unlockedBalance: 0
+  unlockedBalance: 0,
+  miningActive: false,
+  miningStatusTimer: null
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -700,6 +702,7 @@ function switchTab(tab) {
   if (tab === 'transactions') loadTransactions();
   if (tab === 'vesting')      loadVesting();
   if (tab === 'receive')      loadAddress();
+  if (tab === 'mining')       initMiningTab();
 }
 
 async function switchWallet() {
@@ -748,6 +751,89 @@ function toggleAdvanced() {
   }
 }
 
+
+// ─── Mining ───────────────────────────────────────────────────────────────────
+async function initMiningTab() {
+  try {
+    const s = await window.c64.minerGetInfo();
+    const totalMB   = s.totalMemMB || 0;
+    const cpus      = s.cpuCount   || 4;
+    const maxByMem  = Math.max(1, Math.floor(totalMB / 300));
+    const maxThreads = Math.min(cpus, maxByMem);
+    const recommended = Math.max(1, Math.floor(maxThreads / 2));
+    const slider = document.getElementById('mining-threads');
+    if (slider) {
+      slider.max   = maxThreads;
+      slider.value = recommended;
+      document.getElementById('mining-threads-val').textContent = recommended;
+    }
+    const memInfo = document.getElementById('mining-mem-info');
+    if (memInfo) memInfo.textContent = totalMB + ' MB RAM — max ' + maxThreads + ' threads';
+  } catch(_) {
+    const memInfo = document.getElementById('mining-mem-info');
+    if (memInfo) memInfo.textContent = 'click to detect';
+  }
+}
+
+async function toggleMining() {
+  if (State.miningActive) {
+    await stopMining();
+  } else {
+    await startMining();
+  }
+}
+
+async function startMining() {
+  const address = document.getElementById('mining-address').value.trim();
+  const worker  = document.getElementById('mining-worker').value.trim() || 'desktop';
+  const pool    = document.getElementById('mining-pool').value.trim();
+  const threads = parseInt(document.getElementById('mining-threads').value) || 2;
+  if (!address || !address.startsWith('Wo')) {
+    toast('Enter a valid C64 wallet address (starts with Wo)', 'error');
+    return;
+  }
+  try {
+    const r = await window.c64.minerStart({ walletAddress: address, workerName: worker, poolUrl: pool, threads });
+    if (!r.ok) throw new Error(r.error);
+    State.miningActive = true;
+    document.getElementById('mining-btn').textContent = '⏹ Stop Mining';
+    document.getElementById('mining-btn').className = 'btn btn-secondary';
+    document.getElementById('mining-status').textContent = 'Miner starting...';
+    document.getElementById('mining-status').style.color = 'var(--warning)';
+    document.getElementById('mining-hashrate').style.display = 'block';
+    State.miningStatusTimer = setInterval(async () => {
+      try {
+        const s = await window.c64.minerGetStatus();
+        if (s.running) {
+          document.getElementById('mining-status').textContent = 'Mining active';
+          document.getElementById('mining-status').style.color = 'var(--success)';
+          document.getElementById('mining-hashrate').textContent = s.hashrate + ' H/s';
+          document.getElementById('mining-shares').style.display = 'block';
+          document.getElementById('shares-accepted').textContent = s.sharesAccepted || 0;
+          document.getElementById('shares-rejected').textContent = s.sharesRejected || 0;
+        } else {
+          stopMining();
+        }
+      } catch(_) {}
+    }, 5000);
+  } catch(err) {
+    toast('Failed to start miner: ' + err.message, 'error');
+  }
+}
+
+async function stopMining() {
+  if (State.miningStatusTimer) { clearInterval(State.miningStatusTimer); State.miningStatusTimer = null; }
+  try { await window.c64.minerStop(); } catch(_) {}
+  State.miningActive = false;
+  document.getElementById('mining-btn').textContent = '⛏ Start Mining';
+  document.getElementById('mining-btn').className = 'btn btn-primary';
+  document.getElementById('mining-status').textContent = 'Miner stopped';
+  document.getElementById('mining-status').style.color = 'var(--text-dim)';
+  document.getElementById('mining-hashrate').style.display = 'none';
+  const shares = document.getElementById('mining-shares');
+  if (shares) shares.style.display = 'none';
+}
+
 window.App = {
   sendMax,
   toggleAdvanced,
@@ -762,5 +848,7 @@ window.App = {
   switchWallet,
   sendTx,
   copyAddress,
-  copyPaymentRequest
+  copyPaymentRequest,
+  toggleMining,
+  initMiningTab
 };
