@@ -24,8 +24,8 @@ jobs:
         run: |
           # Remove c64_tui.cpp from daemon sources
           sed -i.bak '/\.\.\/tui\/c64_tui\.cpp/d' src/daemon/CMakeLists.txt
-          # Remove ncursesw link
-          sed -i.bak '/ncursesw/d' src/daemon/CMakeLists.txt
+          # Remove ncursesw link but keep closing parenthesis
+          sed -i.bak 's/.*ncursesw.*/)/' src/daemon/CMakeLists.txt
 
           # Create stub c64_tui.h so includes compile
           cat > src/tui/c64_tui.h << 'STUB'
