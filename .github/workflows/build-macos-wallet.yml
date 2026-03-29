@@ -49,17 +49,21 @@ jobs:
           }
           STUB
 
-          # Patch daemon.cpp: replace TUI thread with simple wait
+          # Patch daemon.cpp: remove TUI calls, keep core/p2p logic
           python3 << 'PYEOF'
-          import re
           c = open("src/daemon/daemon.cpp").read()
-          # Remove TUI block: from play_datasette to "TUI exited - stop everything"
+          import re
+          # 1. Remove play_datasette call
+          c = c.replace("c64tui::play_datasette_animation();", "// TUI disabled for headless build")
+          # 2. Remove TUI thread creation
+          c = re.sub(r"    // Start TUI in background thread.*?    \}\);\n", "", c, flags=re.DOTALL)
+          # 3. Remove ncurses init + /dev/null redirect
+          c = re.sub(r"    // Let ncurses.*?close\(devnull\);\n", "", c, flags=re.DOTALL)
+          # 4. Replace "Wait for TUI to exit" with "wait for stop"
           c = re.sub(
-              r"c64tui::play_datasette_animation\(\);.*?// TUI exited - stop everything",
-              "// Headless mode (TUI disabled for Electron wallet)\n    while (!stop) { sleep(1); }\n    // Stop everything",
-              c, flags=re.DOTALL)
-          # Remove ncurses /dev/null redirect if still present
-          c = re.sub(r"// Let ncurses.*?close\(devnull\);", "", c, flags=re.DOTALL)
+              r"    // Wait for TUI to exit\n    if \(tui_thread\.joinable\(\)\)\n      tui_thread\.join\(\);\n\n    // TUI exited - stop everything",
+              "    // Headless: wait for stop signal\n    while (!stop) { sleep(1); }\n\n    // Stop everything",
+              c)
           open("src/daemon/daemon.cpp", "w").write(c)
           print("daemon.cpp patched OK")
           PYEOF
