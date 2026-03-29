@@ -118,8 +118,8 @@ jobs:
       - name: Collect macOS binaries
         run: |
           mkdir -p electron/bin/mac
-          cp build-mac/bin/c64chaind electron/bin/mac/
-          cp build-mac/bin/c64chain-wallet-rpc electron/bin/mac/
+          cp build-mac/bin/c64chaind-mainnet electron/bin/mac/c64chaind
+          cp build-mac/bin/c64chain-wallet-rpc-mainnet electron/bin/mac/c64chain-wallet-rpc
           cp ${{ github.workspace }}/c64miner/build-mac/c64miner electron/bin/mac/
           chmod +x electron/bin/mac/*
           echo "=== macOS binaries ==="
