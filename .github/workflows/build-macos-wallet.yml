@@ -104,14 +104,21 @@ jobs:
       - name: Patch c64miner to force-disable TUI
         run: |
           cd ${{ github.workspace }}/c64miner
-          # Force WITH_TUI_DISABLED: replace the if(NOT) blocks to always skip TUI
-          sed -i.bak 's/if(NOT WITH_TUI_DISABLED)/if(FALSE)/' CMakeLists.txt
-          # Verify C64MinerTui.cpp won't be compiled
-          grep 'if(FALSE)' CMakeLists.txt && echo "TUI force-disabled in CMakeLists.txt"
-          # Also ensure the C++ define is set
-          sed -i.bak '/add_definitions(-DWITH_TUI_DISABLED)/d' CMakeLists.txt
-          sed -i.bak '1s/^/add_definitions(-DWITH_TUI_DISABLED)\n/' CMakeLists.txt
-          echo "TUI fully disabled for headless miner build"
+          python3 << 'PYEOF'
+          c = open("CMakeLists.txt").read()
+          # Replace if(NOT WITH_TUI_DISABLED) with if(FALSE)
+          c = c.replace("if(NOT WITH_TUI_DISABLED)", "if(FALSE)")
+          # Ensure define is at the top
+          if "add_definitions(-DWITH_TUI_DISABLED)" not in c.split("\n")[0]:
+              c = "add_definitions(-DWITH_TUI_DISABLED)\n" + c
+          open("CMakeLists.txt", "w").write(c)
+          # Verify
+          assert "if(FALSE)" in c, "FAILED: if(FALSE) not found"
+          assert "C64MinerTui" not in [l for l in c.split("\n") if "list(APPEND" in l and "if(FALSE)" not in c.split("\n")[c.split("\n").index(l)-1] ], "ok"
+          print("CMakeLists.txt patched: TUI force-disabled")
+          print(f"  if(FALSE) count: {c.count('if(FALSE)')}")
+          print(f"  add_definitions count: {c.count('WITH_TUI_DISABLED')}")
+          PYEOF
 
       - name: Build c64miner
         run: |
