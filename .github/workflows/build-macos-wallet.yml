@@ -125,6 +125,39 @@ jobs:
           print("  - WITH_TUI_DISABLED defined")
           PYEOF
 
+          # Patch App.cpp: remove TUI code (no guards in upstream repo)
+          python3 << 'PYEOF2'
+          import re
+          c = open("src/App.cpp").read()
+          # Remove TUI include
+          c = c.replace('#include "tui/C64MinerTui.h"\n', '')
+          # Remove tui_stop atomic
+          c = c.replace('static std::atomic<bool> tui_stop{false};\n', '')
+          # Remove play_datasette call
+          c = re.sub(r'    // C64 Miner: Play Datasette animation\n    c64tui::play_datasette_animation\(\);\n', '', c)
+          # Remove /dev/null redirect block
+          c = re.sub(r'    // Redirect stdout/stderr.*?::close\(devnull\);\n', '', c, flags=re.DOTALL)
+          # Remove TUI thread block
+          c = re.sub(r'    // Start TUI thread.*?tui_thread\.detach\(\);\n', '', c, flags=re.DOTALL)
+          # Remove tui_stop.store in destructor/close
+          c = c.replace('tui_stop.store(true);', '/* TUI disabled */')
+          # Remove fcntl/unistd if only used for TUI (keep them, they're harmless)
+          open("src/App.cpp", "w").write(c)
+          assert "c64tui" not in c, "FAIL: c64tui still in App.cpp"
+          assert "/dev/null" not in c, "FAIL: /dev/null redirect still in App.cpp"
+          print("App.cpp patched: TUI code removed")
+          PYEOF2
+
+          # Patch Base.cpp: remove TUI log handler
+          python3 << 'PYEOF3'
+          c = open("src/base/kernel/Base.cpp").read()
+          c = c.replace('#include "tui/C64MinerTui.h"\n', '')
+          c = c.replace('        Log::add(new C64MinerTuiLog());', '        /* TUI log disabled */')
+          open("src/base/kernel/Base.cpp", "w").write(c)
+          assert "C64MinerTui" not in c, "FAIL: C64MinerTui still in Base.cpp"
+          print("Base.cpp patched: TUI log removed")
+          PYEOF3
+
       - name: Build c64miner
         run: |
           cd ${{ github.workspace }}/c64miner
