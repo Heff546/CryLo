@@ -106,18 +106,23 @@ jobs:
           cd ${{ github.workspace }}/c64miner
           python3 << 'PYEOF'
           c = open("CMakeLists.txt").read()
-          # Replace if(NOT WITH_TUI_DISABLED) with if(FALSE)
-          c = c.replace("if(NOT WITH_TUI_DISABLED)", "if(FALSE)")
-          # Ensure define is at the top
-          if "add_definitions(-DWITH_TUI_DISABLED)" not in c.split("\n")[0]:
-              c = "add_definitions(-DWITH_TUI_DISABLED)\n" + c
+          # 1. Remove C64MinerTui.cpp from sources
+          c = c.replace("    src/tui/C64MinerTui.cpp\n", "")
+          # 2. Remove find_package(Curses REQUIRED)
+          c = c.replace("find_package(Curses REQUIRED)\n", "")
+          # 3. Remove ${CURSES_LIBRARIES} from link
+          c = c.replace("${CURSES_LIBRARIES} ", "")
+          # 4. Add TUI disabled define
+          c = "add_definitions(-DWITH_TUI_DISABLED)\n" + c
           open("CMakeLists.txt", "w").write(c)
           # Verify
-          assert "if(FALSE)" in c, "FAILED: if(FALSE) not found"
-          assert "C64MinerTui" not in [l for l in c.split("\n") if "list(APPEND" in l and "if(FALSE)" not in c.split("\n")[c.split("\n").index(l)-1] ], "ok"
-          print("CMakeLists.txt patched: TUI force-disabled")
-          print(f"  if(FALSE) count: {c.count('if(FALSE)')}")
-          print(f"  add_definitions count: {c.count('WITH_TUI_DISABLED')}")
+          assert "C64MinerTui" not in c, "FAIL: C64MinerTui still in sources"
+          assert "Curses" not in c, "FAIL: Curses still referenced"
+          assert "WITH_TUI_DISABLED" in c, "FAIL: define missing"
+          print("c64miner CMakeLists.txt patched OK:")
+          print("  - C64MinerTui.cpp removed from sources")
+          print("  - Curses removed")
+          print("  - WITH_TUI_DISABLED defined")
           PYEOF
 
       - name: Build c64miner
