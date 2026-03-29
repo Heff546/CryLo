@@ -22,20 +22,22 @@ jobs:
 
       - name: Build c64chaind and c64chain-wallet-rpc
         run: |
+          NCURSES_PREFIX=$(brew --prefix ncurses)
+          ZMQ_PREFIX=$(brew --prefix zeromq)
           mkdir -p build-mac && cd build-mac
           cmake \
             -DCMAKE_BUILD_TYPE=Release \
             -DUSE_DEVICE_TREZOR=OFF \
             -DBOOST_ROOT=$(brew --prefix boost) \
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
-            -DZeroMQ_DIR=$(brew --prefix zeromq)/lib/cmake/ZeroMQ \
+            -DZeroMQ_DIR=${ZMQ_PREFIX}/lib/cmake/ZeroMQ \
             -DMINIUPNPC_LIBRARY=$(brew --prefix miniupnpc)/lib/libminiupnpc.dylib \
             -DMINIUPNPC_INCLUDE_DIR=$(brew --prefix miniupnpc)/include \
             -DHIDAPI_INCLUDE_DIR=$(brew --prefix hidapi)/include \
             -DHIDAPI_LIBRARY=$(brew --prefix hidapi)/lib/libhidapi.dylib \
-            -DCMAKE_C_FLAGS="-I$(brew --prefix zeromq)/include" \
-            -DCMAKE_CXX_FLAGS="-I$(brew --prefix zeromq)/include" \
-            -DCMAKE_EXE_LINKER_FLAGS="-L$(brew --prefix ncurses)/lib" \
+            -DCMAKE_C_FLAGS="-I${ZMQ_PREFIX}/include" \
+            -DCMAKE_CXX_FLAGS="-I${ZMQ_PREFIX}/include" \
+            -DCMAKE_EXE_LINKER_FLAGS="-L${NCURSES_PREFIX}/lib" \
             ..
           make -j$(sysctl -n hw.ncpu) daemon wallet_rpc_server
 
