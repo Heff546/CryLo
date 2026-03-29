@@ -256,11 +256,17 @@
     <div class="tab-panel" id="tab-mining">
       <div class="form-group">
         <label>Wallet Address</label>
-        <input type="text" id="mining-address" placeholder="Your C64 wallet address (Wo...)" autocomplete="off" />
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="text" id="mining-address" placeholder="Your C64 wallet address (Wo...)" autocomplete="off" style="flex:1" />
+          <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;min-width:auto" onclick="navigator.clipboard.readText().then(t=>{document.getElementById('mining-address').value=t})">📋 Paste</button>
+        </div>
       </div>
       <div class="form-group">
         <label>Worker Name</label>
-        <input type="text" id="mining-worker" placeholder="my-desktop" autocomplete="off" />
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="text" id="mining-worker" placeholder="my-desktop" autocomplete="off" style="flex:1" />
+          <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;min-width:auto" onclick="navigator.clipboard.readText().then(t=>{document.getElementById('mining-worker').value=t})">📋 Paste</button>
+        </div>
       </div>
       <div class="form-group">
         <label>Pool</label>
