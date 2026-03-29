@@ -29,10 +29,10 @@ jobs:
             -DBOOST_ROOT=$(brew --prefix boost) \
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
             -DZeroMQ_DIR=$(brew --prefix zeromq)/lib/cmake/ZeroMQ \
-            -DMINIUPNPC_LIBRARY=$(brew --prefix miniupnpc)/lib/libminiupnpc.a \
+            -DMINIUPNPC_LIBRARY=$(brew --prefix miniupnpc)/lib/libminiupnpc.dylib \
             -DMINIUPNPC_INCLUDE_DIR=$(brew --prefix miniupnpc)/include \
             -DHIDAPI_INCLUDE_DIR=$(brew --prefix hidapi)/include \
-            -DHIDAPI_LIBRARY=$(brew --prefix hidapi)/lib/libhidapi.a \
+            -DHIDAPI_LIBRARY=$(brew --prefix hidapi)/lib/libhidapi.dylib \
             -DCMAKE_C_FLAGS="-I$(brew --prefix zeromq)/include" \
             -DCMAKE_CXX_FLAGS="-I$(brew --prefix zeromq)/include" \
             ..
