@@ -179,7 +179,10 @@
           <div class="card-title">↑ Send C64</div>
           <div class="form-group">
             <label>Recipient Address</label>
-            <input type="text" id="send-addr" placeholder="C64 address (starts with Wo...)" autocomplete="off" />
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="text" id="send-addr" placeholder="C64 address (starts with Wo...)" autocomplete="off" style="flex:1" />
+              <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;min-width:auto" onclick="navigator.clipboard.readText().then(t=>{document.getElementById('send-addr').value=t})">📋 Paste</button>
+            </div>
           </div>
           <div class="form-group">
             <label style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">Amount (C64) — <span id="send-max-label" style="color:var(--success);font-size:11px">Available: — C64</span></label>
@@ -195,7 +198,10 @@
           <div id="advanced-fields" class="hidden">
             <div class="form-group" style="margin-top:10px">
               <label>Payment ID <span class="form-hint">(optional)</span></label>
-              <input type="text" id="send-pid" placeholder="Optional 16 or 64 hex characters" autocomplete="off" />
+              <div style="display:flex;gap:6px;align-items:center">
+              <input type="text" id="send-pid" placeholder="Optional 16 or 64 hex characters" autocomplete="off" style="flex:1" />
+              <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;min-width:auto" onclick="navigator.clipboard.readText().then(t=>{document.getElementById('send-pid').value=t})">📋 Paste</button>
+            </div>
             </div>
             <div class="form-group">
               <label>Note <span class="form-hint">(local only)</span></label>
