@@ -16,6 +16,7 @@ const DATA_DIR_NAME     = 'c64chain';
 
 // Detect OS
 const IS_WIN   = process.platform === 'win32';
+const IS_MAC   = process.platform === 'darwin';
 const IS_LINUX = process.platform === 'linux';
 
 // ─── Paths ───────────────────────────────────────────────────────────────────
@@ -26,7 +27,7 @@ function getResourcesPath() {
 }
 
 function getBinPath(name) {
-  const platform = IS_WIN ? 'win' : 'linux';
+  const platform = IS_WIN ? 'win' : IS_MAC ? 'mac' : 'linux';
   const ext      = IS_WIN ? '.exe' : '';
   return path.join(getResourcesPath(), 'bin', platform, name + ext);
 }
@@ -57,6 +58,8 @@ function getLogDir() {
 let mainWindow  = null;
 let daemonProc  = null;
 let walletProc  = null;
+let minerProc   = null;
+let minerStats  = { hashrate: 0, sharesAccepted: 0, sharesRejected: 0, running: false };
 let shuttingDown = false;
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
@@ -302,6 +305,77 @@ ipcMain.handle('confirm-dialog', async (_, opts) => {
   return result.response === 0;
 });
 
+
+// ─── Miner ───────────────────────────────────────────────────────────────────
+function spawnMiner(opts) {
+  const bin = getBinPath('c64miner');
+  if (!fs.existsSync(bin)) throw new Error('Miner binary not found: ' + bin);
+  const logger = makeLogger('miner');
+  const user = opts.walletAddress + '.' + (opts.workerName || 'desktop');
+  const args = [
+    '--algo=rx/c64',
+    '--coin=c64chain',
+    '--url=' + opts.poolUrl,
+    '--user=' + user,
+    '--pass=x',
+    '--threads=' + (opts.threads || 2),
+    '--no-color',
+    '--print-time=5'
+  ];
+  logger.write('Spawning miner: ' + bin + ' ' + args.join(' ') + '\n');
+  minerStats = { hashrate: 0, sharesAccepted: 0, sharesRejected: 0, running: true };
+  const proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  proc.stdout.on('data', (d) => {
+    const txt = d.toString();
+    logger.write(txt);
+    // speed 10s/60s/15m 10041.3 10074.1 n/a H/s
+    const hrMatch = txt.match(/speed\s+10s\/60s\/15m\s+(\d+\.?\d*)/i);
+    if (hrMatch) minerStats.hashrate = parseFloat(hrMatch[1]);
+    // accepted (8/0)
+    const accMatch = txt.match(/accepted\s+\((\d+)\/(\d+)\)/i);
+    if (accMatch) {
+      minerStats.sharesAccepted = parseInt(accMatch[1]);
+      minerStats.sharesRejected = parseInt(accMatch[2]);
+    }
+  });
+  proc.stderr.on('data', (d) => logger.write(d.toString()));
+  proc.on('exit', (code) => {
+    logger.write('Miner exited with code ' + code + '\n');
+    minerStats.running = false;
+    minerProc = null;
+  });
+  return proc;
+}
+
+// Miner IPC
+ipcMain.handle('miner-get-info', async () => {
+  return {
+    ok: true,
+    cpuCount: os.cpus().length,
+    totalMemMB: Math.floor(os.totalmem() / 1024 / 1024)
+  };
+});
+
+ipcMain.handle('miner-start', async (_, opts) => {
+  try {
+    if (minerProc) { try { minerProc.kill(); } catch(_) {} minerProc = null; }
+    minerProc = spawnMiner(opts);
+    return { ok: true };
+  } catch(e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('miner-stop', async () => {
+  try {
+    if (minerProc) { await killProc(minerProc, 'miner'); minerProc = null; }
+    minerStats.running = false;
+    return { ok: true };
+  } catch(e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('miner-get-status', async () => {
+  return { ok: true, ...minerStats };
+});
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -337,6 +411,7 @@ app.whenReady().then(createWindow);
 app.on('window-all-closed', async () => {
   shuttingDown = true;
   // Gracefully stop wallet-rpc first, then daemon
+  await killProc(minerProc,  'miner');
   await killProc(walletProc, 'wallet-rpc');
   await killProc(daemonProc, 'daemon');
   app.quit();

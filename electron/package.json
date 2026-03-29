@@ -12,7 +12,8 @@
     "start": "electron .",
     "build-win": "electron-builder --win --x64",
     "build-linux": "electron-builder --linux --x64",
-    "build-all": "electron-builder --win --linux --x64"
+    "build-all": "electron-builder --win --linux --mac --x64",
+    "build-mac": "electron-builder --mac --x64"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -21,7 +22,7 @@
   "build": {
     "appId": "com.c64chain.wallet",
     "productName": "C64 Chain Wallet",
-    "copyright": "Copyright \u00a9 2025 C64 Chain",
+    "copyright": "Copyright © 2025 C64 Chain",
     "directories": {
       "output": "dist"
     },
@@ -43,6 +44,14 @@
       {
         "from": "bin/linux",
         "to": "bin/linux",
+        "filter": [
+          "**/*",
+          "!README.txt"
+        ]
+      },
+      {
+        "from": "bin/mac",
+        "to": "bin/mac",
         "filter": [
           "**/*",
           "!README.txt"
@@ -82,6 +91,18 @@
       ],
       "icon": "assets/icon.png",
       "category": "Finance"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.finance",
+      "icon": "assets/icon.png"
     }
   },
   "homepage": "https://c64chain.com"
