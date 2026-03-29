@@ -1,6 +1,6 @@
 {
   "name": "c64chain-wallet",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "C64 Chain Wallet - Official GUI Wallet",
   "main": "main.js",
   "author": {
