@@ -18,11 +18,65 @@ jobs:
 
       - name: Install Homebrew dependencies
         run: |
-          brew install cmake boost openssl@3 zeromq miniupnpc hidapi libusb libuv pkg-config ncurses
+          brew install cmake boost openssl@3 zeromq miniupnpc hidapi libusb libuv pkg-config
+
+      - name: Patch daemon to disable TUI (headless for Electron)
+        run: |
+          # Remove c64_tui.cpp from daemon sources
+          sed -i.bak '/\.\.\/tui\/c64_tui\.cpp/d' src/daemon/CMakeLists.txt
+          # Remove ncursesw link
+          sed -i.bak '/ncursesw/d' src/daemon/CMakeLists.txt
+
+          # Create stub c64_tui.h so includes compile
+          cat > src/tui/c64_tui.h << 'STUB'
+          #pragma once
+          #include <atomic>
+          #include <string>
+          #include <mutex>
+          #include <deque>
+          namespace c64tui {
+            struct NodeStats {
+              std::mutex mtx;
+              std::string status;
+              struct LogLine { std::string text; int color; };
+              std::deque<LogLine> log_lines;
+              void set_status(const std::string&) {}
+              void add_log(const std::string&, int=0) {}
+            };
+            inline NodeStats& get_stats() { static NodeStats s; return s; }
+            inline void play_datasette_animation() {}
+            inline void run_tui(std::atomic<bool>&) {}
+          }
+          STUB
+
+          # Patch daemon.cpp: replace TUI thread with simple wait
+          python3 << 'PYEOF'
+          import re
+          c = open("src/daemon/daemon.cpp").read()
+          # Remove TUI block: from play_datasette to "TUI exited - stop everything"
+          c = re.sub(
+              r"c64tui::play_datasette_animation\(\);.*?// TUI exited - stop everything",
+              "// Headless mode (TUI disabled for Electron wallet)\n    while (!stop) { sleep(1); }\n    // Stop everything",
+              c, flags=re.DOTALL)
+          # Remove ncurses /dev/null redirect if still present
+          c = re.sub(r"// Let ncurses.*?close\(devnull\);", "", c, flags=re.DOTALL)
+          open("src/daemon/daemon.cpp", "w").write(c)
+          print("daemon.cpp patched OK")
+          PYEOF
+
+          # Patch main.cpp: stub any c64tui:: calls
+          python3 << 'PYEOF2'
+          import re
+          c = open("src/daemon/main.cpp").read()
+          c = re.sub(r'c64tui::\w+\([^)]*\);', '/* TUI disabled */', c)
+          open("src/daemon/main.cpp", "w").write(c)
+          print("main.cpp patched OK")
+          PYEOF2
+
+          echo "=== TUI disabled for headless build ==="
 
       - name: Build c64chaind and c64chain-wallet-rpc
         run: |
-          NCURSES_PREFIX=$(brew --prefix ncurses)
           ZMQ_PREFIX=$(brew --prefix zeromq)
           mkdir -p build-mac && cd build-mac
           cmake \
@@ -37,7 +91,6 @@ jobs:
             -DHIDAPI_LIBRARY=$(brew --prefix hidapi)/lib/libhidapi.dylib \
             -DCMAKE_C_FLAGS="-I${ZMQ_PREFIX}/include" \
             -DCMAKE_CXX_FLAGS="-I${ZMQ_PREFIX}/include" \
-            -DCMAKE_EXE_LINKER_FLAGS="-L${NCURSES_PREFIX}/lib" \
             ..
           make -j$(sysctl -n hw.ncpu) daemon wallet_rpc_server
 
@@ -94,18 +147,15 @@ jobs:
           DMG_FILE=$(ls electron/dist/*.dmg | head -1)
           DMG_NAME=$(basename "$DMG_FILE")
           echo "Uploading $DMG_NAME to release wallets-v1.1.1"
-
           RELEASE_ID=$(curl -s \
             -H "Authorization: token ${GH_TOKEN}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/wallets-v1.1.1" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)[id])")
-
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
           curl -s -X POST \
             "https://uploads.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=C64.Chain.Wallet-1.1.1-macos-arm64.dmg" \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Content-Type: application/octet-stream" \
             -T "$DMG_FILE"
-
           echo "Upload complete!"
 
       - name: Upload DMG as artifact (backup)
