@@ -18,7 +18,7 @@ jobs:
 
       - name: Install Homebrew dependencies
         run: |
-          brew install cmake boost openssl@3 zeromq miniupnpc hidapi libusb libuv pkg-config
+          brew install cmake boost openssl@3 zeromq miniupnpc hidapi libusb libuv pkg-config ncurses
 
       - name: Build c64chaind and c64chain-wallet-rpc
         run: |
@@ -35,6 +35,7 @@ jobs:
             -DHIDAPI_LIBRARY=$(brew --prefix hidapi)/lib/libhidapi.dylib \
             -DCMAKE_C_FLAGS="-I$(brew --prefix zeromq)/include" \
             -DCMAKE_CXX_FLAGS="-I$(brew --prefix zeromq)/include" \
+            -DCMAKE_EXE_LINKER_FLAGS="-L$(brew --prefix ncurses)/lib" \
             ..
           make -j$(sysctl -n hw.ncpu) daemon wallet_rpc_server
 
