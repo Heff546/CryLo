@@ -27,13 +27,13 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DBOOST_ROOT=$(brew --prefix boost) \
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
-            -DZeroMQ_DIR=$(brew --prefix libzmq)/lib/cmake/ZeroMQ \
+            -DZeroMQ_DIR=$(brew --prefix zeromq)/lib/cmake/ZeroMQ \
             -DMINIUPNPC_LIBRARY=$(brew --prefix miniupnpc)/lib/libminiupnpc.a \
             -DMINIUPNPC_INCLUDE_DIR=$(brew --prefix miniupnpc)/include \
             -DHIDAPI_INCLUDE_DIR=$(brew --prefix hidapi)/include \
             -DHIDAPI_LIBRARY=$(brew --prefix hidapi)/lib/libhidapi.a \
-            -DCMAKE_C_FLAGS="-I$(brew --prefix libzmq)/include" \
-            -DCMAKE_CXX_FLAGS="-I$(brew --prefix libzmq)/include" \
+            -DCMAKE_C_FLAGS="-I$(brew --prefix zeromq)/include" \
+            -DCMAKE_CXX_FLAGS="-I$(brew --prefix zeromq)/include" \
             ..
           make -j$(sysctl -n hw.ncpu) daemon wallet_rpc_server
 
@@ -74,7 +74,7 @@ jobs:
         run: |
           cd electron
           npm install
-          npm run build-mac
+          npx electron-builder --mac --arm64
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
@@ -93,11 +93,11 @@ jobs:
 
           RELEASE_ID=$(curl -s \
             -H "Authorization: token ${GH_TOKEN}" \
-            https://api.github.com/repos/${{ github.repository }}/releases/tags/wallets-v1.1.1 \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/wallets-v1.1.1" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)[id])")
 
           curl -s -X POST \
-            "https://uploads.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=C64.Chain.Wallet-1.1.1-macos.dmg" \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=C64.Chain.Wallet-1.1.1-macos-arm64.dmg" \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Content-Type: application/octet-stream" \
             -T "$DMG_FILE"
