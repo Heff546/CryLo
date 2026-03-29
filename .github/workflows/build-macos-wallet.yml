@@ -1,0 +1,111 @@
+name: Build macOS Wallet
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-13
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout c64chain-mainnet
+        uses: actions/checkout@v4
+
+      - name: Clone c64miner
+        run: |
+          git clone https://github.com/oxynaz/c64miner.git ${{ github.workspace }}/c64miner
+
+      - name: Install Homebrew dependencies
+        run: |
+          brew install cmake boost openssl@3 libzmq miniupnpc hidapi libusb protobuf libuv pkg-config
+
+      - name: Build c64chaind and c64chain-wallet-rpc
+        run: |
+          mkdir -p build-mac && cd build-mac
+          cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBOOST_ROOT=$(brew --prefix boost) \
+            -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
+            -DZeroMQ_DIR=$(brew --prefix libzmq)/lib/cmake/ZeroMQ \
+            -DMINIUPNPC_LIBRARY=$(brew --prefix miniupnpc)/lib/libminiupnpc.a \
+            -DMINIUPNPC_INCLUDE_DIR=$(brew --prefix miniupnpc)/include \
+            -DHIDAPI_INCLUDE_DIR=$(brew --prefix hidapi)/include \
+            -DHIDAPI_LIBRARY=$(brew --prefix hidapi)/lib/libhidapi.a \
+            -DCMAKE_C_FLAGS="-I$(brew --prefix libzmq)/include" \
+            -DCMAKE_CXX_FLAGS="-I$(brew --prefix libzmq)/include" \
+            ..
+          make -j$(sysctl -n hw.ncpu) daemon wallet_rpc_server
+
+      - name: Build c64miner
+        run: |
+          cd ${{ github.workspace }}/c64miner
+          mkdir -p build-mac && cd build-mac
+          cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_HWLOC=OFF \
+            -DWITH_OPENCL=OFF \
+            -DWITH_CUDA=OFF \
+            -DWITH_TUI_DISABLED=ON \
+            -DWITH_TLS=ON \
+            -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
+            -DUV_LIBRARY=$(brew --prefix libuv)/lib/libuv.a \
+            -DUV_INCLUDE_DIR=$(brew --prefix libuv)/include \
+            ..
+          make -j$(sysctl -n hw.ncpu)
+
+      - name: Collect macOS binaries
+        run: |
+          mkdir -p electron/bin/mac
+          cp build-mac/bin/c64chaind electron/bin/mac/
+          cp build-mac/bin/c64chain-wallet-rpc electron/bin/mac/
+          cp ${{ github.workspace }}/c64miner/build-mac/c64miner electron/bin/mac/
+          chmod +x electron/bin/mac/*
+          echo "=== macOS binaries ==="
+          ls -la electron/bin/mac/
+          file electron/bin/mac/*
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Electron DMG
+        run: |
+          cd electron
+          npm install
+          npm run build-mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: List build output
+        run: |
+          ls -la electron/dist/
+          ls -la electron/dist/*.dmg || true
+
+      - name: Upload DMG to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DMG_FILE=$(ls electron/dist/*.dmg | head -1)
+          DMG_NAME=$(basename "$DMG_FILE")
+          echo "Uploading $DMG_NAME to release wallets-v1.1.1"
+
+          RELEASE_ID=$(curl -s \
+            -H "Authorization: token ${GH_TOKEN}" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/wallets-v1.1.1 \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)[id])")
+
+          curl -s -X POST \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=C64.Chain.Wallet-1.1.1-macos.dmg" \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Content-Type: application/octet-stream" \
+            -T "$DMG_FILE"
+
+          echo "Upload complete!"
+
+      - name: Upload DMG as artifact (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: C64-Chain-Wallet-macOS
+          path: electron/dist/*.dmg
