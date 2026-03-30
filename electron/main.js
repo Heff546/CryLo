@@ -461,4 +461,10 @@ app.on('web-contents-created', (_, contents) => {
       shell.openExternal(url);
     }
   });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
 });
