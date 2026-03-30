@@ -1,6 +1,6 @@
 # C64 Chain — Privacy-First CPU-Mineable Cryptocurrency
 
-[![C64 Chain](https://img.shields.io/badge/C64_Chain-v1.0.0-blue)](https://github.com/oxynaz/c64chain-mainnet)
+[![C64 Chain](https://img.shields.io/badge/C64_Chain-v1.1.1-blue)](https://github.com/oxynaz/c64chain-mainnet)
 [![License](https://img.shields.io/badge/license-GPLv3-green)](LICENSE)
 [![Algorithm](https://img.shields.io/badge/algorithm-rx%2Fc64-orange)](https://github.com/oxynaz/c64chain-mainnet)
 [![Mining](https://img.shields.io/badge/mining-CPU%20only-brightgreen)](https://github.com/oxynaz/c64chain-mainnet)
@@ -14,7 +14,7 @@ Forked from [Wownero](https://codeberg.org/wownero/wownero) (itself a fork of Mo
 ## 🚀 MAINNET IS LIVE
 
 > **C64 Chain mainnet launched on February 19, 2026.**
-> Mining is open to everyone. Download, build, and start mining now!
+> Mining is open to everyone. Download the GUI wallet or build from source and start mining now!
 
 ## Why C64 Chain?
 
@@ -111,6 +111,25 @@ At block 2100, C64 Chain activates the LWMA-1 difficulty algorithm (Zawy's Linea
 * 🚫 No premine, no ICO, no VC funding
 * 📊 LWMA-1 difficulty algorithm for responsive hashrate adjustment
 * 🔍 Security audited codebase
+
+---
+
+## GUI Wallets (Recommended)
+
+Pre-built GUI wallets with integrated miner are available for all major platforms. No need to build from source.
+
+| Platform | Download | Miner |
+| --- | --- | --- |
+| **Windows** | [wallets-v1.1.1](https://github.com/oxynaz/c64chain-mainnet/releases/tag/wallets-v1.1.1) | Integrated (XMRig, 20,000+ H/s on modern CPUs) |
+| **Ubuntu / Linux** | [wallets-v1.1.1](https://github.com/oxynaz/c64chain-mainnet/releases/tag/wallets-v1.1.1) | Integrated |
+| **macOS** | [wallets-v1.1.1](https://github.com/oxynaz/c64chain-mainnet/releases/tag/wallets-v1.1.1) | Integrated |
+| **Android** | [wallets-v1.1.1](https://github.com/oxynaz/c64chain-mainnet/releases/tag/wallets-v1.1.1) | Integrated (ARM64, 300–600 H/s) |
+
+> **Note on antivirus warnings:** The integrated miner is based on XMRig (open-source). All XMRig-based binaries are flagged as false positives by most antivirus software due to heuristic rules. This is a known and documented issue that affects the official Monero GUI wallet as well. The source code is fully auditable on GitHub.
+>
+> The miner **only runs when you navigate to the Mining tab, enter your wallet address, and click Start**. Nothing runs in the background without your explicit action.
+
+---
 
 ## Quick Start — Build from source
 
@@ -282,7 +301,11 @@ This shows exactly when your mined coins will become spendable, with projected d
 
 ## Mine C64
 
-Build the miner from [source](https://github.com/oxynaz/c64miner):
+### Option 1 — GUI Wallet (recommended)
+
+Download the GUI wallet for your platform, open it, navigate to the **Mining tab**, enter your wallet address and click **Start**. The miner is fully integrated — no separate installation required.
+
+### Option 2 — Build the miner from source
 
 ```
 git clone https://github.com/oxynaz/c64miner.git
@@ -323,6 +346,23 @@ sudo ./c64miner -c config.json -t $(nproc)
 
 Always run with `sudo` for best performance (huge pages). The miner features a Commodore 64-themed TUI showing hashrate, accepted blocks, and live mining logs.
 
+## Mining Pools
+
+| Pool | URL |
+| --- | --- |
+| **Suprnova** | https://c64.suprnova.cc/index.html |
+| **Rplant** | https://pool.rplant.xyz/#c64chain |
+| **FairMiningPool** | https://fairminingpool.com/c64 |
+| **RabbitMiner** | https://rabbitminer.cc/c64/ |
+
+Each pool's website provides connection instructions and stratum endpoints. For pool mining, replace the `url` in your miner config with the pool's stratum address.
+
+## Exchanges
+
+| Exchange | Pair | URL |
+| --- | --- | --- |
+| **Cexius** | C64/USDT | https://cexius.com |
+
 ## Network Configuration
 
 | Parameter | Value |
@@ -359,13 +399,17 @@ Always run with `sudo` for best performance (huge pages). The miner features a C
 * ~~Testnet launch~~
 * ~~Security audit & fixes~~
 * ~~HF20: LWMA-1 difficulty algorithm, dev fund crypto verification~~
-* ✅ **Mainnet launch — February 19, 2026**
-* Mining pool support
-* Exchange listings
+* ~~Mainnet launch — February 19, 2026~~
+* ~~GUI wallets (Windows / Linux / macOS / Android)~~
+* ~~Mining pool listings (Suprnova, Rplant, FairMiningPool, RabbitMiner)~~
+* ~~Exchange listing (Cexius)~~
+* Additional exchange listings
+* SRBMiner native support ✅
 
 ## Community
 
-* Discord: https://discord.gg/yj2vACFJCj
+* Discord: https://discord.gg/MTRgHT8r45
+* X / Twitter: https://x.com/C64Chain
 * GitHub: [github.com/oxynaz](https://github.com/oxynaz)
 * Block Explorer: [c64chain.com](https://c64chain.com)
 
