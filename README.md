@@ -116,16 +116,18 @@ At block 2100, C64 Chain activates the LWMA-1 difficulty algorithm (Zawy's Linea
 
 ## GUI Wallets (Recommended)
 
-Pre-built GUI wallets with integrated miner are available for all major platforms. No need to build from source.
+Pre-built GUI wallets with integrated miner are available for all major platforms. No separate miner installation required.
 
-| Platform | Download | Miner |
+All releases are available at: **https://github.com/oxynaz/c64chain-mainnet/releases**
+
+| Platform | Release tag | Integrated miner |
 | --- | --- | --- |
-| **Windows** | [wallets-v1.1.1](https://github.com/oxynaz/c64chain-mainnet/releases/tag/wallets-v1.1.1) | Integrated (XMRig, 20,000+ H/s on modern CPUs) |
-| **Ubuntu / Linux** | [wallets-v1.1.1](https://github.com/oxynaz/c64chain-mainnet/releases/tag/wallets-v1.1.1) | Integrated |
-| **macOS** | [wallets-v1.1.1](https://github.com/oxynaz/c64chain-mainnet/releases/tag/wallets-v1.1.1) | Integrated |
-| **Android** | [wallets-v1.1.1](https://github.com/oxynaz/c64chain-mainnet/releases/tag/wallets-v1.1.1) | Integrated (ARM64, 300–600 H/s) |
+| **Windows** | wallets-v1.1.1 | Yes (XMRig, 20,000+ H/s on modern CPUs) |
+| **Ubuntu / Linux** | wallets-v1.1.1 | Yes |
+| **macOS** | wallets-v1.1.1 | Yes |
+| **Android** | wallets-v1.1.0 | Yes (ARM64, 300–600 H/s) |
 
-> **Note on antivirus warnings:** The integrated miner is based on XMRig (open-source). All XMRig-based binaries are flagged as false positives by most antivirus software due to heuristic rules. This is a known and documented issue that affects the official Monero GUI wallet as well. The source code is fully auditable on GitHub.
+> **Note on antivirus warnings:** The integrated miner is based on XMRig (open-source RandomX miner). All XMRig-based binaries are flagged as false positives by most antivirus software. This is a known and documented issue that also affects the official Monero GUI wallet — see [getmonero.org/get-started/faq](https://www.getmonero.org/get-started/faq/#antivirus). The source code is fully auditable on GitHub.
 >
 > The miner **only runs when you navigate to the Mining tab, enter your wallet address, and click Start**. Nothing runs in the background without your explicit action.
 
@@ -303,7 +305,7 @@ This shows exactly when your mined coins will become spendable, with projected d
 
 ### Option 1 — GUI Wallet (recommended)
 
-Download the GUI wallet for your platform, open it, navigate to the **Mining tab**, enter your wallet address and click **Start**. The miner is fully integrated — no separate installation required.
+Download the GUI wallet for your platform from the [releases page](https://github.com/oxynaz/c64chain-mainnet/releases), open it, navigate to the **Mining tab**, enter your wallet address and click **Start**. The miner is fully integrated — no separate installation required.
 
 ### Option 2 — Build the miner from source
 
