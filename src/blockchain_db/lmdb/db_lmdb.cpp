@@ -4308,9 +4308,10 @@ std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> BlockchainLMDB::get
       uint64_t amount = i->first;
       uint64_t num_elems = std::get<0>(i->second);
       while (num_elems > 0) {
-        const tx_out_index toi = get_output_tx_and_index(amount, num_elems - 1);
-        const uint64_t height = get_tx_block_height(toi.first);
-        if (height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE <= blockchain_height)
+        // C64 FIX: Use the real unlock_time stored in output_data_t.
+        // Coinbase outputs have long vesting locks — height+4 is wrong for C64 Chain.
+        const output_data_t od = get_output_key(amount, num_elems - 1, false);
+        if (od.unlock_time <= blockchain_height)
           break;
         --num_elems;
       }

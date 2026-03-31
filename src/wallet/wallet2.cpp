@@ -1053,6 +1053,26 @@ gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shap
 
 gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets): gamma_picker(rct_offsets, GAMMA_SHAPE, GAMMA_SCALE) {}
 
+// C64 FIX: constructor with explicit unlock_window to exclude vesting-locked outputs.
+gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shape, double scale, size_t unlock_window):
+    rct_offsets(rct_offsets)
+{
+  gamma = std::gamma_distribution<double>(shape, scale);
+  THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= unlock_window, error::wallet_internal_error,
+      "Bad offset calculation for unlock window");
+  const size_t blocks_in_a_year = 86400 * 365 / DIFFICULTY_TARGET_V2;
+  const size_t blocks_to_consider = std::min<size_t>(rct_offsets.size(), blocks_in_a_year);
+  const size_t outputs_to_consider = rct_offsets.back() - (blocks_to_consider < rct_offsets.size()
+      ? rct_offsets[rct_offsets.size() - blocks_to_consider - 1] : 0);
+  begin = rct_offsets.data();
+  // Exclude the last unlock_window blocks — all still vesting-locked.
+  const size_t safe_end_offset = std::max<size_t>(1, unlock_window) - 1;
+  end = rct_offsets.data() + rct_offsets.size() - safe_end_offset;
+  num_rct_outputs = *(end - 1);
+  THROW_WALLET_EXCEPTION_IF(num_rct_outputs == 0, error::wallet_internal_error, "No rct outputs");
+  average_output_time = DIFFICULTY_TARGET_V2 * blocks_to_consider / static_cast<double>(outputs_to_consider);
+};
+
 uint64_t gamma_picker::pick()
 {
   double x = gamma(engine);
@@ -9387,7 +9407,12 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
 
     std::unique_ptr<gamma_picker> gamma;
     if (has_rct)
-      gamma.reset(new gamma_picker(rct_offsets));
+    {
+      // C64 FIX: use the mined-money unlock window as the exclusion boundary
+      // instead of Monero's default (3 blocks). C64 Chain locks coinbase outputs much longer.
+      gamma.reset(new gamma_picker(rct_offsets, GAMMA_SHAPE, GAMMA_SCALE,
+          CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW));
+    }
 
     size_t num_selected_transfers = 0;
     req.outputs.reserve(selected_transfers.size() * (base_requested_outputs_count + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2));

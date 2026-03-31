@@ -101,6 +101,7 @@ namespace tools
     uint64_t pick();
     gamma_picker(const std::vector<uint64_t> &rct_offsets);
     gamma_picker(const std::vector<uint64_t> &rct_offsets, double shape, double scale);
+    gamma_picker(const std::vector<uint64_t> &rct_offsets, double shape, double scale, size_t unlock_window);
     uint64_t get_num_rct_outs() const { return num_rct_outputs; }
 
   private:

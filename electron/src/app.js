@@ -595,10 +595,33 @@ async function consolidateUtxos() {
       toast('Consolidation failed: ' + res.error, 'error');
       el('consolidate-info').textContent = 'Failed: ' + res.error;
     } else {
-      const txCount = res.result.tx_hash_list ? res.result.tx_hash_list.length : 1;
-      toast('Consolidation sent! ' + txCount + ' transaction(s). Wait for confirmations.', 'success', 8000);
-      el('consolidate-info').textContent = txCount + ' tx sent. Wait ~2 min for confirmation, then your balance will be consolidated.';
+      const txList = res.result.tx_hash_list || [];
+      const txCount = txList.length || 1;
+      toast('Consolidation sent! ' + txCount + ' transaction(s). Tracking confirmations...', 'success', 8000);
+      el('consolidate-info').textContent = txCount + ' tx sent. Waiting for 4 block confirmations (0/4)...';
       setTimeout(updateBalance, 5000);
+
+      // Track confirmation status
+      if (txList.length > 0) {
+        const txid = txList[0];
+        const confirmInterval = setInterval(async () => {
+          try {
+            const txRes = await window.c64.walletRpc('get_transfer_by_txid', { txid: txid });
+            if (txRes.ok && txRes.result && txRes.result.transfer) {
+              const conf = txRes.result.transfer.confirmations || 0;
+              if (conf >= 4) {
+                clearInterval(confirmInterval);
+                el('consolidate-info').textContent = '✅ Consolidation confirmed! (' + conf + ' blocks)';
+                el('consolidate-info').style.color = 'var(--success)';
+                setTimeout(() => { el('consolidate-info').style.display = 'none'; }, 10000);
+                updateBalance();
+              } else {
+                el('consolidate-info').textContent = 'Confirming: ' + conf + '/4 blocks...';
+              }
+            }
+          } catch (e) { /* ignore polling errors */ }
+        }, 30000); // check every 30s
+      }
     }
   } catch (e) {
     toast('Consolidation error: ' + e.message, 'error');
