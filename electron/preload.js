@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('c64', {
   // ── RPC ──────────────────────────────────────────────────────────────
   daemonRpc:   (method, params)  => ipcRenderer.invoke('daemon-rpc',   method, params),
-  walletRpc:   (method, params)  => ipcRenderer.invoke('wallet-rpc',   method, params),
+  walletRpc:   (method, params, timeout)  => ipcRenderer.invoke('wallet-rpc', method, params, timeout),
   // ── Local helpers ─────────────────────────────────────────────────────
   listWallets: ()                => ipcRenderer.invoke('list-wallets'),
   openLogDir:  ()                => ipcRenderer.invoke('open-log-dir'),

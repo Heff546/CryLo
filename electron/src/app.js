@@ -589,7 +589,7 @@ async function consolidateUtxos() {
     const res = await window.c64.walletRpc('sweep_all', {
       address: myAddress,
       account_index: 0
-    });
+    }, 300000);  // 5 min timeout for large UTXO sets
 
     if (!res.ok) {
       toast('Consolidation failed: ' + res.error, 'error');

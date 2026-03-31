@@ -83,7 +83,7 @@ function makeLogger(name) {
 }
 
 // ─── RPC helpers ─────────────────────────────────────────────────────────────
-function rpcCall(port, method, params = {}) {
+function rpcCall(port, method, params = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       jsonrpc: '2.0',
@@ -116,7 +116,7 @@ function rpcCall(port, method, params = {}) {
         });
       }
     );
-    req.setTimeout(10000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error('timeout')); });
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -127,8 +127,8 @@ function daemonRpc(method, params = {}) {
   return rpcCall(DAEMON_RPC_PORT, method, params);
 }
 
-function walletRpc(method, params = {}) {
-  return rpcCall(WALLET_RPC_PORT, method, params);
+function walletRpc(method, params = {}, timeoutMs = 10000) {
+  return rpcCall(WALLET_RPC_PORT, method, params, timeoutMs);
 }
 
 // Poll until port responds or timeout
@@ -259,8 +259,8 @@ ipcMain.handle('daemon-rpc', async (_, method, params) => {
 });
 
 // Wallet RPC
-ipcMain.handle('wallet-rpc', async (_, method, params) => {
-  try { return { ok: true,  result: await walletRpc(method, params) }; }
+ipcMain.handle('wallet-rpc', async (_, method, params, timeoutMs) => {
+  try { return { ok: true,  result: await walletRpc(method, params, timeoutMs || 10000) }; }
   catch (e) { return { ok: false, error: e.message }; }
 });
 
