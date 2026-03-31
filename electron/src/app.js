@@ -564,6 +564,51 @@ async function sendTx() {
   setTimeout(updateBalance, 3000);
 }
 
+
+// ─── Consolidate UTXOs ───────────────────────────────────────────────────────
+async function consolidateUtxos() {
+  // Get own address
+  const addrRes = await window.c64.walletRpc('get_address', { account_index: 0 });
+  if (!addrRes.ok) return toast('Failed to get wallet address: ' + addrRes.error, 'error');
+  const myAddress = addrRes.result.address;
+
+  const confirmed = await window.c64.confirm({
+    type: 'question',
+    title: 'Consolidate UTXOs',
+    message: 'This will merge all your small inputs (UTXOs) into one large output by sending your entire balance to yourself.\n\nThis is needed when you have many small mining rewards and want to send large amounts.\n\nA small network fee will be deducted.\n\nProceed?',
+    buttons: ['Consolidate', 'Cancel']
+  });
+  if (!confirmed) return;
+
+  el('consolidate-btn').disabled = true;
+  el('consolidate-btn').textContent = '🔄 Consolidating...';
+  el('consolidate-info').style.display = 'block';
+  el('consolidate-info').textContent = 'Sweeping all outputs to your address...';
+
+  try {
+    const res = await window.c64.walletRpc('sweep_all', {
+      address: myAddress,
+      account_index: 0
+    });
+
+    if (!res.ok) {
+      toast('Consolidation failed: ' + res.error, 'error');
+      el('consolidate-info').textContent = 'Failed: ' + res.error;
+    } else {
+      const txCount = res.result.tx_hash_list ? res.result.tx_hash_list.length : 1;
+      toast('Consolidation sent! ' + txCount + ' transaction(s). Wait for confirmations.', 'success', 8000);
+      el('consolidate-info').textContent = txCount + ' tx sent. Wait ~2 min for confirmation, then your balance will be consolidated.';
+      setTimeout(updateBalance, 5000);
+    }
+  } catch (e) {
+    toast('Consolidation error: ' + e.message, 'error');
+    el('consolidate-info').textContent = 'Error: ' + e.message;
+  }
+
+  el('consolidate-btn').disabled = false;
+  el('consolidate-btn').textContent = '🔄 Consolidate UTXOs (merge small inputs)';
+}
+
 // ─── Vesting ──────────────────────────────────────────────────────────────────
 async function loadVesting() {
   const container = el('vesting-table-container');
@@ -847,6 +892,7 @@ window.App = {
   switchTab,
   switchWallet,
   sendTx,
+  consolidateUtxos,
   copyAddress,
   copyPaymentRequest,
   toggleMining,

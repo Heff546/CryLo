@@ -210,6 +210,8 @@
           </div>
           <div class="form-actions" style="margin-top:6px">
             <button class="btn btn-primary" id="send-btn" onclick="App.sendTx()">Send →</button>
+            <button class="btn btn-ghost" id="consolidate-btn" onclick="App.consolidateUtxos()" style="margin-top:8px;width:100%;font-size:12px">🔄 Consolidate UTXOs (merge small inputs)</button>
+            <div id="consolidate-info" style="font-size:11px;color:var(--text-dim);text-align:center;margin-top:4px;display:none"></div>
           </div>
         </div>
       </div>
