@@ -364,6 +364,7 @@ Each pool's website provides connection instructions and stratum endpoints. For 
 | Exchange | Pair | URL |
 | --- | --- | --- |
 | **Cexius** | C64/USDT | https://cexius.com |
+| **Exbitron** | C64/USDT | https://app.exbitron.com/exchange/?market=C64-USDT |
 
 ## Network Configuration
 
