@@ -363,7 +363,7 @@ Each pool's website provides connection instructions and stratum endpoints. For 
 
 | Exchange | Pair | URL |
 | --- | --- | --- |
-| **Cexius** | C64/USDT | https://cexius.com |
+| **Cexius** | C64/USDT | https://cexius.com/trade/C64-USDT |
 | **Exbitron** | C64/USDT | https://app.exbitron.com/exchange/?market=C64-USDT |
 | **NoirTrade** | C64/USDT | https://noirtrade.com/trade?pair=C64_USDT0 |
 
