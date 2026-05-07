@@ -405,6 +405,7 @@ Each pool's website provides connection instructions and stratum endpoints. For 
 * ~~GUI wallets (Windows / Linux / macOS / Android)~~
 * ~~Mining pool listings (Suprnova, Rplant, FairMiningPool, RabbitMiner)~~
 * ~~Exchange listing (Cexius)~~
+* ~~Exchange listing (Exbitron)~~
 * Additional exchange listings
 * SRBMiner native support ✅
 
