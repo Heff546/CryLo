@@ -365,6 +365,7 @@ Each pool's website provides connection instructions and stratum endpoints. For 
 | --- | --- | --- |
 | **Cexius** | C64/USDT | https://cexius.com |
 | **Exbitron** | C64/USDT | https://app.exbitron.com/exchange/?market=C64-USDT |
+| **NoirTrade** | C64/USDT | https://noirtrade.com/trade?pair=C64_USDT0 |
 
 ## Network Configuration
 
