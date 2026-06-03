@@ -27,6 +27,7 @@ struct NodeStats {
     std::atomic<uint64_t> target_height{0};
     std::atomic<bool> synced{false};
     std::atomic<bool> mining{false};
+    std::atomic<uint64_t> hashrate{0};
 
     std::mutex mtx;
     std::string last_block_id;
@@ -62,7 +63,7 @@ enum LogColor {
 };
 
 // Easylogging++ callback to intercept logs
-class C64TuiLogCallback : public el::LogDispatchCallback {
+class CryLoTuiLogCallback : public el::LogDispatchCallback {
 protected:
     void handle(const el::LogDispatchData* data) override;
 };

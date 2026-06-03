@@ -202,7 +202,7 @@ namespace cryptonote {
   }
 
   difficulty_type next_difficulty(std::vector<uint64_t> timestamps, std::vector<difficulty_type> cumulative_difficulties, size_t target_seconds, uint64_t HEIGHT, network_type nettype) {
-    // C64 CHAIN MAINNET: bootstrap 2 phases
+    // CryLo Chain MAINNET: bootstrap 2 phases
     if (HEIGHT <= 280) {
       return 100;                                   // Phase 1: pre-mine (blocs 0-280)
     }
@@ -270,12 +270,12 @@ namespace cryptonote {
   difficulty_type next_difficulty_v2(std::vector<uint64_t> timestamps, std::vector<difficulty_type> cumulative_difficulties, size_t target_seconds, uint64_t HEIGHT, network_type nettype) {
     const int64_t T = static_cast<int64_t>(target_seconds);
     size_t N = DIFFICULTY_WINDOW_V2;
-    // C64 CHAIN MAINNET: bootstrap 2 phases
+    // CryLo Chain MAINNET: bootstrap 2 phases
     if (HEIGHT <= 280) {
       return 100;                                   // Phase 1: pre-mine (blocs 0-280)
     }
     if (HEIGHT <= 280 + DIFFICULTY_WINDOW) {
-      return 300000000;                              // Phase 2: lancement public (blocs 281-1000)
+      return 1000;  // testnet public mining difficulty
     }
     if (timestamps.size() < 4) {
         return 1;
@@ -311,12 +311,12 @@ namespace cryptonote {
     int64_t T = DIFFICULTY_TARGET_V2;
     int64_t N = DIFFICULTY_WINDOW_V2;
     int64_t  L(0), ST, sum_3_ST(0), next_D, prev_D;
-    // C64 CHAIN MAINNET: bootstrap 2 phases
+    // CryLo Chain MAINNET: bootstrap 2 phases
     if (HEIGHT <= 280) {
       return 100;                                   // Phase 1: pre-mine (blocs 0-280)
     }
     if (HEIGHT <= 280 + DIFFICULTY_WINDOW) {
-      return 300000000;                              // Phase 2: lancement public (blocs 281-1000)
+      return 1000;  // testnet public mining difficulty
     }
     assert(timestamps.size() == cumulative_difficulties.size() && timestamps.size() <= static_cast<uint64_t>(N+1) );
     for ( int64_t i = 1; i <= N; i++ ) {
@@ -341,12 +341,12 @@ namespace cryptonote {
     uint64_t T = DIFFICULTY_TARGET_V2;
     uint64_t N = DIFFICULTY_WINDOW_V2;
     uint64_t L(0), ST(0), next_D, prev_D, avg_D, i;
-    // C64 CHAIN MAINNET: bootstrap 2 phases
+    // CryLo Chain MAINNET: bootstrap 2 phases
     if (HEIGHT <= 280) {
       return 100;                                   // Phase 1: pre-mine (blocs 0-280)
     }
     if (HEIGHT <= 280 + DIFFICULTY_WINDOW) {
-      return 300000000;                              // Phase 2: lancement public (blocs 281-1000)
+      return 1000;  // testnet public mining difficulty
     }
     assert(timestamps.size() == cumulative_difficulties.size() && timestamps.size() <= N+1 );
     std::vector<uint64_t>TS(N+1);
@@ -393,12 +393,12 @@ namespace cryptonote {
   difficulty_type next_difficulty_v5(std::vector<uint64_t> timestamps, std::vector<difficulty_type> cumulative_difficulties, uint64_t HEIGHT, network_type nettype) {
     uint64_t T = DIFFICULTY_TARGET_V2;
     uint64_t N = DIFFICULTY_WINDOW_V3;
-    // C64 CHAIN MAINNET: bootstrap 2 phases
+    // CryLo Chain MAINNET: bootstrap 2 phases
     if (HEIGHT <= 280) {
       return 100;                                   // Phase 1: pre-mine (blocs 0-280)
     }
     if (HEIGHT <= 280 + DIFFICULTY_WINDOW) {
-      return 300000000;                              // Phase 2: lancement public (blocs 281-1000)
+      return 1000;  // testnet public mining difficulty
     }
     assert(timestamps.size() == cumulative_difficulties.size() && timestamps.size() <= N+1 );
 
@@ -439,12 +439,12 @@ namespace cryptonote {
   }
 
   difficulty_type next_difficulty_v6(std::vector<uint64_t> timestamps, std::vector<difficulty_type> cumulative_difficulties, size_t target_seconds, uint64_t HEIGHT, network_type nettype) {
-    // C64 CHAIN MAINNET: bootstrap 2 phases
+    // CryLo Chain MAINNET: bootstrap 2 phases
     if (HEIGHT <= 280) {
       return 100;                                   // Phase 1: pre-mine (blocs 0-280)
     }
     if (HEIGHT <= 280 + DIFFICULTY_WINDOW) {
-      return 300000000;                              // Phase 2: lancement public (blocs 281-1000)
+      return 1000;  // testnet public mining difficulty
     }
     if(timestamps.size() > DIFFICULTY_WINDOW_V3)
     {

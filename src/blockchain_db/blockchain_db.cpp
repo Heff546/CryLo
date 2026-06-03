@@ -238,16 +238,16 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const std::pair
       rct::key commitment = rct::zeroCommit(vout.amount);
       vout.amount = 0;
 
-      // C64 CHAIN: HF19+ vesting - per-output unlock times for coinbase
+      // CryLo Chain: HF19+ vesting - per-output unlock times for coinbase
       uint64_t output_unlock_time = tx.unlock_time;
       if (miner_tx && tx.vin.size() == 1 && tx.vin[0].type() == typeid(txin_gen)) {
         size_t cb_height = boost::get<txin_gen>(tx.vin[0]).height;
-        // C64 CHAIN: Vesting starts at block 2 (v21 includes HF19, schedule {17@0, 21@2})
+        // CryLo Chain: Vesting starts at block 2 (v21 includes HF19, schedule {17@0, 21@2})
         bool is_vesting = (cb_height >= 2);
         if (is_vesting && i < 4 && tx.vout.size() >= 5) {
           static const uint64_t vesting_unlocks[] = {
-            C64_VESTING_UNLOCK_1, C64_VESTING_UNLOCK_2,
-            C64_VESTING_UNLOCK_3, C64_VESTING_UNLOCK_4
+            CryLo_VESTING_UNLOCK_1, CryLo_VESTING_UNLOCK_2,
+            CryLo_VESTING_UNLOCK_3, CryLo_VESTING_UNLOCK_4
           };
           output_unlock_time = cb_height + vesting_unlocks[i];
         }

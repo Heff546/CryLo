@@ -81,27 +81,32 @@ namespace cryptonote {
   }
   //-----------------------------------------------------------------------------------------------
   bool get_block_reward(size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, uint64_t &reward, uint8_t version) {
-    static_assert(DIFFICULTY_TARGET_V2%60==0&&DIFFICULTY_TARGET_V1%60==0,"difficulty targets must be a multiple of 60");
+    static_assert(DIFFICULTY_TARGET_V2 > 0 && DIFFICULTY_TARGET_V1 > 0,  "difficulty targets must be positive");
     const int target = version < 2 ? DIFFICULTY_TARGET_V1 : DIFFICULTY_TARGET_V2;
-    const int target_minutes = target / 60;
-    // C64 CHAIN: HF19 changes supply to 19,640,000 and emission speed to 21
+    const double target_minutes = target / 60.0;
+    // CryLo Chain: 3,000,000 main emission
     uint64_t money_supply;
     int emission_speed_factor;
     if (version >= HF_VERSION_VESTING) {
-      money_supply = MONEY_SUPPLY;  // 19,640,000 C64
+      money_supply = MONEY_SUPPLY;  // 3,000,000 CryLo
       emission_speed_factor = EMISSION_SPEED_FACTOR_PER_MINUTE - (target_minutes-1);
     } else {
-      money_supply = MONEY_SUPPLY;  // C64 CHAIN: use same supply for all versions on fresh mainnet
+      money_supply = MONEY_SUPPLY;  // CryLo Chain: use same supply for all versions on fresh mainnet
       emission_speed_factor = 24 - (target_minutes-1);  // old ESF=24
     }
     if (already_generated_coins >= money_supply) {
-      reward = FINAL_SUBSIDY_PER_MINUTE * target_minutes;
+      reward = (uint64_t)(FINAL_SUBSIDY_PER_MINUTE * target_minutes);
       return true;
     }
     uint64_t base_reward = (money_supply - already_generated_coins) >> emission_speed_factor;
-    if (base_reward < FINAL_SUBSIDY_PER_MINUTE*target_minutes)
+    // Allow old hardcoded genesis transaction only
+    if (already_generated_coins == 0)
     {
-      base_reward = FINAL_SUBSIDY_PER_MINUTE*target_minutes;
+      base_reward = UINT64_C(1873016357421); // 18.73016357421 CRY
+    }
+    if (base_reward < (uint64_t)(FINAL_SUBSIDY_PER_MINUTE * target_minutes))
+    {
+      base_reward = (uint64_t)(FINAL_SUBSIDY_PER_MINUTE * target_minutes);
     }
 
     uint64_t full_reward_zone = get_min_block_weight(version);

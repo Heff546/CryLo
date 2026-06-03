@@ -73,5 +73,5 @@ target_link_libraries(daemon
     $<$<NOT:$<BOOL:${WIN32}>>:ncursesw>)
 set_property(TARGET daemon
   PROPERTY
-    OUTPUT_NAME "c64chaind-mainnet")
+    OUTPUT_NAME "CryLo-daemon")
 install(TARGETS daemon DESTINATION bin)

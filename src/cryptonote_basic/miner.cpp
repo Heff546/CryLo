@@ -223,7 +223,16 @@ namespace cryptonote
         float hr = static_cast<float>(total_hr)/static_cast<float>(m_last_hash_rates.size());
         const auto flags = std::cout.flags();
         const auto precision = std::cout.precision();
-        std::cout << "hashrate: " << std::setprecision(4) << std::fixed << hr << std::setiosflags(flags) << std::setprecision(precision) << ENDL;
+
+	#ifndef USE_TUI
+	std::cout << "hashrate: "
+        	  << std::setprecision(4)
+        	  << std::fixed
+        	  << hr
+        	  << std::setiosflags(flags)
+        	  << std::setprecision(precision)
+        	  << ENDL;
+	#endif
       }
     }
     m_last_hr_merge_time = misc_utils::get_tick_count();

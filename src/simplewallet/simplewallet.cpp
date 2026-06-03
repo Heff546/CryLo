@@ -189,7 +189,7 @@ namespace
   const command_line::arg_descriptor<bool> arg_non_deterministic = {"non-deterministic", sw::tr("Generate non-deterministic view and spend keys"), false};
   const command_line::arg_descriptor<uint64_t> arg_restore_height = {"restore-height", sw::tr("Restore from specific blockchain height"), 0};
   const command_line::arg_descriptor<std::string> arg_restore_date = {"restore-date", sw::tr("Restore from estimated blockchain height on specified date"), ""};
-  const command_line::arg_descriptor<bool> arg_do_not_relay = {"do-not-relay", sw::tr("The newly created transaction will not be relayed to the C64 Chain network"), false};
+  const command_line::arg_descriptor<bool> arg_do_not_relay = {"do-not-relay", sw::tr("The newly created transaction will not be relayed to the CryLo network"), false};
   const command_line::arg_descriptor<bool> arg_create_address_file = {"create-address-file", sw::tr("Create an address file for new wallets"), false};
   const command_line::arg_descriptor<std::string> arg_subaddress_lookahead = {"subaddress-lookahead", tools::wallet2::tr("Set subaddress lookahead sizes to <major>:<minor>"), ""};
   const command_line::arg_descriptor<bool> arg_use_english_language_names = {"use-english-language-names", sw::tr("Display English language names"), false};
@@ -257,7 +257,7 @@ namespace
   const char* USAGE_MMS("mms [<subcommand> [<subcommand_parameters>]]");
   const char* USAGE_MMS_INIT("mms init <required_signers>/<authorized_signers> <own_label> <own_transport_address>");
   const char* USAGE_MMS_INFO("mms info");
-  const char* USAGE_MMS_SIGNER("mms signer [<number> <label> [<transport_address> [<c64chain_address>]]]");
+  const char* USAGE_MMS_SIGNER("mms signer [<number> <label> [<transport_address> [<CryLochain_address>]]]");
   const char* USAGE_MMS_LIST("mms list");
   const char* USAGE_MMS_NEXT("mms next [sync]");
   const char* USAGE_MMS_SYNC("mms sync");
@@ -527,7 +527,7 @@ namespace
     std::stringstream prompt;
     prompt << sw::tr("For URL: ") << url
            << ", " << dnssec_str << std::endl
-           << sw::tr(" C64 Chain Address = ") << addresses[0]
+           << sw::tr(" CryLo Chain Address = ") << addresses[0]
            << std::endl
            << sw::tr("Is this OK?")
     ;
@@ -1722,7 +1722,7 @@ bool simple_wallet::export_raw_multisig(const std::vector<std::string> &args)
     for (auto &ptx: txs.m_ptx)
     {
       const crypto::hash txid = cryptonote::get_transaction_hash(ptx.tx);
-      const std::string filename = std::string("raw_multisig_c64chain_tx_") + epee::string_tools::pod_to_hex(txid);
+      const std::string filename = std::string("raw_multisig_CryLochain_tx_") + epee::string_tools::pod_to_hex(txid);
       if (!filenames.empty())
         filenames += ", ";
       filenames += filename;
@@ -2362,25 +2362,25 @@ bool simple_wallet::public_nodes(const std::vector<std::string> &args)
 
 bool simple_wallet::welcome(const std::vector<std::string> &args)
 {
-  message_writer() << tr("Welcome to C64 Chain, the retro CPU-mined cryptocurrency.");
+  message_writer() << tr("Welcome to CryLo Chain, the retro CPU-mined cryptocurrency.");
   message_writer() << "";
-  message_writer() << tr("C64 Chain, like Bitcoin, is a cryptocurrency. That is, it is digital money.");
-  message_writer() << tr("Unlike Bitcoin, your C64 Chain transactions and balance stay private and are not visible to the world by default.");
+  message_writer() << tr("CryLo Chain, like Bitcoin, is a cryptocurrency. That is, it is digital money.");
+  message_writer() << tr("Unlike Bitcoin, your CryLo Chain transactions and balance stay private and are not visible to the world by default.");
   message_writer() << tr("However, you have the option of making those available to select parties if you choose to.");
   message_writer() << "";
-  message_writer() << tr("C64 Chain protects your privacy on the blockchain, and while C64 Chain strives to improve all the time,");
-  message_writer() << tr("no privacy technology can be 100% perfect, C64 Chain included.");
-  message_writer() << tr("C64 Chain cannot protect you from malware, and it may not be as effective as we hope against powerful adversaries.");
-  message_writer() << tr("Flaws in C64 Chain may be discovered in the future, and attacks may be developed to peek under some");
-  message_writer() << tr("of the layers of privacy C64 Chain provides. Be safe and practice defense in depth.");
+  message_writer() << tr("CryLo Chain protects your privacy on the blockchain, and while CryLo Chain strives to improve all the time,");
+  message_writer() << tr("no privacy technology can be 100% perfect, CryLo Chain included.");
+  message_writer() << tr("CryLo Chain cannot protect you from malware, and it may not be as effective as we hope against powerful adversaries.");
+  message_writer() << tr("Flaws in CryLo Chain may be discovered in the future, and attacks may be developed to peek under some");
+  message_writer() << tr("of the layers of privacy CryLo Chain provides. Be safe and practice defense in depth.");
   message_writer() << "";
-  message_writer() << tr("Welcome to C64 Chain! CPU mining for everyone. READY. RUN.");
+  message_writer() << tr("Welcome to CryLo Chain! CPU mining for everyone. READY. RUN.");
   return true;
 }
 
 bool simple_wallet::version(const std::vector<std::string> &args)
 {
-  message_writer() << "C64 Chain '" << MONERO_RELEASE_NAME << "' (v" << MONERO_VERSION_FULL << ")";
+  message_writer() << "CryLo Chain '" << MONERO_RELEASE_NAME << "' (v" << MONERO_VERSION_FULL << ")";
   return true;
 }
 
@@ -2516,7 +2516,7 @@ bool simple_wallet::show_qr_code(const std::vector<std::string> &args)
   WTEXTON();
   try
   {
-    const std::string address = "c64chain:" + m_wallet->get_subaddress_as_str({m_current_subaddress_account, subaddress_index});
+    const std::string address = "CryLochain:" + m_wallet->get_subaddress_as_str({m_current_subaddress_account, subaddress_index});
     const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(address.c_str(), qrcodegen::QrCode::Ecc::LOW);
     for (int y = -2; y < qr.getSize() + 2; y+=2)
     {
@@ -2716,7 +2716,7 @@ bool simple_wallet::set_unit(const std::vector<std::string> &args/* = std::vecto
   const std::string &unit = args[1];
   unsigned int decimal_point = CRYPTONOTE_DISPLAY_DECIMAL_POINT;
 
-  if (unit == "c64chain")
+  if (unit == "CryLochain")
     decimal_point = CRYPTONOTE_DISPLAY_DECIMAL_POINT;
   else if (unit == "verywow")
     decimal_point = CRYPTONOTE_DISPLAY_DECIMAL_POINT - 4;
@@ -3276,17 +3276,17 @@ bool simple_wallet::help(const std::vector<std::string> &args/* = std::vector<st
     message_writer() << tr("\"vesting\" - Show vesting unlock timeline.");
     message_writer() << tr("\"address all\" - Show all addresses.");
     message_writer() << tr("\"address new\" - Create new subaddress.");
-    message_writer() << tr("\"transfer <address> <amount>\" - Send C64 to an address.");
+    message_writer() << tr("\"transfer <address> <amount>\" - Send CryLo to an address.");
     message_writer() << tr("\"show_transfers [in|out|pending|failed|pool]\" - Show transactions.");
     message_writer() << tr("\"sweep_all <address>\" - Send whole balance to another wallet.");
     message_writer() << tr("\"seed\" - Show secret 25 words that can be used to recover this wallet.");
-    message_writer() << tr("\"refresh\" - Synchronize wallet with the C64 Chain network.");
+    message_writer() << tr("\"refresh\" - Synchronize wallet with the CryLo Chain network.");
     message_writer() << tr("\"status\" - Check current status of wallet.");
     message_writer() << tr("\"version\" - Check software version.");
     message_writer() << tr("\"exit\" - Exit wallet.");
     message_writer() << tr("\"clear\" - Clear screen.");
     message_writer() << "";
-    message_writer() << tr("\"donate <amount>\" - Donate C64 to the development team.");
+    message_writer() << tr("\"donate <amount>\" - Donate CryLo to the development team.");
     message_writer() << "";
   }
   else if ((args.size() == 1) && (args.front() == "all"))
@@ -3455,12 +3455,12 @@ simple_wallet::simple_wallet()
   m_cmd_binder.set_handler("donate",
                            boost::bind(&simple_wallet::on_command, this, &simple_wallet::donate, _1),
                            tr(USAGE_DONATE),
-                           tr("Donate <amount> to the development team (c64chain.org)."));
+                           tr("Donate <amount> to the development team (CryLochain.org)."));
   m_cmd_binder.set_handler("sign_transfer",
                            boost::bind(&simple_wallet::on_command, this, &simple_wallet::sign_transfer, _1),
                            tr(USAGE_SIGN_TRANSFER),
                            tr("Sign a transaction from a file. If the parameter \"export_raw\" is specified, transaction raw hex data suitable for the daemon RPC /sendrawtransaction is exported.\n"
-                              "Use the parameter <filename> to specify the file to read from. If not specified, the default \"unsigned_c64chain_tx\" will be used."));
+                              "Use the parameter <filename> to specify the file to read from. If not specified, the default \"unsigned_CryLochain_tx\" will be used."));
   m_cmd_binder.set_handler("submit_transfer",
                            boost::bind(&simple_wallet::on_command, this, &simple_wallet::submit_transfer, _1),
                            tr("Submit a signed transaction from a file."));
@@ -3530,8 +3530,8 @@ simple_wallet::simple_wallet()
                                   "ask-password <0|1|2   (or never|action|decrypt)>\n "
                                   "  action: ask the password before many actions such as transfer, etc\n "
                                   "  decrypt: same as action, but keeps the spend key encrypted in memory when not needed\n "
-                                  "unit <c64chain|c64kilo|c64mega|c64giga|dust>\n "
-                                  "  Set the default C64 (sub-)unit.\n "
+                                  "unit <CryLochain|CryLokilo|CryLomega|CryLogiga|dust>\n "
+                                  "  Set the default CryLo (sub-)unit.\n "
                                   "min-outputs-count [n]\n "
                                   "  Try to keep at least that many outputs of value at least min-outputs-value.\n "
                                   "min-outputs-value [n]\n "
@@ -3549,9 +3549,9 @@ simple_wallet::simple_wallet()
                                   "auto-low-priority <1|0>\n "
                                   "  Whether to automatically use the low priority fee level when it's safe to do so.\n "
                                   "segregate-pre-fork-outputs <1|0>\n "
-                                  "  Set this if you intend to spend outputs on both C64 Chain AND a key reusing fork.\n "
+                                  "  Set this if you intend to spend outputs on both CryLo Chain AND a key reusing fork.\n "
                                   "key-reuse-mitigation2 <1|0>\n "
-                                  "  Set this if you are not sure whether you will spend on a key reusing C64 Chain fork later.\n "
+                                  "  Set this if you are not sure whether you will spend on a key reusing CryLo Chain fork later.\n "
                                   "subaddress-lookahead <major>:<minor>\n "
                                   "  Set the lookahead sizes for the subaddress hash table.\n "
                                   "segregation-height <n>\n "
@@ -3768,7 +3768,7 @@ simple_wallet::simple_wallet()
   m_cmd_binder.set_handler("mms signer",
                            boost::bind(&simple_wallet::on_command, this, &simple_wallet::mms, _1),
                            tr(USAGE_MMS_SIGNER),
-                           tr("Set or modify authorized signer info (single-word label, transport address, C64 Chain address), or list all signers"));
+                           tr("Set or modify authorized signer info (single-word label, transport address, CryLo Chain address), or list all signers"));
   m_cmd_binder.set_handler("mms list",
                            boost::bind(&simple_wallet::on_command, this, &simple_wallet::mms, _1),
                            tr(USAGE_MMS_LIST),
@@ -3893,7 +3893,7 @@ simple_wallet::simple_wallet()
   m_cmd_binder.set_handler("welcome",
                            boost::bind(&simple_wallet::on_command, this, &simple_wallet::welcome, _1),
                            tr(USAGE_WELCOME),
-                           tr("Prints basic info about C64 Chain for first time users"));
+                           tr("Prints basic info about CryLo Chain for first time users"));
   m_cmd_binder.set_handler("version",
                            boost::bind(&simple_wallet::on_command, this, &simple_wallet::version, _1),
                            tr(USAGE_VERSION),
@@ -4039,7 +4039,7 @@ bool simple_wallet::set_variable(const std::vector<std::string> &args)
     CHECK_SIMPLE_VARIABLE("refresh-type", set_refresh_type, tr("full (slowest, no assumptions); optimize-coinbase (fast, assumes the whole coinbase is paid to a single address); no-coinbase (fastest, assumes we receive no coinbase transaction), default (same as optimize-coinbase)"));
     CHECK_SIMPLE_VARIABLE("priority", set_default_priority, tr("0, 1, 2, 3, or 4, or one of ") << join_priority_strings(", "));
     CHECK_SIMPLE_VARIABLE("ask-password", set_ask_password, tr("0|1|2 (or never|action|decrypt)"));
-    CHECK_SIMPLE_VARIABLE("unit", set_unit, tr("c64, megac64, kiloc64, c64coin, dust"));
+    CHECK_SIMPLE_VARIABLE("unit", set_unit, tr("CryLo, megaCryLo, kiloCryLo, CryLocoin, dust"));
     CHECK_SIMPLE_VARIABLE("max-reorg-depth", set_max_reorg_depth, tr("unsigned integer"));
     CHECK_SIMPLE_VARIABLE("min-outputs-count", set_min_output_count, tr("unsigned integer"));
     CHECK_SIMPLE_VARIABLE("min-outputs-value", set_min_output_value, tr("amount"));
@@ -4854,7 +4854,7 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm)
     bool ssl = false;
     if (m_wallet->check_connection(NULL, &ssl) && !ssl)
       message_writer(console_color_red, true) << boost::format(tr("Using your own without SSL exposes your RPC traffic to monitoring"));
-    message_writer(console_color_red, true) << boost::format(tr("You are strongly encouraged to connect to the C64 Chain network using your own daemon"));
+    message_writer(console_color_red, true) << boost::format(tr("You are strongly encouraged to connect to the CryLo Chain network using your own daemon"));
     message_writer(console_color_red, true) << boost::format(tr("If you or someone you trust are operating this daemon, you can use --trusted-daemon"));
 
     COMMAND_RPC_GET_INFO::request req;
@@ -4875,7 +4875,7 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm)
     check_background_mining(password);
 
   if (welcome)
-    message_writer(console_color_yellow, true) << tr("If you are new to C64 Chain, type \"welcome\" for a brief overview.");
+    message_writer(console_color_yellow, true) << tr("If you are new to CryLo Chain, type \"welcome\" for a brief overview.");
 
   m_last_activity_time = time(NULL);
   return true;
@@ -5109,7 +5109,7 @@ boost::optional<epee::wipeable_string> simple_wallet::new_wallet(const boost::pr
     "Use the \"help\" command to see a simplified list of available commands.\n"
     "Use \"help all\" command to see the list of all available commands.\n"
     "Use \"help <command>\" to see a command's documentation.\n"
-    "Always use the \"exit\" command when closing c64wallet to save \n"
+    "Always use the \"exit\" command when closing CryLowallet to save \n"
     "your current session's state. Otherwise, you might need to synchronize \n"
     "your wallet again (your wallet keys are NOT at risk in any case).\n")
   ;
@@ -5494,7 +5494,7 @@ void simple_wallet::start_background_mining()
       return;
     }
   }
-  success_msg_writer() << tr("Background mining enabled. Thank you for supporting the C64 Chain network.");
+  success_msg_writer() << tr("Background mining enabled. Thank you for supporting the CryLo Chain network.");
 }
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::stop_background_mining()
@@ -5570,7 +5570,7 @@ void simple_wallet::check_background_mining(const epee::wipeable_string &passwor
   {
     message_writer() << tr("The daemon is not set up to background mine.");
     message_writer() << tr("With background mining enabled, the daemon will mine when idle and not on battery.");
-    message_writer() << tr("Enabling this supports the network you are using, and makes you eligible for receiving new C64");
+    message_writer() << tr("Enabling this supports the network you are using, and makes you eligible for receiving new CryLo");
     std::string accepted = input_line(tr("Do you want to do it now? (Y/Yes/N/No): "));
     if (std::cin.eof() || !command_line::is_yes(accepted)) {
       m_wallet->setup_background_mining(tools::wallet2::BackgroundMiningNo);
@@ -5592,14 +5592,14 @@ void simple_wallet::check_background_mining(const epee::wipeable_string &passwor
 bool simple_wallet::start_mining(const std::vector<std::string>& args)
 {
   message_writer() << "";
-  message_writer() << "  **** C64 CHAIN — MINING NOTICE ****";
+  message_writer() << "  **** CryLo CHAIN — MINING NOTICE ****";
   message_writer() << "";
-  message_writer() << "  Mining from wallet is disabled in C64 Chain.";
-  message_writer() << "  Use the official c64miner for the authentic";
+  message_writer() << "  Mining from wallet is disabled in CryLo Chain.";
+  message_writer() << "  Use the official CryLominer for the authentic";
   message_writer() << "  Commodore 64 mining experience!";
   message_writer() << "";
-  message_writer() << "  Download: https://github.com/c64chain/c64miner";
-  message_writer() << "  Usage:    ./c64miner.py --daemon-host 127.0.0.1";
+  message_writer() << "  Download: https://github.com/CryLochain/CryLominer";
+  message_writer() << "  Usage:    ./CryLominer.py --daemon-host 127.0.0.1";
   message_writer() << "";
   return true;
 }
@@ -6122,8 +6122,55 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
     unlock_time_message = (boost::format(" (%lu block(s) to unlock)") % blocks_to_unlock).str();
   else if (time_to_unlock > 0)
     unlock_time_message = (boost::format(" (%s to unlock)") % get_human_readable_timespan(time_to_unlock)).str();
-  success_msg_writer() << tr("Balance: ") << print_money(m_wallet->balance(m_current_subaddress_account, false)) << ", "
-    << tr("unlocked balance: ") << print_money(unlocked_balance) << unlock_time_message << extra;
+  uint64_t total_balance = m_wallet->balance(m_current_subaddress_account, false);
+  uint64_t locked_balance = total_balance > unlocked_balance ? total_balance - unlocked_balance : 0;
+
+  uint64_t vested_30 = 0;
+  uint64_t vested_60 = 0;
+  uint64_t vested_90 = 0;
+
+  uint64_t current_height = m_wallet->get_blockchain_current_height();
+
+  for (size_t i = 0; i < m_wallet->get_num_transfer_details(); ++i)
+  {
+    const auto& td = m_wallet->get_transfer_details(i);
+
+    if (m_wallet->is_transfer_unlocked(td.m_tx.unlock_time, td.m_block_height))
+      continue;
+
+    uint64_t unlock_height = td.m_tx.unlock_time;
+
+    if (unlock_height <= current_height)
+      continue;
+
+    uint64_t original_lock_blocks =
+      td.m_tx.unlock_time > td.m_block_height
+        ? td.m_tx.unlock_time - td.m_block_height
+        : 0;
+
+success_msg_writer() 
+  << "DEBUG vest output amount=" << print_money(td.amount())
+  << " block_height=" << td.m_block_height
+  << " unlock_time=" << td.m_tx.unlock_time
+  << " original_lock_blocks=" << original_lock_blocks;
+
+    if (original_lock_blocks <= 12343)
+      vested_30 += td.amount();
+    else if (original_lock_blocks <= 24686)
+      vested_60 += td.amount();
+    else
+      vested_90 += td.amount();
+  }
+
+  success_msg_writer() << tr("Balance: ") << print_money(total_balance) << ", "
+    << tr("unlocked balance: ") << print_money(unlocked_balance) << ", "
+    << tr("locked/vested balance: ") << print_money(locked_balance)
+    << unlock_time_message << extra;
+
+  success_msg_writer() << tr("30 days: ") << print_money(vested_30);
+  success_msg_writer() << tr("60 days: ") << print_money(vested_60);
+  success_msg_writer() << tr("90 days: ") << print_money(vested_90);
+
   std::map<uint32_t, uint64_t> balance_per_subaddress = m_wallet->balance_per_subaddress(m_current_subaddress_account, false);
   std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> unlocked_balance_per_subaddress = m_wallet->unlocked_balance_per_subaddress(m_current_subaddress_account, false);
   if (!detailed || balance_per_subaddress.empty())
@@ -6295,7 +6342,7 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
   }
 
   // Vesting tier definitions (unlock delay in blocks from mined block)
-  const uint64_t tier_delays[] = { C64_VESTING_UNLOCK_1, C64_VESTING_UNLOCK_2, C64_VESTING_UNLOCK_3, C64_VESTING_UNLOCK_4 };
+  const uint64_t tier_delays[] = { CryLo_VESTING_UNLOCK_1, CryLo_VESTING_UNLOCK_2, CryLo_VESTING_UNLOCK_3, CryLo_VESTING_UNLOCK_4 };
   const char* tier_names[] = { "Tier 1 (24h)", "Tier 2 (30d)", "Tier 3 (60d)", "Tier 4 (90d)" };
 
   // Collect all unspent outputs
@@ -6364,14 +6411,14 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
 
   // === HEADER ===
   success_msg_writer() << "";
-  success_msg_writer() << tr("  === C64 VESTING STATUS ===");
+  success_msg_writer() << tr("  === CryLo VESTING STATUS ===");
   success_msg_writer() << "";
   success_msg_writer() << boost::format(tr("  Network height:  %u")) % blockchain_height;
-  success_msg_writer() << boost::format(tr("  Total balance:   %.4f C64")) % ((double)total_amount / COIN);
-  success_msg_writer() << boost::format(tr("  Unlocked:        %.4f C64 (%.1f%%)"))
+  success_msg_writer() << boost::format(tr("  Total balance:   %.4f CryLo")) % ((double)total_amount / COIN);
+  success_msg_writer() << boost::format(tr("  Unlocked:        %.4f CryLo (%.1f%%)"))
     % ((double)total_unlocked / COIN)
     % (total_amount > 0 ? (double)total_unlocked / total_amount * 100.0 : 0.0);
-  success_msg_writer() << boost::format(tr("  Locked:          %.4f C64 (%.1f%%)"))
+  success_msg_writer() << boost::format(tr("  Locked:          %.4f CryLo (%.1f%%)"))
     % ((double)total_locked / COIN)
     % (total_amount > 0 ? (double)total_locked / total_amount * 100.0 : 0.0);
 
@@ -6390,7 +6437,7 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
 
   if (pre_vesting_count > 0)
   {
-    success_msg_writer() << boost::format(tr("  Pre-vesting:     %.4f C64 (%u outputs)"))
+    success_msg_writer() << boost::format(tr("  Pre-vesting:     %.4f CryLo (%u outputs)"))
       % ((double)pre_vesting_amount / COIN) % pre_vesting_count;
   }
 
@@ -6430,7 +6477,7 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
       // Format amounts with 4 decimals: divide by COIN to get double
       double d_total_unlocked = (double)total_unlocked / COIN;
       double pct_now = total_amount > 0 ? (double)total_unlocked / total_amount * 100.0 : 0.0;
-      success_msg_writer() << boost::format("  %-22s %-18s %15s %14.4f C64 %6.1f%%")
+      success_msg_writer() << boost::format("  %-22s %-18s %15s %14.4f CryLo %6.1f%%")
         % tr("Now") % "-" % "-"
         % d_total_unlocked
         % pct_now;
@@ -6463,7 +6510,7 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
       {
         double d_newly = (double)newly / COIN;
         double d_running = (double)running / COIN;
-        success_msg_writer() << boost::format("  %-22s %-18s %12.4f C64 %14.4f C64 %6.1f%%")
+        success_msg_writer() << boost::format("  %-22s %-18s %12.4f CryLo %14.4f CryLo %6.1f%%")
           % ms.name
           % date_buf
           % d_newly
@@ -6494,7 +6541,7 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
       success_msg_writer() << "";
       success_msg_writer() << boost::format(tr("  100%% unlocked: %s (in ~%u days)"))
         % date_buf % days_left;
-      success_msg_writer() << boost::format(tr("  Total: %.4f C64")) % ((double)total_amount / COIN);
+      success_msg_writer() << boost::format(tr("  Total: %.4f CryLo")) % ((double)total_amount / COIN);
     }
   }
   else if (total_locked == 0 && total_amount > 0)
@@ -6826,7 +6873,7 @@ void simple_wallet::check_for_inactivity_lock(bool user)
     m_in_command = true;
     if (!user)
     {
-      tools::msg_writer() << "\n    **** C64 CHAIN WALLET ****\n    WALLET LOCKED\n    PRESS PLAY ON TAPE\n";
+      tools::msg_writer() << "\n    **** CryLo CHAIN WALLET ****\n    WALLET LOCKED\n    PRESS PLAY ON TAPE\n";
     }
 
     bool started_background_sync = false;
@@ -7038,7 +7085,7 @@ bool simple_wallet::transfer_main(const std::vector<std::string> &args_, bool ca
     }
     else
     {
-      if (boost::starts_with(local_args[i], "c64chain:"))
+      if (boost::starts_with(local_args[i], "CryLochain:"))
         fail_msg_writer() << tr("Invalid last argument: ") << local_args.back() << ": " << error;
       else
         fail_msg_writer() << tr("Invalid last argument: ") << local_args.back();
@@ -7256,7 +7303,7 @@ bool simple_wallet::transfer_main(const std::vector<std::string> &args_, bool ca
     }
     else if (m_wallet->multisig())
     {
-      bool r = m_wallet->save_multisig_tx(ptx_vector, "multisig_c64chain_tx");
+      bool r = m_wallet->save_multisig_tx(ptx_vector, "multisig_CryLochain_tx");
       if (!r)
       {
         fail_msg_writer() << tr("Failed to write transaction(s) to file");
@@ -7264,7 +7311,7 @@ bool simple_wallet::transfer_main(const std::vector<std::string> &args_, bool ca
       }
       else
       {
-        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "multisig_c64chain_tx";
+        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "multisig_CryLochain_tx";
       }
     }
     else if (m_wallet->get_account().get_device().has_tx_cold_sign())
@@ -7293,7 +7340,7 @@ bool simple_wallet::transfer_main(const std::vector<std::string> &args_, bool ca
     }
     else if (m_wallet->watch_only())
     {
-      bool r = m_wallet->save_tx(ptx_vector, "unsigned_c64chain_tx");
+      bool r = m_wallet->save_tx(ptx_vector, "unsigned_CryLochain_tx");
       if (!r)
       {
         fail_msg_writer() << tr("Failed to write transaction(s) to file");
@@ -7301,7 +7348,7 @@ bool simple_wallet::transfer_main(const std::vector<std::string> &args_, bool ca
       }
       else
       {
-        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "unsigned_c64chain_tx";
+        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "unsigned_CryLochain_tx";
       }
     }
     else
@@ -7391,26 +7438,26 @@ bool simple_wallet::sweep_unmixable(const std::vector<std::string> &args_)
     if (m_wallet->multisig())
     {
       CHECK_MULTISIG_ENABLED();
-      bool r = m_wallet->save_multisig_tx(ptx_vector, "multisig_c64chain_tx");
+      bool r = m_wallet->save_multisig_tx(ptx_vector, "multisig_CryLochain_tx");
       if (!r)
       {
         fail_msg_writer() << tr("Failed to write transaction(s) to file");
       }
       else
       {
-        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "multisig_c64chain_tx";
+        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "multisig_CryLochain_tx";
       }
     }
     else if (m_wallet->watch_only())
     {
-      bool r = m_wallet->save_tx(ptx_vector, "unsigned_c64chain_tx");
+      bool r = m_wallet->save_tx(ptx_vector, "unsigned_CryLochain_tx");
       if (!r)
       {
         fail_msg_writer() << tr("Failed to write transaction(s) to file");
       }
       else
       {
-        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "unsigned_c64chain_tx";
+        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "unsigned_CryLochain_tx";
       }
     }
     else
@@ -7662,14 +7709,14 @@ bool simple_wallet::sweep_main(uint32_t account, uint64_t below, const std::vect
     if (m_wallet->multisig())
     {
       CHECK_MULTISIG_ENABLED();
-      bool r = m_wallet->save_multisig_tx(ptx_vector, "multisig_c64chain_tx");
+      bool r = m_wallet->save_multisig_tx(ptx_vector, "multisig_CryLochain_tx");
       if (!r)
       {
         fail_msg_writer() << tr("Failed to write transaction(s) to file");
       }
       else
       {
-        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "multisig_c64chain_tx";
+        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "multisig_CryLochain_tx";
       }
     }
     else if (m_wallet->get_account().get_device().has_tx_cold_sign())
@@ -7699,14 +7746,14 @@ bool simple_wallet::sweep_main(uint32_t account, uint64_t below, const std::vect
     }
     else if (m_wallet->watch_only())
     {
-      bool r = m_wallet->save_tx(ptx_vector, "unsigned_c64chain_tx");
+      bool r = m_wallet->save_tx(ptx_vector, "unsigned_CryLochain_tx");
       if (!r)
       {
         fail_msg_writer() << tr("Failed to write transaction(s) to file");
       }
       else
       {
-        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "unsigned_c64chain_tx";
+        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "unsigned_CryLochain_tx";
       }
     }
     else
@@ -7898,14 +7945,14 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
     if (m_wallet->multisig())
     {
       CHECK_MULTISIG_ENABLED();
-      bool r = m_wallet->save_multisig_tx(ptx_vector, "multisig_c64chain_tx");
+      bool r = m_wallet->save_multisig_tx(ptx_vector, "multisig_CryLochain_tx");
       if (!r)
       {
         fail_msg_writer() << tr("Failed to write transaction(s) to file");
       }
       else
       {
-        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "multisig_c64chain_tx";
+        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "multisig_CryLochain_tx";
       }
     }
     else if (m_wallet->get_account().get_device().has_tx_cold_sign())
@@ -7935,14 +7982,14 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
     }
     else if (m_wallet->watch_only())
     {
-      bool r = m_wallet->save_tx(ptx_vector, "unsigned_c64chain_tx");
+      bool r = m_wallet->save_tx(ptx_vector, "unsigned_CryLochain_tx");
       if (!r)
       {
         fail_msg_writer() << tr("Failed to write transaction(s) to file");
       }
       else
       {
-        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "unsigned_c64chain_tx";
+        success_msg_writer(true) << tr("Unsigned transaction(s) successfully written to file: ") << "unsigned_CryLochain_tx";
       }
     }
     else
@@ -8066,7 +8113,7 @@ bool simple_wallet::donate(const std::vector<std::string> &args_)
   if (!payment_id_str.empty())
     local_args.push_back(payment_id_str);
   if (m_wallet->nettype() == cryptonote::MAINNET)
-    message_writer() << (boost::format(tr("Donating %s %s to The C64 Chain Project (c64chain.org or %s).")) % amount_str % cryptonote::get_unit(cryptonote::get_default_decimal_point()) % MONERO_DONATION_ADDR).str();
+    message_writer() << (boost::format(tr("Donating %s %s to The CryLo Chain Project (CryLochain.org or %s).")) % amount_str % cryptonote::get_unit(cryptonote::get_default_decimal_point()) % MONERO_DONATION_ADDR).str();
   else
     message_writer() << (boost::format(tr("Donating %s %s to %s.")) % amount_str % cryptonote::get_unit(cryptonote::get_default_decimal_point()) % address_str).str();
   transfer(local_args);
@@ -8259,7 +8306,7 @@ bool simple_wallet::sign_transfer(const std::vector<std::string> &args_)
   CHECK_IF_BACKGROUND_SYNCING("cannot sign transfer");
 
   bool export_raw = false;
-  std::string unsigned_filename = "unsigned_c64chain_tx";
+  std::string unsigned_filename = "unsigned_CryLochain_tx";
   if (args_.size() > 2 || (args_.size() == 2 && args_[0] != "export_raw"))
   {
     PRINT_USAGE(USAGE_SIGN_TRANSFER);
@@ -8283,7 +8330,7 @@ bool simple_wallet::sign_transfer(const std::vector<std::string> &args_)
   std::vector<tools::wallet2::pending_tx> ptx;
   try
   {
-    bool r = m_wallet->sign_tx(unsigned_filename, "signed_c64chain_tx", ptx, [&](const tools::wallet2::unsigned_tx_set &tx){ return accept_loaded_tx(tx); }, export_raw);
+    bool r = m_wallet->sign_tx(unsigned_filename, "signed_CryLochain_tx", ptx, [&](const tools::wallet2::unsigned_tx_set &tx){ return accept_loaded_tx(tx); }, export_raw);
     if (!r)
     {
       fail_msg_writer() << tr("Failed to sign transaction");
@@ -8303,7 +8350,7 @@ bool simple_wallet::sign_transfer(const std::vector<std::string> &args_)
       txids_as_text += (", ");
     txids_as_text += epee::string_tools::pod_to_hex(get_transaction_hash(t.tx));
   }
-  success_msg_writer(true) << tr("Transaction successfully signed to file ") << "signed_c64chain_tx" << ", txid " << txids_as_text;
+  success_msg_writer(true) << tr("Transaction successfully signed to file ") << "signed_CryLochain_tx" << ", txid " << txids_as_text;
   if (export_raw)
   {
     std::string rawfiles_as_text;
@@ -8311,7 +8358,7 @@ bool simple_wallet::sign_transfer(const std::vector<std::string> &args_)
     {
       if (i > 0)
         rawfiles_as_text += ", ";
-      rawfiles_as_text += "signed_c64chain_tx_raw" + (ptx.size() == 1 ? "" : ("_" + std::to_string(i)));
+      rawfiles_as_text += "signed_CryLochain_tx_raw" + (ptx.size() == 1 ? "" : ("_" + std::to_string(i)));
     }
     success_msg_writer(true) << tr("Transaction raw hex data exported to ") << rawfiles_as_text;
   }
@@ -8331,7 +8378,7 @@ bool simple_wallet::submit_transfer(const std::vector<std::string> &args_)
   try
   {
     std::vector<tools::wallet2::pending_tx> ptx_vector;
-    bool r = m_wallet->load_tx("signed_c64chain_tx", ptx_vector, [&](const tools::wallet2::signed_tx_set &tx){ return accept_loaded_tx(tx); });
+    bool r = m_wallet->load_tx("signed_CryLochain_tx", ptx_vector, [&](const tools::wallet2::signed_tx_set &tx){ return accept_loaded_tx(tx); });
     if (!r)
     {
       fail_msg_writer() << tr("Failed to load transaction from file");
@@ -8511,7 +8558,7 @@ bool simple_wallet::get_tx_proof(const std::vector<std::string> &args)
   try
   {
     std::string sig_str = m_wallet->get_tx_proof(txid, info.address, info.is_subaddress, args.size() == 3 ? args[2] : "");
-    const std::string filename = "c64chain_tx_proof";
+    const std::string filename = "CryLochain_tx_proof";
     if (m_wallet->save_to_file(filename, sig_str, true))
       success_msg_writer() << tr("signature file saved to: ") << filename;
     else
@@ -8724,7 +8771,7 @@ bool simple_wallet::get_spend_proof(const std::vector<std::string> &args)
   try
   {
     const std::string sig_str = m_wallet->get_spend_proof(txid, args.size() == 2 ? args[1] : "");
-    const std::string filename = "c64chain_spend_proof";
+    const std::string filename = "CryLochain_spend_proof";
     if (m_wallet->save_to_file(filename, sig_str, true))
       success_msg_writer() << tr("signature file saved to: ") << filename;
     else
@@ -8814,7 +8861,7 @@ bool simple_wallet::get_reserve_proof(const std::vector<std::string> &args)
   try
   {
     const std::string sig_str = m_wallet->get_reserve_proof(account_minreserve, args.size() == 2 ? args[1] : "");
-    const std::string filename = "c64chain_reserve_proof";
+    const std::string filename = "CryLochain_reserve_proof";
     if (m_wallet->save_to_file(filename, sig_str, true))
       success_msg_writer() << tr("signature file saved to: ") << filename;
     else
@@ -8990,7 +9037,7 @@ bool simple_wallet::get_transfers(std::vector<std::string>& local_args, std::vec
       std::string note = m_wallet->get_tx_note(pd.m_tx_hash);
       std::string destination = m_wallet->get_subaddress_as_str({m_current_subaddress_account, pd.m_subaddr_index.minor});
       const std::string type = pd.m_coinbase ? tr("block") : tr("in");
-      // C64 CHAIN: worst-case vesting unlock for coinbase
+      // CryLo CHAIN: worst-case vesting unlock for coinbase
       uint64_t effective_unlock_cli = pd.m_unlock_time;
       if (pd.m_coinbase && pd.m_amounts.size() >= 4) {
         effective_unlock_cli = pd.m_block_height + 25920;
@@ -10937,7 +10984,7 @@ void simple_wallet::commit_or_save(std::vector<tools::wallet2::pending_tx>& ptx_
       cryptonote::blobdata blob;
       tx_to_blob(ptx.tx, blob);
       const std::string blob_hex = epee::string_tools::buff_to_hex_nodelimer(blob);
-      const std::string filename = "raw_c64chain_tx" + (ptx_vector.size() == 1 ? "" : ("_" + std::to_string(i++)));
+      const std::string filename = "raw_CryLochain_tx" + (ptx_vector.size() == 1 ? "" : ("_" + std::to_string(i++)));
       if (m_wallet->save_to_file(filename, blob_hex, true))
         success_msg_writer(true) << tr("Transaction successfully saved to ") << filename << tr(", txid ") << txid;
       else
@@ -10995,7 +11042,7 @@ int main(int argc, char* argv[])
   positional_options.add(arg_command.name, -1);
 
 
-  // === C64 CHAIN: Datasette Animation + Banner ===
+  // === CryLo CHAIN: Datasette Animation + Banner ===
   {
     const char* colors[] = {
       "\033[41m", "\033[42m", "\033[43m", "\033[44m",
@@ -11027,7 +11074,7 @@ int main(int argc, char* argv[])
     fprintf(stderr, "\n");
     fflush(stderr);
     usleep(300000);
-    fprintf(stderr, "\033[36m    FOUND C64WALLET\033[0m\n");
+    fprintf(stderr, "\033[36m    FOUND CryLoWALLET\033[0m\n");
     fflush(stderr);
     usleep(800000);
     fprintf(stderr, "\033[36m    LOADING...\033[0m\n");
@@ -11037,31 +11084,31 @@ int main(int argc, char* argv[])
     fflush(stderr);
     usleep(300000);
 
-    // C64 Banner
+    // CryLo Banner
     fprintf(stderr, "\033[2J\033[H");
     fprintf(stderr, "\033[44m\033[97m");
     fprintf(stderr, "\n");
-    fprintf(stderr, "    **** C64 CHAIN WALLET V1.0 ****\n");
+    fprintf(stderr, "    **** CryLo CHAIN WALLET V1.0 ****\n");
     fprintf(stderr, "    64K RAM SYSTEM  38911 BASIC BYTES FREE\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "    READY.\n");
-    fprintf(stderr, "    RUN C64WALLET\n");
+    fprintf(stderr, "    RUN CryLoWALLET\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "\033[0m\n");
     fflush(stderr);
   }
-  // === END C64 CHAIN ===
+  // === END CryLo CHAIN ===
 
   boost::optional<po::variables_map> vm;
   bool should_terminate = false;
   std::tie(vm, should_terminate) = wallet_args::main(
    argc, argv,
-   "c64wallet [--wallet-file=<filename>|--generate-new-wallet=<filename>] [<COMMAND>]",
-    sw::tr("This is the command line C64 Chain wallet. It needs to connect to a C64 Chain\ndaemon to work correctly."),
+   "CryLowallet [--wallet-file=<filename>|--generate-new-wallet=<filename>] [<COMMAND>]",
+    sw::tr("This is the command line CryLo Chain wallet. It needs to connect to a CryLo Chain\ndaemon to work correctly."),
     desc_params,
     positional_options,
     [](const std::string &s, bool emphasis){ tools::scoped_message_writer(emphasis ? epee::console_color_white : epee::console_color_default, true) << s; },
-    "c64wallet.log"
+    "CryLowallet.log"
   );
 
   if (!vm)
@@ -11454,7 +11501,7 @@ void simple_wallet::mms_signer(const std::vector<std::string> &args)
   }
   if ((args.size() < 2) || (args.size() > 4))
   {
-    fail_msg_writer() << tr("mms signer [<number> <label> [<transport_address> [<c64chain_address>]]]");
+    fail_msg_writer() << tr("mms signer [<number> <label> [<transport_address> [<CryLochain_address>]]]");
     return;
   }
 
@@ -11473,14 +11520,14 @@ void simple_wallet::mms_signer(const std::vector<std::string> &args)
     bool ok = cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), args[3], oa_prompter);
     if (!ok)
     {
-      fail_msg_writer() << tr("Invalid C64 Chain address");
+      fail_msg_writer() << tr("Invalid CryLo Chain address");
       return;
     }
     monero_address = info.address;
     const std::vector<mms::message> &messages = ms.get_all_messages();
     if ((messages.size() > 0) || state.multisig)
     {
-      fail_msg_writer() << tr("Wallet state does not allow changing C64 Chain addresses anymore");
+      fail_msg_writer() << tr("Wallet state does not allow changing CryLo Chain addresses anymore");
       return;
     }
   }

@@ -105,17 +105,17 @@ namespace cryptonote
 #endif
     block_reward += fee;
 
-    // C64 CHAIN: 2% dev fund
+    // CryLo Chain: 2% dev fund
     uint64_t dev_fund_amount = 0;
     account_public_address dev_fund_addr = AUTO_VAL_INIT(dev_fund_addr);
     if (height > 0) {
-      dev_fund_amount = block_reward * C64_DEV_FUND_FEE_PERCENT / 100;
+      dev_fund_amount = block_reward * CryLo_DEV_FUND_FEE_PERCENT / 100;
       if (dev_fund_amount > 0) {
         block_reward -= dev_fund_amount;
         crypto::public_key dev_spend_pkey;
         crypto::public_key dev_view_pkey;
-        epee::string_tools::hex_to_pod(C64_DEV_FUND_SPENDKEY, dev_spend_pkey);
-        epee::string_tools::hex_to_pod(C64_DEV_FUND_VIEWKEY, dev_view_pkey);
+        epee::string_tools::hex_to_pod(CryLo_DEV_FUND_SPENDKEY, dev_spend_pkey);
+        epee::string_tools::hex_to_pod(CryLo_DEV_FUND_VIEWKEY, dev_view_pkey);
         dev_fund_addr.m_spend_public_key = dev_spend_pkey;
         dev_fund_addr.m_view_public_key = dev_view_pkey;
       }
@@ -131,11 +131,11 @@ namespace cryptonote
       block_reward = block_reward - block_reward % ::config::BASE_REWARD_CLAMP_THRESHOLD;
     }
     std::vector<uint64_t> out_amounts;
-    // C64 CHAIN: HF19+ vesting - split block reward into 4 outputs with staggered unlock
+    // CryLo Chain: HF19+ vesting - split block reward into 4 outputs with staggered unlock
     if (hard_fork_version >= HF_VERSION_VESTING && height > 0) {
       // Split block_reward into 4 equal parts (remainder goes to first output)
-      uint64_t quarter = block_reward / C64_VESTING_OUTPUTS;
-      uint64_t remainder = block_reward - (quarter * C64_VESTING_OUTPUTS);
+      uint64_t quarter = block_reward / CryLo_VESTING_OUTPUTS;
+      uint64_t remainder = block_reward - (quarter * CryLo_VESTING_OUTPUTS);
       out_amounts.push_back(quarter + remainder);  // output 0: 25% + dust
       out_amounts.push_back(quarter);              // output 1: 25%
       out_amounts.push_back(quarter);              // output 2: 25%
@@ -184,11 +184,12 @@ namespace cryptonote
 
       tx_out out;
       cryptonote::set_tx_out(amount, out_eph_public_key, use_view_tags, view_tag, out);
+
       tx.vout.push_back(out);
     }
 
 
-    // C64 CHAIN: add dev fund output
+    // CryLo Chain: add dev fund output
     if (dev_fund_amount > 0) {
       crypto::key_derivation dev_derivation = AUTO_VAL_INIT(dev_derivation);
       crypto::public_key dev_out_eph_public_key = AUTO_VAL_INIT(dev_out_eph_public_key);
@@ -202,7 +203,7 @@ namespace cryptonote
       if (use_view_tags)
         crypto::derive_view_tag(dev_derivation, dev_out_index, dev_view_tag);
       tx_out dev_out;
-      cryptonote::set_tx_out(dev_fund_amount, dev_out_eph_public_key, use_view_tags, dev_view_tag, dev_out);
+      cryptonote::set_tx_out(dev_fund_amount, dev_out_eph_public_key, use_view_tags, dev_view_tag, dev_out);	
       tx.vout.push_back(dev_out);
       summary_amounts += dev_fund_amount;
     }
@@ -705,21 +706,22 @@ namespace cryptonote
   }
   //---------------------------------------------------------------
   bool generate_genesis_block(
-      block& bl
-    , std::string const & genesis_tx
-    , uint32_t nonce
-    )
-  {
-    //genesis block
+    block& bl,
+    std::string const & genesis_tx,
+    uint32_t nonce)
+{
+    // genesis block
     bl = {};
 
     blobdata tx_bl;
     bool r = string_tools::parse_hexstr_to_binbuff(genesis_tx, tx_bl);
     CHECK_AND_ASSERT_MES(r, false, "failed to parse coinbase tx from hard coded blob");
+
     r = parse_and_validate_tx_from_blob(tx_bl, bl.miner_tx);
     CHECK_AND_ASSERT_MES(r, false, "failed to parse coinbase tx from hard coded blob");
-    bl.major_version = 17;  // Genesis block always version 17
-    bl.minor_version = 17;  // Genesis block always version 17
+
+    bl.major_version = 17;
+    bl.minor_version = 17;
     bl.timestamp = 0;
     bl.nonce = nonce;
     miner::find_nonce_for_given_block([](const cryptonote::block &b, uint64_t height, const crypto::hash *seed_hash, unsigned int threads, crypto::hash &hash){
@@ -737,7 +739,7 @@ namespace cryptonote
 
   bool get_block_longhash(const Blockchain *pbc, const blobdata& bd, crypto::hash& res, const uint64_t height, const int major_version, const crypto::hash *seed_hash, const int miners)
   {
-    // C64 CHAIN: Wownero block 202612 workaround removed
+    // CryLo Chain: Wownero block 202612 workaround removed
     if (major_version >= RX_BLOCK_VERSION)
     {
       crypto::hash hash;

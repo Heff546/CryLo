@@ -1400,7 +1400,8 @@ namespace cryptonote
   bool core_rpc_server::on_start_mining(const COMMAND_RPC_START_MINING::request& req, COMMAND_RPC_START_MINING::response& res, const connection_context *ctx)
   {
     RPC_TRACKER(start_mining);
-    CHECK_CORE_READY();
+    // CHECK_CORE_READY(); // CryLo testnet: allow mining before synced
+    
     cryptonote::address_parse_info info;
     if(!get_account_address_from_str(info, nettype(), req.miner_address))
     {
@@ -3135,7 +3136,7 @@ namespace cryptonote
       return true;
     }
 
-    static const char software[] = "c64chain";
+    static const char software[] = "crylo";
 #ifdef BUILD_TAG
     static const char buildtag[] = BOOST_PP_STRINGIZE(BUILD_TAG);
     static const char subdir[] = "cli";

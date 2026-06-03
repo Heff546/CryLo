@@ -1,14 +1,12 @@
 'use strict';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const COIN = 100000000000; // 10^11 atomic units = 1 C64
+const COIN = 100000000000; // 10^11 atomic units = 1  CryLo
 
-// C64 vesting tier unlock delays (in blocks, relative to coinbase height)
+//  CryLo vesting tier unlock delays (in blocks, relative to coinbase height)
 const VESTING_TIERS = [
-  { tier: 1, delay: 288,   label: '~24h',  cls: 't1' },
-  { tier: 2, delay: 8640,  label: '~30d',  cls: 't2' },
-  { tier: 3, delay: 17280, label: '~60d',  cls: 't3' },
-  { tier: 4, delay: 25920, label: '~90d',  cls: 't4' }
+  { tier: 1, delay: 0,     label: 'Instant Miner', cls: 't1' },
+  { tier: 2, delay: 18514, label: '45-Day Vested', cls: 't2' }
 ];
 
 // ─── App state ────────────────────────────────────────────────────────────────
@@ -28,7 +26,7 @@ const State = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(atomic) {
-  // Format atomic units → C64 string with 4 decimal places
+  // Format atomic units →  CryLo string with 4 decimal places
   if (atomic == null || isNaN(atomic)) return '0.0000';
   const val = Number(atomic) / COIN;
   return val.toFixed(4);
@@ -212,7 +210,7 @@ async function openWallet() {
   const res = await window.c64.walletRpc('open_wallet', {
     filename: name,
     password: pass
-  });
+  }, 120000);
 
   if (!res.ok) return toast(`Failed: ${res.error}`, 'error');
 
@@ -307,7 +305,7 @@ async function updateSyncStatus() {
   el('sb-height').textContent = (info.height || 0).toLocaleString();
   el('sb-peers').textContent  = (info.outgoing_connections_count || 0) + '/' + (info.incoming_connections_count || 0);
 
-  // NetHR basé sur les 10 derniers blocs (temps réel) — même méthode que c64chain.com
+  // NetHR based on the last 10 blocks
   if (info.height > 10) {
     try {
       const rangeRes = await window.c64.daemonRpc('get_block_headers_range', {
@@ -334,20 +332,20 @@ async function updateSyncStatus() {
     el('sb-nethr').textContent = fmtHashrate(info.difficulty / 300);
   }
 
-  if (info.synchronized) {
-    // Auto-refresh when node just became synced
-    if (el('sync-dot').className !== 'sync-dot synced') {
-      setTimeout(() => { updateBalance(); loadTransactions(); }, 500);
-    }
+    const height = info.height || 0;
+    const target = info.target_height || 0;
+
     el('sync-dot').className = 'sync-dot synced';
-    el('sync-label').textContent = `Synced · ${(info.height || 0).toLocaleString()}`;
-  } else {
-    const pct = info.target_height > 0
-      ? Math.floor((info.height / info.target_height) * 100)
-      : 0;
-    el('sync-dot').className = 'sync-dot syncing';
-    el('sync-label').textContent = `Syncing ${pct}%`;
-  }
+
+    if (target > height) {
+      const netPct = Math.floor((height / target) * 100);
+
+      el('sync-label').textContent =
+        `Wallet Synced 100% · ${height.toLocaleString()} blocks`;
+    } else {
+      el('sync-label').textContent =
+        `Wallet Synced · ${height.toLocaleString()} blocks`;
+    }
 }
 
 function fmtHashrate(hr) {
@@ -360,37 +358,53 @@ function fmtHashrate(hr) {
 // ─── Balance ──────────────────────────────────────────────────────────────────
 async function updateBalance() {
   const res = await window.c64.walletRpc('get_balance', { account_index: 0 });
+
+  console.log("get_balance response:", res);
+
   if (!res.ok) return;
-  const r       = res.result;
-  const total   = r.balance || 0;
-  const unlocked = r.unlocked_balance || 0;
-  const locked  = total - unlocked;
 
-  el('bal-total').innerHTML    = `${fmt(total)}<span class="balance-unit"> C64</span>`;
-  el('bal-unlocked').innerHTML = `${fmt(unlocked)}<span class="balance-unit"> C64</span>`;
-  el('bal-locked').innerHTML   = `${fmt(locked)}<span class="balance-unit"> C64</span>`;
+  const r = res.result?.result || res.result || {};
 
-  // Update Send form
+  const total = Number(r.balance || 0);
+  const unlocked = Number(r.unlocked_balance || 0);
+  const locked = total - unlocked;
+
+  el('bal-total').innerHTML =
+    `${fmt(total)}<span class="balance-unit"> CryLo</span>`;
+
+  el('bal-unlocked').innerHTML =
+    `${fmt(unlocked)}<span class="balance-unit"> CryLo</span>`;
+
+  el('bal-locked').innerHTML =
+    `${fmt(locked)}<span class="balance-unit"> CryLo</span>`;
+
   const maxSendLabel = el('send-max-label');
-  const lockedInfo   = el('send-locked-info');
-  if (maxSendLabel) maxSendLabel.textContent = `Available: ${fmt(unlocked)} C64`;
+  const lockedInfo = el('send-locked-info');
+
+  if (maxSendLabel)
+    maxSendLabel.textContent = `Available: ${fmt(unlocked)} CryLo`;
+
   if (lockedInfo) {
     if (locked > 0) {
-      // CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE = 4 blocks for normal TX
-      // Vesting tiers go up to 25920 blocks
       const btu = r.blocks_to_unlock || 0;
+
       if (btu > 0 && btu <= 4) {
-        lockedInfo.textContent = `⏳ ${fmt(locked)} C64 locked — waiting confirmations (~${btu} blocks)`;
+        lockedInfo.textContent =
+          `⏳ ${fmt(locked)} CryLo locked — waiting confirmations (~${btu} blocks)`;
       } else if (btu > 4) {
-        lockedInfo.textContent = `🔒 ${fmt(locked)} C64 in vesting (${btu} blocks remaining)`;
+        lockedInfo.textContent =
+          `🔒 ${fmt(locked)} CryLo in vesting (${btu} blocks remaining)`;
       } else {
-        lockedInfo.textContent = `🔒 ${fmt(locked)} C64 locked`;
+        lockedInfo.textContent =
+          `🔒 ${fmt(locked)} CryLo locked`;
       }
+
       lockedInfo.classList.remove('hidden');
     } else {
       lockedInfo.classList.add('hidden');
     }
   }
+
   State.unlockedBalance = unlocked;
 }
 
@@ -417,7 +431,7 @@ function copyPaymentRequest() {
   const amount = el('req-amount').value;
   if (!State.address) return toast('Address not loaded.', 'error');
   const req = amount
-    ? `c64chain:${State.address}?tx_amount=${amount}`
+    ? `crylo:${State.address}?tx_amount=${amount}`
     : State.address;
   navigator.clipboard.writeText(req).then(() => {
     toast('Payment request copied!', 'success', 2000);
@@ -512,9 +526,9 @@ async function loadTransactions() {
         </div>
       </div>
       ${statusBadge}
-      <div class="tx-amount ${amtCls}">${amtSign}${fmt(tx.amount)} C64</div>
+      <div class="tx-amount ${amtCls}">${amtSign}${fmt(tx.amount)}  CryLo</div>
     `;
-    item.title = `TXID: ${tx.txid}\nAmount: ${fmtFull(tx.amount)} C64\nUnlock: ${tx.unlock_time || 0}`;
+    item.title = `TXID: ${tx.txid}\nAmount: ${fmtFull(tx.amount)}  CryLo\nUnlock: ${tx.unlock_time || 0}`;
     list.appendChild(item);
   });
 
@@ -534,7 +548,7 @@ async function sendTx() {
 
   const confirmed = await window.c64.confirm({
     title: 'Confirm Send',
-    message: `Send ${amount} C64 to:\n${addr}\n\nThis cannot be undone.`,
+    message: `Send ${amount}  CryLo to:\n${addr}\n\nThis cannot be undone.`,
     buttons: ['Send', 'Cancel']
   });
   if (!confirmed) return;
@@ -659,7 +673,7 @@ async function loadVesting() {
   if (mined.length === 0) {
     container.innerHTML = `<div class="empty-state"><div class="empty-icon">⛏</div>No mined blocks found</div>`;
     // Reset summary
-    ['t1','t2','t3','t4'].forEach(t => { el(`vest-${t}`).textContent = '0.0000 C64'; });
+    ['t1','t2'].forEach(t => { el(`vest-${t}`).textContent = '0.0000  CryLo'; });
     return;
   }
 
@@ -669,37 +683,42 @@ async function loadVesting() {
   const tierTotals = [0, 0, 0, 0];
   const rows = [];
 
-  mined.forEach(tx => {
-    const blockH = tx.height || 0;
-    // 4 vesting outputs, each = tx.amount / 4
-    // (the wallet-rpc shows total amount for whole coinbase tx)
-    const tierAmount = tx.amount / 4;
+    mined.forEach(tx => {
+      const blockH = tx.height || 0;
 
-    VESTING_TIERS.forEach((tier, i) => {
-      const unlockH = blockH + tier.delay;
-      const unlocked = curH >= unlockH;
-      const blocksLeft = unlocked ? 0 : unlockH - curH;
+      const instantAmount = Math.floor(tx.amount / 2);
+      const vestedAmount = tx.amount - instantAmount;
 
-      tierTotals[i] += tierAmount;
+      const cryloRows = [
+        { tier: 1, label: 'Instant Miner',  cls: 't1', amount: instantAmount, delay: 0 },
+        { tier: 2, label: '45-Day Vested',  cls: 't2', amount: vestedAmount,  delay: 18514 },
+      ];
 
-      rows.push({
-        txid:       tx.txid,
-        blockH,
-        tier:       tier.tier,
-        tierLabel:  tier.label,
-        tierCls:    tier.cls,
-        amount:     tierAmount,
-        unlockH,
-        unlocked,
-        blocksLeft,
-        timestamp:  tx.timestamp
+      cryloRows.forEach((tier, i) => {
+        const unlockH = blockH + tier.delay;
+        const unlocked = curH >= unlockH;
+        const blocksLeft = unlocked ? 0 : unlockH - curH;
+
+        tierTotals[i] += tier.amount;
+
+        rows.push({
+          txid:       tx.txid,
+          blockH,
+          tier:       tier.tier,
+          tierLabel:  tier.label,
+          tierCls:    tier.cls,
+          amount:     tier.amount,
+          unlockH,
+          unlocked,
+          blocksLeft,
+          timestamp:  tx.timestamp
+        });
       });
     });
-  });
 
   // Update summary
   VESTING_TIERS.forEach((t, i) => {
-    el(`vest-t${t.tier}`).textContent = fmt(tierTotals[i]) + ' C64';
+    el(`vest-t${t.tier}`).textContent = fmt(tierTotals[i]) + '  CryLo';
   });
 
   // Build table
@@ -713,7 +732,7 @@ async function loadVesting() {
       <tr>
         <th>Block</th>
         <th>Date</th>
-        <th>Tier</th>
+        <th>Category</th>
         <th>Amount</th>
         <th>Unlock Block</th>
         <th>Status</th>
@@ -741,8 +760,8 @@ async function loadVesting() {
     tr.innerHTML = `
       <td>${r.blockH.toLocaleString()}</td>
       <td>${fmtDate(r.timestamp)}</td>
-      <td><span class="tier-badge ${r.tierCls}">T${r.tier} ${r.tierLabel}</span></td>
-      <td class="text-coin">${fmt(r.amount)} C64</td>
+      <td><span class="tier-badge ${r.tierCls}">${r.tierLabel}</span></td>
+      <td class="text-coin">${fmt(r.amount)}  CryLo</td>
       <td>${r.unlockH.toLocaleString()}</td>
       <td>${statusHtml}</td>
     `;
@@ -822,6 +841,16 @@ function toggleAdvanced() {
 
 // ─── Mining ───────────────────────────────────────────────────────────────────
 async function initMiningTab() {
+
+  if (!State.address) {
+    await loadAddress();
+  }
+
+  const addrField = document.getElementById('mining-address');
+  if (addrField && State.address) {
+    addrField.value = State.address;
+  }
+
   try {
     const s = await window.c64.minerGetInfo();
     const totalMB   = s.totalMemMB || 0;
@@ -829,17 +858,25 @@ async function initMiningTab() {
     const maxByMem  = Math.max(1, Math.floor(totalMB / 300));
     const maxThreads = Math.min(cpus, maxByMem);
     const recommended = Math.max(1, Math.floor(maxThreads / 2));
+
     const slider = document.getElementById('mining-threads');
     if (slider) {
       slider.max   = maxThreads;
       slider.value = recommended;
       document.getElementById('mining-threads-val').textContent = recommended;
     }
+
     const memInfo = document.getElementById('mining-mem-info');
-    if (memInfo) memInfo.textContent = totalMB + ' MB RAM — max ' + maxThreads + ' threads';
-  } catch(_) {
+    if (memInfo) {
+      memInfo.textContent =
+        totalMB + ' MB RAM — max ' + maxThreads + ' threads';
+    }
+
+  } catch (_) {
     const memInfo = document.getElementById('mining-mem-info');
-    if (memInfo) memInfo.textContent = 'click to detect';
+    if (memInfo) {
+      memInfo.textContent = 'click to detect';
+    }
   }
 }
 
@@ -856,8 +893,8 @@ async function startMining() {
   const worker  = document.getElementById('mining-worker').value.trim() || 'desktop';
   const pool    = document.getElementById('mining-pool').value.trim();
   const threads = parseInt(document.getElementById('mining-threads').value) || 2;
-  if (!address || !address.startsWith('Wo')) {
-    toast('Enter a valid C64 wallet address (starts with Wo)', 'error');
+  if (!address || address.length < 20) {
+    toast('Enter a valid CryLo wallet address', 'error');
     return;
   }
   try {
@@ -869,6 +906,8 @@ async function startMining() {
     document.getElementById('mining-status').textContent = 'Miner starting...';
     document.getElementById('mining-status').style.color = 'var(--warning)';
     document.getElementById('mining-hashrate').style.display = 'block';
+    document.getElementById('mining-stats').style.display = 'block';
+    document.getElementById('mining-stat-threads').textContent = threads;
     State.miningStatusTimer = setInterval(async () => {
       try {
         const s = await window.c64.minerGetStatus();
@@ -876,9 +915,22 @@ async function startMining() {
           document.getElementById('mining-status').textContent = 'Mining active';
           document.getElementById('mining-status').style.color = 'var(--success)';
           document.getElementById('mining-hashrate').textContent = s.hashrate + ' H/s';
-          document.getElementById('mining-shares').style.display = 'block';
-          document.getElementById('shares-accepted').textContent = s.sharesAccepted || 0;
-          document.getElementById('shares-rejected').textContent = s.sharesRejected || 0;
+	  const info = await window.c64.daemonRpc('get_info');
+
+	  if (info.ok) {
+  	    document.getElementById('mining-stat-height').textContent =
+    	      (info.result.height || 0).toLocaleString();
+
+  	    document.getElementById('mining-stat-difficulty').textContent =
+    	      (info.result.difficulty || 0).toLocaleString();
+	  }
+
+	  if (s.blockReward) {
+            document.getElementById('mining-stat-reward').textContent =
+              fmt(s.blockReward) + ' CryLo';
+	  }
+
+          document.getElementById('mining-mode').style.display = 'block';
         } else {
           stopMining();
         }
@@ -898,8 +950,10 @@ async function stopMining() {
   document.getElementById('mining-status').textContent = 'Miner stopped';
   document.getElementById('mining-status').style.color = 'var(--text-dim)';
   document.getElementById('mining-hashrate').style.display = 'none';
-  const shares = document.getElementById('mining-shares');
-  if (shares) shares.style.display = 'none';
+  const stats = document.getElementById('mining-stats');
+  if (stats) stats.style.display = 'none';
+  const mode = document.getElementById('mining-mode');
+  if (mode) mode.style.display = 'none';
 }
 
 window.App = {

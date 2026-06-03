@@ -1399,7 +1399,7 @@ bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, 
   }
   MDEBUG("Miner tx hash: " << get_transaction_hash(b.miner_tx));
   if (height == 0) {
-    // C64 CHAIN: skip unlock time check for genesis block
+    // CryLo Chain: skip unlock time check for genesis block
   } else if (hf_version >= HF_VERSION_FIXED_UNLOCK) {
     CHECK_AND_ASSERT_MES(b.miner_tx.unlock_time == height + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2, false, "coinbase transaction transaction has the wrong unlock time=" << b.miner_tx.unlock_time << ", expected " << height + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2);
   } else if (hf_version < HF_VERSION_FIXED_UNLOCK && hf_version >= HF_VERSION_DYNAMIC_UNLOCK) {
@@ -1484,7 +1484,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
       partial_block_reward = true;
     base_reward = money_in_use - fee;
   }
-  // C64 CHAIN: HF19+ validate dev fund output
+  // CryLo Chain: HF19+ validate dev fund output
   if (version >= HF_VERSION_VESTING && b.miner_tx.vout.size() > 0)
   {
     // Must have exactly 5 outputs: 4 vesting + 1 dev fund
@@ -1495,7 +1495,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     }
 
     // Dev fund is the 5th output (index 4)
-    uint64_t dev_fund_expected = (base_reward + fee) * C64_DEV_FUND_FEE_PERCENT / 100;
+    uint64_t dev_fund_expected = (base_reward + fee) * CryLo_DEV_FUND_FEE_PERCENT / 100;
     uint64_t miner_reward = (base_reward + fee) - dev_fund_expected;
 
     // Verify dev fund amount: output[4] must be dev_fund_expected
@@ -1533,15 +1533,15 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     }
     crypto::public_key dev_spend_pkey;
     crypto::public_key dev_view_pkey;
-    epee::string_tools::hex_to_pod(C64_DEV_FUND_SPENDKEY, dev_spend_pkey);
-    epee::string_tools::hex_to_pod(C64_DEV_FUND_VIEWKEY, dev_view_pkey);
+    epee::string_tools::hex_to_pod(CryLo_DEV_FUND_SPENDKEY, dev_spend_pkey);
+    epee::string_tools::hex_to_pod(CryLo_DEV_FUND_VIEWKEY, dev_view_pkey);
 
-    // C64 CHAIN: Cryptographic verification that output[4] goes to the dev fund address.
+    // CryLo Chain: Cryptographic verification that output[4] goes to the dev fund address.
     // We use the dev fund view secret key to reproduce the Diffie-Hellman key exchange
     // and derive the expected ephemeral public key. This is the same operation a wallet
     // performs to detect incoming payments. The view secret key cannot spend funds.
     crypto::secret_key dev_view_skey;
-    epee::string_tools::hex_to_pod(C64_DEV_FUND_VIEWKEY_SECRET, dev_view_skey);
+    epee::string_tools::hex_to_pod(CryLo_DEV_FUND_VIEWKEY_SECRET, dev_view_skey);
 
     // Step 1: Diffie-Hellman key derivation
     crypto::key_derivation dev_derivation;
@@ -1576,7 +1576,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
       return false;
     }
 
-    LOG_PRINT_L2("Dev fund validation passed: " << print_money(dev_fund_actual) << " C64 (" << C64_DEV_FUND_FEE_PERCENT << "%) - address cryptographically verified");
+    LOG_PRINT_L2("Dev fund validation passed: " << print_money(dev_fund_actual) << " C64 (" << CryLo_DEV_FUND_FEE_PERCENT << "%) - address cryptographically verified");
   }
 
   return true;
@@ -5912,7 +5912,7 @@ void Blockchain::load_compiled_in_block_hashes(const GetCheckpointsCallback& get
 
 bool Blockchain::is_within_compiled_block_hash_area(uint64_t height) const
 {
-  // C64 CHAIN: fresh mainnet, no precomputed block hashes needed
+  // CryLo Chain: fresh mainnet, no precomputed block hashes needed
   return false;
 }
 

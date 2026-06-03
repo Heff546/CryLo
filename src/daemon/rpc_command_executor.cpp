@@ -1460,10 +1460,10 @@ bool t_rpc_command_executor::print_status()
   bool daemon_is_alive = m_rpc_client->check_connection();
 
   if(daemon_is_alive) {
-    tools::success_msg_writer() << "c64chaind-mainnet is running";
+    tools::success_msg_writer() << "CryLo-daemon is running";
   }
   else {
-    tools::fail_msg_writer() << "c64chaind-mainnet is NOT running";
+    tools::fail_msg_writer() << "CryLo-daemon is NOT running";
   }
 
   return true;

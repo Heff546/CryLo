@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>C64 Chain Wallet</title>
+  <title>CryLo Wallet</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -11,7 +11,7 @@
 
   <!-- ══════════════════════ SPLASH ══════════════════════ -->
   <div id="splash">
-    <div class="splash-logo">C64<span>CHAIN</span></div>
+    <div class="splash-logo">CryLo</div>
     <div class="splash-subtitle">Official Wallet</div>
     <div class="splash-status">
       <div class="status-text" id="splash-msg">Initializing...</div>
@@ -23,7 +23,7 @@
   <!-- ══════════════════════ SETUP ═══════════════════════ -->
   <div id="setup-screen" class="hidden">
     <div class="setup-header">
-      <h1>C64 CHAIN WALLET</h1>
+      <h1>CryLo Wallet</h1>
       <p>Select an option to get started</p>
     </div>
 
@@ -126,7 +126,7 @@
 
     <!-- Top bar -->
     <div class="topbar">
-      <div class="topbar-logo">C64<span>CHAIN</span></div>
+      <div class="topbar-logo">CryLo</div>
       <div class="topbar-wallet" onclick="App.switchWallet()" title="Switch wallet">
         💼 <span class="wallet-name" id="topbar-wallet-name">—</span>
       </div>
@@ -142,15 +142,15 @@
     <div class="balance-bar">
       <div class="balance-item">
         <div class="balance-label">Total Balance</div>
-        <div class="balance-amount" id="bal-total">—<span class="balance-unit"> C64</span></div>
+        <div class="balance-amount" id="bal-total">—<span class="balance-unit"> CryLo</span></div>
       </div>
       <div class="balance-item">
         <div class="balance-label">Unlocked</div>
-        <div class="balance-amount unlocked" id="bal-unlocked">—<span class="balance-unit"> C64</span></div>
+        <div class="balance-amount unlocked" id="bal-unlocked">—<span class="balance-unit"> CryLo</span></div>
       </div>
       <div class="balance-item">
         <div class="balance-label">Locked (vesting)</div>
-        <div class="balance-amount locked" id="bal-locked">—<span class="balance-unit"> C64</span></div>
+        <div class="balance-amount locked" id="bal-locked">—<span class="balance-unit"> CryLo</span></div>
       </div>
     </div>
 
@@ -176,16 +176,16 @@
       <!-- Send -->
       <div class="tab-panel" id="tab-send">
         <div class="card send-form">
-          <div class="card-title">↑ Send C64</div>
+          <div class="card-title">↑ Send CryLo</div>
           <div class="form-group">
             <label>Recipient Address</label>
             <div style="display:flex;gap:6px;align-items:center">
-              <input type="text" id="send-addr" placeholder="C64 address (starts with Wo...)" autocomplete="off" style="flex:1" />
+              <input type="text" id="send-addr" placeholder="CryLo address (starts with Wo...)" autocomplete="off" style="flex:1" />
               <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;min-width:auto" onclick="navigator.clipboard.readText().then(t=>{document.getElementById('send-addr').value=t})">📋 Paste</button>
             </div>
           </div>
           <div class="form-group">
-            <label style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">Amount (C64) — <span id="send-max-label" style="color:var(--success);font-size:11px">Available: — C64</span></label>
+            <label style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">Amount (CryLo) — <span id="send-max-label" style="color:var(--success);font-size:11px">Available: — CryLo</span></label>
             <div style="display:flex;gap:8px;align-items:center">
               <input type="number" id="send-amount" placeholder="0.000000000000" min="0" step="0.000000001" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:14px;padding:9px 12px;outline:none" />
               <button class="btn btn-ghost btn-sm" type="button" onclick="App.sendMax()">Max</button>
@@ -219,7 +219,7 @@
       <!-- Receive -->
       <div class="tab-panel" id="tab-receive">
         <div class="card" style="max-width:600px">
-          <div class="card-title">↓ Receive C64</div>
+          <div class="card-title">↓ Receive CryLo</div>
           <div class="form-group">
             <label>Your Address</label>
             <div class="address-display" id="receive-address" onclick="App.copyAddress()" title="Click to copy">Loading...</div>
@@ -233,40 +233,42 @@
 
       <!-- Vesting -->
       <div class="tab-panel" id="tab-vesting">
-        <!-- Summary stats -->
-        <div class="vesting-summary" id="vesting-summary">
-          <div class="vest-stat">
-            <div class="vest-stat-label">Tier 1 (24h)</div>
-            <div class="vest-stat-value" id="vest-t1">—</div>
-          </div>
-          <div class="vest-stat">
-            <div class="vest-stat-label">Tier 2 (30d)</div>
-            <div class="vest-stat-value" id="vest-t2">—</div>
-          </div>
-          <div class="vest-stat">
-            <div class="vest-stat-label">Tier 3 (60d)</div>
-            <div class="vest-stat-value" id="vest-t3">—</div>
-          </div>
-          <div class="vest-stat">
-            <div class="vest-stat-label">Tier 4 (90d)</div>
-            <div class="vest-stat-value" id="vest-t4">—</div>
-          </div>
-        </div>
+  	
+	<!-- Summary stats -->
+  	<div class="vesting-summary" id="vesting-summary">
+   
+	   <div class="vest-stat">
+      	     <div class="vest-stat-label">Instant Miner</div>
+      	     <div class="vest-stat-value" id="vest-t1">—</div>
+    	   </div>
+    
+	   <div class="vest-stat">
+      	     <div class="vest-stat-label">45-Day Vested</div>
+      	     <div class="vest-stat-value" id="vest-t2">—</div>
+  	   </div>
 
-        <!-- Vesting table -->
-        <div id="vesting-table-container">
-          <div class="loading-row"><div class="spinner"></div> Loading vesting data...</div>
-        </div>
-      </div>
+	</div>
+
+  <!-- Vesting table -->
+  <div id="vesting-table-container">
+    <div class="loading-row">
+      <div class="spinner"></div>
+      Loading vesting data...
+    </div>
+  </div>
+</div>
 
 
     <!-- Mining -->
     <div class="tab-panel" id="tab-mining">
       <div class="form-group">
-        <label>Wallet Address</label>
+        <label>Mining To Current Wallet</label>
         <div style="display:flex;gap:6px;align-items:center">
-          <input type="text" id="mining-address" placeholder="Your C64 wallet address (Wo...)" autocomplete="off" style="flex:1" />
-          <button class="btn btn-secondary" style="padding:6px 10px;font-size:12px;min-width:auto" onclick="navigator.clipboard.readText().then(t=>{document.getElementById('mining-address').value=t})">📋 Paste</button>
+          <input type="text" id="mining-address"
+       placeholder="Current wallet address"
+       autocomplete="off"
+       readonly
+       style="flex:1;opacity:.85" />
         </div>
       </div>
       <div class="form-group">
@@ -278,7 +280,7 @@
       </div>
       <div class="form-group">
         <label>Pool</label>
-        <input type="text" id="mining-pool" value="stratum+tcp://c64.suprnova.cc:6465" autocomplete="off" />
+        <input type="text" id="mining-pool" value="local-daemon" autocomplete="off" />
       </div>
       <div class="form-group">
         <label>CPU Threads — <span id="mining-mem-info" style="color:var(--accent2)">detecting...</span></label>
@@ -290,17 +292,27 @@
       </div>
       <div id="mining-status" style="text-align:center;padding:12px;font-size:13px;color:var(--text-dim)">Miner stopped</div>
       <div id="mining-hashrate" style="text-align:center;font-size:24px;font-weight:700;color:var(--accent2);display:none">0 H/s</div>
-      <div id="mining-shares" style="text-align:center;font-size:12px;color:var(--text-dim);display:none">
-        ✅ <span id="shares-accepted">0</span> accepted &nbsp;|&nbsp; ❌ <span id="shares-rejected">0</span> rejected
+      <div id="mining-stats"
+     style="margin-top:12px;
+            font-size:13px;
+            color:var(--text-dim);
+            text-align:center;
+	    display:none">
+
+  <div>Threads: <span id="mining-stat-threads">—</span></div>
+  <div>Height: <span id="mining-stat-height">—</span></div>
+  <div>Difficulty: <span id="mining-stat-difficulty">—</span></div>
+  <div>Block Reward: <span id="mining-stat-reward">—</span></div>
+
+</div>
+      <div id="mining-mode" style="text-align:center;font-size:12px;color:var(--text-dim);display:none">
+        ⛏  Solo Daemon Mining
       </div>
       <button class="btn btn-primary" id="mining-btn" onclick="App.toggleMining()">⛏ Start Mining</button>
       <div style="font-size:11px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.8">
-        You can mine on these pools:<br>
-        <a href="https://c64.suprnova.cc/index.html" target="_blank" style="color:var(--accent2);text-decoration:underline;cursor:pointer">c64.suprnova.cc</a><br>
-        <a href="https://pool.rplant.xyz/#c64chain" target="_blank" style="color:var(--accent2);text-decoration:underline;cursor:pointer">pool.rplant.xyz</a><br>
-        <a href="https://fairminingpool.com/c64" target="_blank" style="color:var(--accent2);text-decoration:underline;cursor:pointer">fairminingpool.com</a><br>
-        <a href="https://rabbitminer.cc/c64/" target="_blank" style="color:var(--accent2);text-decoration:underline;cursor:pointer">rabbitminer.cc</a>
-      </div>
+        <div class="hint">
+  	  CryLo mining uses the local daemon. Pool mining links removed.
+	</div>
     </div>
     </div><!-- /tab-content -->
 

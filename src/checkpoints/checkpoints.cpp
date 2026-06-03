@@ -190,8 +190,8 @@ namespace cryptonote
     {
       return true;
     }
-    // C64 CHAIN: No mainnet checkpoints yet (Wownero checkpoints removed)
-    // Add C64 Chain mainnet checkpoints here when ready
+    // CryLo Chain: No mainnet checkpoints yet (Wownero checkpoints removed)
+    // Add CryLo Chain mainnet checkpoints here when ready
     return true;
   }
 
@@ -235,7 +235,7 @@ namespace cryptonote
   {
     std::vector<std::string> records;
 
-    // C64 CHAIN: DNS checkpoint domains (empty, not yet configured)
+    // CryLo Chain: DNS checkpoint domains (empty, not yet configured)
     static const std::vector<std::string> dns_urls = {
     };
 

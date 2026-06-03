@@ -155,17 +155,15 @@ namespace cryptonote
 
   //typedef std::pair<uint64_t, txout> out_t;
   struct tx_out
-  {
+{
     uint64_t amount;
     txout_target_v target;
 
-    BEGIN_SERIALIZE_OBJECT()
-      VARINT_FIELD(amount)
-      FIELD(target)
-    END_SERIALIZE()
-
-
-  };
+  BEGIN_SERIALIZE_OBJECT()
+    VARINT_FIELD(amount)
+    FIELD(target)
+  END_SERIALIZE()
+};
 
   class transaction_prefix
   {
