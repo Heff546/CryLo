@@ -21,7 +21,8 @@ const State = {
   address: '',
   unlockedBalance: 0,
   miningActive: false,
-  miningStatusTimer: null
+  miningStatusTimer: null,
+  miningStartHeight: null
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -918,11 +919,23 @@ async function startMining() {
 	  const info = await window.c64.daemonRpc('get_info');
 
 	  if (info.ok) {
+ 	    const height = info.result.height || 0;
+
   	    document.getElementById('mining-stat-height').textContent =
-    	      (info.result.height || 0).toLocaleString();
+    	      height.toLocaleString();
 
   	    document.getElementById('mining-stat-difficulty').textContent =
     	      (info.result.difficulty || 0).toLocaleString();
+
+  	    if (State.miningStartHeight === null) {
+  	      State.miningStartHeight = height;
+	    }
+
+	    const blocksFound = Math.max(0, height - State.miningStartHeight);
+	    const blocksFoundEl = document.getElementById('mining-stat-blocks-found');
+	    if (blocksFoundEl) {
+  	      blocksFoundEl.textContent = blocksFound.toLocaleString();
+	    }
 	  }
 
 	  if (s.blockReward) {
@@ -945,6 +958,12 @@ async function stopMining() {
   if (State.miningStatusTimer) { clearInterval(State.miningStatusTimer); State.miningStatusTimer = null; }
   try { await window.c64.minerStop(); } catch(_) {}
   State.miningActive = false;
+  State.miningStartHeight = null;
+
+  const blocksFoundEl = document.getElementById('mining-stat-blocks-found');
+  if (blocksFoundEl) {
+    blocksFoundEl.textContent = '0';
+  }
   document.getElementById('mining-btn').textContent = '⛏ Start Mining';
   document.getElementById('mining-btn').className = 'btn btn-primary';
   document.getElementById('mining-status').textContent = 'Miner stopped';
