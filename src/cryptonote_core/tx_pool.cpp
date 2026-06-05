@@ -1555,7 +1555,7 @@ namespace cryptonote
     fee = 0;
     
     //baseline empty block
-    if (!get_block_reward(median_weight, total_weight, already_generated_coins, best_coinbase, version))
+    if (!get_block_reward(0, median_weight, total_weight, already_generated_coins, best_coinbase, version))
     {
       MERROR("Failed to get block reward for empty block");
       return false;
@@ -1609,7 +1609,7 @@ namespace cryptonote
         // If we're getting lower coinbase tx,
         // stop including more tx
         uint64_t block_reward;
-        if(!get_block_reward(median_weight, total_weight + meta.weight, already_generated_coins, block_reward, version))
+        if(!get_block_reward(0, median_weight, total_weight + meta.weight, already_generated_coins, block_reward, version))
         {
           LOG_PRINT_L2("  would exceed maximum block weight");
           continue;

@@ -351,6 +351,10 @@ bool Blockchain::init(BlockchainDB* db, const network_type nettype, bool offline
     generate_genesis_block(bl, get_config(m_nettype).GENESIS_TX, get_config(m_nettype).GENESIS_NONCE);
     db_wtxn_guard wtxn_guard(m_db);
     add_new_block(bl, bvc);
+    MERROR("GENESIS DEBUG: failed=" << bvc.m_verifivation_failed
+      << " added=" << bvc.m_added_to_main_chain
+      << " orphan=" << bvc.m_marked_as_orphaned
+      << " already_exists=" << bvc.m_already_exists);
     CHECK_AND_ASSERT_MES(!bvc.m_verifivation_failed, false, "Failed to add genesis block to blockchain");
   }
   // TODO: if blockchain load successful, verify blockchain against both
@@ -1455,7 +1459,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     get_last_n_blocks_weights(last_blocks_weights, CRYPTONOTE_REWARD_BLOCKS_WINDOW);
     median_weight = epee::misc_utils::median(last_blocks_weights);
   }
-  if (!get_block_reward(median_weight, cumulative_block_weight, already_generated_coins, base_reward, version))
+  if (!get_block_reward(get_current_blockchain_height(), median_weight, cumulative_block_weight, already_generated_coins, base_reward, version))
   {
     MERROR_VER("block weight " << cumulative_block_weight << " is bigger than allowed for this blockchain");
     return false;
@@ -1484,46 +1488,27 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
       partial_block_reward = true;
     base_reward = money_in_use - fee;
   }
-  // CryLo Chain: HF19+ validate dev fund output
+  // CryLo Chain: HF19+ validate 50/50 miner split + dev + liquidity
   if (version >= HF_VERSION_VESTING && b.miner_tx.vout.size() > 0)
   {
-    // Must have exactly 5 outputs: 4 vesting + 1 dev fund
-    if (b.miner_tx.vout.size() != 5)
+    if (b.miner_tx.vout.size() != 4)
     {
-      MERROR_VER("HF19+ coinbase must have exactly 5 outputs (4 vesting + 1 dev fund), got " << b.miner_tx.vout.size());
+      MERROR_VER("HF19+ coinbase must have exactly 4 outputs, got " << b.miner_tx.vout.size());
       return false;
     }
 
-    // Dev fund is the 5th output (index 4)
-    uint64_t dev_fund_expected = (base_reward + fee) * CryLo_DEV_FUND_FEE_PERCENT / 100;
-    uint64_t miner_reward = (base_reward + fee) - dev_fund_expected;
+    uint64_t total_reward = base_reward + fee;
+    uint64_t dev_fund_expected = total_reward * CryLo_DEV_FUND_FEE_PERCENT / 100;
+    uint64_t liquidity_fund_expected = total_reward * CryLo_LIQUIDITY_FUND_FEE_PERMILLE / 1000;
+    uint64_t miner_reward = total_reward - dev_fund_expected - liquidity_fund_expected;
 
-    // Verify dev fund amount: output[4] must be dev_fund_expected
-    uint64_t dev_fund_actual = b.miner_tx.vout[4].amount;
-    if (dev_fund_actual != dev_fund_expected)
-    {
-      MERROR_VER("Dev fund output amount incorrect: expected " << print_money(dev_fund_expected) << ", got " << print_money(dev_fund_actual));
-      return false;
-    }
+    uint64_t miner_instant_expected = miner_reward / 2;
+    uint64_t miner_vested_expected = miner_reward - miner_instant_expected;
 
-    // Verify the 4 vesting outputs each get ~25% of miner_reward
-    uint64_t quarter = miner_reward / 4;
-    uint64_t remainder = miner_reward - (quarter * 4);
-    // Output 0 gets quarter + remainder (dust), outputs 1-3 get quarter
-    if (b.miner_tx.vout[0].amount != quarter + remainder)
-    {
-      MERROR_VER("Vesting output 0 amount incorrect: expected " << print_money(quarter + remainder) << ", got " << print_money(b.miner_tx.vout[0].amount));
-      return false;
-    }
-    for (int i = 1; i < 4; i++)
-    {
-      if (b.miner_tx.vout[i].amount != quarter)
-      {
-        MERROR_VER("Vesting output " << i << " amount incorrect: expected " << print_money(quarter) << ", got " << print_money(b.miner_tx.vout[i].amount));
-        return false;
-      }
-    }
-
+    if (b.miner_tx.vout[0].amount != miner_instant_expected) return false;
+    if (b.miner_tx.vout[1].amount != miner_vested_expected) return false;
+    if (b.miner_tx.vout[2].amount != dev_fund_expected) return false;
+    if (b.miner_tx.vout[3].amount != liquidity_fund_expected) return false;
     // Verify dev fund output key is derived from the correct dev fund address
     crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(b.miner_tx);
     if (tx_pub_key == crypto::null_pkey)
@@ -1536,7 +1521,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     epee::string_tools::hex_to_pod(CryLo_DEV_FUND_SPENDKEY, dev_spend_pkey);
     epee::string_tools::hex_to_pod(CryLo_DEV_FUND_VIEWKEY, dev_view_pkey);
 
-    // CryLo Chain: Cryptographic verification that output[4] goes to the dev fund address.
+    // CryLo Chain: Cryptographic verification that output[2] goes to the dev fund address.
     // We use the dev fund view secret key to reproduce the Diffie-Hellman key exchange
     // and derive the expected ephemeral public key. This is the same operation a wallet
     // performs to detect incoming payments. The view secret key cannot spend funds.
@@ -1552,18 +1537,18 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
       return false;
     }
 
-    // Step 2: Derive expected ephemeral public key for output index 4
+    // Step 2: Derive expected ephemeral public key for output index 2
     crypto::public_key expected_dev_key;
-    r = crypto::derive_public_key(dev_derivation, 4, dev_spend_pkey, expected_dev_key);
+    r = crypto::derive_public_key(dev_derivation, 2, dev_spend_pkey, expected_dev_key);
     if (!r)
     {
       MERROR_VER("Dev fund verification failed: could not derive expected public key");
       return false;
     }
 
-    // Step 3: Extract actual public key from output[4]
+    // Step 3: Extract actual public key from output[2]
     crypto::public_key actual_dev_key;
-    if (!get_output_public_key(b.miner_tx.vout[4], actual_dev_key))
+    if (!get_output_public_key(b.miner_tx.vout[2], actual_dev_key))
     {
       MERROR_VER("Dev fund verification failed: could not read output public key");
       return false;
@@ -1575,6 +1560,8 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
       MERROR_VER("Dev fund output key MISMATCH: block does NOT pay the dev fund address. Rejecting.");
       return false;
     }
+
+    uint64_t dev_fund_actual = b.miner_tx.vout[2].amount;
 
     LOG_PRINT_L2("Dev fund validation passed: " << print_money(dev_fund_actual) << " C64 (" << CryLo_DEV_FUND_FEE_PERCENT << "%) - address cryptographically verified");
   }
@@ -3893,7 +3880,7 @@ bool Blockchain::check_fee(size_t tx_weight, uint64_t fee) const
     median = m_current_block_cumul_weight_limit / 2;
     const uint64_t blockchain_height = m_db->height();
     already_generated_coins = blockchain_height ? m_db->get_block_already_generated_coins(blockchain_height - 1) : 0;
-    if (!get_block_reward(median, 1, already_generated_coins, base_reward, version))
+    if (!get_block_reward(blockchain_height, median, 1, already_generated_coins, base_reward, version))
       return false;
   }
 
@@ -4001,7 +3988,7 @@ void Blockchain::get_dynamic_base_fee_estimate_2021_scaling(uint64_t grace_block
 
   uint64_t already_generated_coins = db_height ? m_db->get_block_already_generated_coins(db_height - 1) : 0;
   uint64_t base_reward;
-  if (!get_block_reward(m_current_block_cumul_weight_limit / 2, 1, already_generated_coins, base_reward, version))
+  if (!get_block_reward(db_height, m_current_block_cumul_weight_limit / 2, 1, already_generated_coins, base_reward, version))
   {
     MERROR("Failed to determine block reward, using placeholder " << print_money(BLOCK_REWARD_OVERESTIMATE) << " as a high bound");
     base_reward = BLOCK_REWARD_OVERESTIMATE;
@@ -4042,7 +4029,7 @@ uint64_t Blockchain::get_dynamic_base_fee_estimate(uint64_t grace_blocks) const
 
   uint64_t already_generated_coins = db_height ? m_db->get_block_already_generated_coins(db_height - 1) : 0;
   uint64_t base_reward;
-  if (!get_block_reward(m_current_block_cumul_weight_limit / 2, 1, already_generated_coins, base_reward, version))
+  if (!get_block_reward(db_height, m_current_block_cumul_weight_limit / 2, 1, already_generated_coins, base_reward, version))
   {
     MERROR("Failed to determine block reward, using placeholder " << print_money(BLOCK_REWARD_OVERESTIMATE) << " as a high bound");
     base_reward = BLOCK_REWARD_OVERESTIMATE;
