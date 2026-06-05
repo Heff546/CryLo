@@ -1,427 +1,241 @@
-# C64 Chain — Privacy-First CPU-Mineable Cryptocurrency
+# CryLo (CRYLO)
 
-[![C64 Chain](https://img.shields.io/badge/C64_Chain-v1.1.1-blue)](https://github.com/oxynaz/c64chain-mainnet)
-[![License](https://img.shields.io/badge/license-GPLv3-green)](LICENSE)
-[![Algorithm](https://img.shields.io/badge/algorithm-rx%2Fc64-orange)](https://github.com/oxynaz/c64chain-mainnet)
-[![Mining](https://img.shields.io/badge/mining-CPU%20only-brightgreen)](https://github.com/oxynaz/c64chain-mainnet)
-[![Network](https://img.shields.io/badge/network-MAINNET%20LIVE-brightgreen)](https://github.com/oxynaz/c64chain-mainnet)
+**CryLo is a CPU-mined cryptocurrency focused on fair distribution, long-term miner participation, and sustainable ecosystem growth.**
 
-**C64 Chain** is a privacy-focused, CPU-mineable cryptocurrency inspired by the legendary Commodore 64.
-Forked from [Wownero](https://codeberg.org/wownero/wownero) (itself a fork of Monero), C64 Chain is a **new crypto project** featuring CryptoNote privacy, RandomX CPU mining, anti-dump vesting, and a unique retro computing aesthetic.
-
-**Keywords:** cryptocurrency, privacy coin, CPU mining, RandomX, CryptoNote, Monero fork, new crypto, altcoin, mineable coin, decentralized, open source blockchain, proof of work, PoW, crypto mining, solo mining, peer-to-peer, anonymous cryptocurrency, fair launch, no premine, community coin
-
-## 🚀 MAINNET IS LIVE
-
-> **C64 Chain mainnet launched on February 19, 2026.**
-> Mining is open to everyone. Download the GUI wallet or build from source and start mining now!
-
-## Why C64 Chain?
-
-* **Fair launch** — no premine, no ICO, no VC funding, no insider allocation
-* **CPU mining only** — rx/c64 algorithm levels the playing field, anyone can mine from home
-* **Privacy by default** — built on CryptoNote/Monero technology with ring signatures, stealth addresses, and RingCT
-* **Anti-dump vesting** — block rewards unlock over 90 days, protecting price stability
-* **Audited codebase** — security audit completed with all critical fixes applied
-* **Active development** — regular updates, responsive team, transparent roadmap
-* **Unique identity** — Commodore 64-themed node and miner with retro TUI
-
-## The C64 Spirit 🕹️
-
-C64 Chain is built as a love letter to the Commodore 64, the best-selling home computer of all time. Every detail pays homage:
-
-* **Node TUI**: Full ncurses Commodore 64 boot screen — blue border, PETSCII font, `**** C64 CHAIN NODE V1.0 ****` / `64K RAM SYSTEM 38911 BASIC BYTES FREE` / `READY.`
-* **Datasette loading**: The node startup simulates a Datasette tape loading animation with colored bars, just like loading a game in 1984
-* **BASIC-style display**: Node status displayed as `LIST` output with numbered lines, like a BASIC program
-* **Max supply**: **19,640,000 C64** — 1964 is the year the MOS 6502 CPU was designed, the processor that powered the C64
-* **Algorithm name**: `rx/c64` — RandomX variant customized for C64 Chain
-* **Miner TUI**: The C64 Miner features its own Commodore 64-themed terminal with `READY.` / `RUN C64MINER` prompt
-
-## Tokenomics
-
-| Parameter | Value |
-| --- | --- |
-| **Max supply** | **19,640,000 C64** |
-| **Algorithm** | rx/c64 (RandomX variant, CPU-only) |
-| **Block time** | 5 minutes (300 seconds) |
-| **Initial block reward** | ~149 C64 |
-| **Emission speed factor** | 21 |
-| **50% mined in** | ~10 months |
-| **80% mined in** | ~2 years |
-| **96% mined in** | ~4 years |
-| **Dev fund** | 2% of each block reward (consensus-enforced) |
-| **Emission curve** | Smooth exponential decay (no halving cliffs) |
-
-The emission follows Monero's smooth curve formula: `reward = (supply_cap - already_mined) >> ESF`. This means block rewards decrease gradually with every block, unlike Bitcoin's sudden halvings. Combined with the 19.64M cap, this creates a fair and predictable monetary policy.
-
-### Vesting (Anti-Dump Protection)
-
-Every block reward is split into **4 equal outputs** with staggered unlock times. This prevents miners from dumping all rewards immediately at listing:
-
-| Portion | Unlock after | Blocks |
-| --- | --- | --- |
-| 25% | ~24 hours | 288 |
-| 25% | ~30 days | 8,640 |
-| 25% | ~60 days | 17,280 |
-| 25% | ~90 days | 25,920 |
-
-The 2% dev fund unlocks after ~24 hours (288 blocks).
-
-Each coinbase transaction has **5 outputs**: 4 vesting outputs for the miner + 1 dev fund output. Both vesting and the dev fund are enforced at consensus level — blocks without proper structure are rejected by the network.
-
-### Why Vesting Matters
-
-Without vesting, early miners could accumulate large amounts of C64 and dump them as soon as the coin is listed on exchanges, crashing the price for everyone. The 90-day staggered unlock ensures that selling pressure is distributed over time, protecting the coin's value for all participants.
-
-## Security
-
-C64 Chain has undergone a code audit covering all modifications from the Wownero/Monero codebase. Key security features:
-
-* **Dev fund consensus validation** — every node verifies that coinbase transactions contain exactly 5 outputs with correct 2% dev fund amount and 4x25% vesting split
-* **Vesting triple enforcement** — enforced at database, node consensus, and wallet level
-* **LWMA-1 difficulty algorithm** — responsive difficulty adjustment (Zawy's algorithm) protecting against hashrate manipulation, activated at HF20 (block 2100)
-* **Clean codebase** — all legacy Wownero checkpoints, hardcoded difficulty values, and workarounds have been removed
-
-## Hard Fork History
-
-| HF | Block | Description |
-| --- | --- | --- |
-| HF17 | 0 (genesis) | RandomWOW mining algorithm |
-| HF18 | 2 | Fixed unlock time (288 blocks) |
-| HF19 | 3 | Tokenomics: 19.64M supply, vesting 4x25%, dev fund 2% |
-| HF20 | 2100 | LWMA-1 difficulty algorithm (faster adjustment, 145-block window) |
-
-### HF20 — LWMA-1 Difficulty (v1.0.0)
-
-At block 2100, C64 Chain activates the LWMA-1 difficulty algorithm (Zawy's Linearly Weighted Moving Average). This replaces the legacy CryptoNote difficulty calculation with a much more responsive algorithm:
-
-* **145-block window** (vs 720 blocks previously) — adjusts ~5x faster
-* **Better protection** against hashrate oscillation and timewarp attacks
-* **Smoother mining experience** — difficulty tracks actual hashrate more closely
-
-## Features
-
-* 🖥️ Commodore 64-themed ncurses TUI built into the node
-* 📼 Datasette loading animation on startup
-* ⛏️ CPU-only mining (rx/c64 algorithm, RandomX variant)
-* 💰 2% dev fund for project development (consensus-enforced)
-* ⏱️ 5 minute block time
-* 🔒 Vesting on block rewards (4x25% staggered unlock over 90 days)
-* 🕶️ Privacy by default (Monero/CryptoNote-based)
-* 🚫 No premine, no ICO, no VC funding
-* 📊 LWMA-1 difficulty algorithm for responsive hashrate adjustment
-* 🔍 Security audited codebase
+Built on proven CryptoNote technology and powered by the RandomX-based **rx/c64** algorithm, CryLo combines a predictable linear emission model with miner vesting mechanics that encourage network stability and reduce immediate sell pressure.
 
 ---
 
-## GUI Wallets (Recommended)
+## Key Features
 
-Pre-built GUI wallets with integrated miner are available for all major platforms. No separate miner installation required.
+### Fair CPU Mining
 
-All releases are available at: **https://github.com/oxynaz/c64chain-mainnet/releases**
+CryLo was built around a simple idea: mining should remain accessible to everyday users.
 
-| Platform | Release tag | Integrated miner |
-| --- | --- | --- |
-| **Windows** | wallets-v1.1.1 | Yes (XMRig, 20,000+ H/s on modern CPUs) |
-| **Ubuntu / Linux** | wallets-v1.1.1 | Yes |
-| **macOS** | wallets-v1.1.1 | Yes |
-| **Android** | wallets-v1.1.0 | Yes (ARM64, 300–600 H/s) |
+Instead of relying on large centralized mining pools, CryLo supports **CPU-only solo mining** and integrated proxy-based mining infrastructure. This allows lower-end devices to contribute hashing power while helping maintain a fair and decentralized network.
 
-> **Note on antivirus warnings:** The integrated miner is based on XMRig (open-source RandomX miner). All XMRig-based binaries are flagged as false positives by most antivirus software. This is a known and documented issue that also affects the official Monero GUI wallet — see [getmonero.org/get-started/faq](https://www.getmonero.org/get-started/faq/#antivirus). The source code is fully auditable on GitHub.
->
-> The miner **only runs when you navigate to the Mining tab, enter your wallet address, and click Start**. Nothing runs in the background without your explicit action.
+* Custom RandomX-based **rx/c64** algorithm
+* CPU-only mining
+* Solo mining without traditional pools
+* CryLo-Proxy support for lower-end hardware
+* Decentralized miner participation
+* No premine
+* No ICO
+* No VC allocation
+
+
+### Linear Emission
+
+* Maximum Supply: **5,000,000 CRYLO**
+* Starting Block Reward: **2.5 CRYLO**
+* Minimum Block Reward Floor: **0.2 CRYLO**
+* Linear emission schedule across **3,703,704 blocks**
+* Predictable long-term issuance
+
+### Miner Vesting System
+
+Every block reward is automatically split:
+
+* **50% instantly unlocked**
+* **50% vested for 45 days**
+
+This model rewards active miners while encouraging long-term network participation.
+
+### Sustainable Ecosystem Funding
+
+Each block includes:
+
+* **1.0% Development Fund**
+* **0.5% Liquidity Fund**
+
+These funds support ongoing development, infrastructure, exchange liquidity, and ecosystem expansion.
+
+### Fast Blocks
+
+* Block Target: **210 seconds**
+* Approximately **411 blocks per day**
+* Faster confirmations and responsive network operation
+
+### Bootstrap Difficulty
+
+* Initial Network Difficulty: **125,000**
+* Designed to provide stable early network operation and miner onboarding
 
 ---
 
-## Quick Start — Build from source
+# CryLo Desktop Wallet
 
-### 1. Install dependencies (Ubuntu 22.04 / 24.04)
+CryLo includes a custom Electron-based desktop wallet that integrates directly with the CryLo daemon.
 
-```
-sudo apt update
-sudo apt install -y build-essential cmake pkg-config libboost-all-dev libssl-dev \
-    libzmq3-dev libsodium-dev libunwind-dev liblzma-dev libreadline-dev \
-    libexpat1-dev libpgm-dev libhidapi-dev libusb-1.0-0-dev \
-    libprotobuf-dev protobuf-compiler libudev-dev libncurses5-dev libncursesw5-dev \
-    libunbound-dev liblmdb-dev libminiupnpc-dev libuv1-dev git screen
-```
+### Wallet Features
 
-### 2. Disable IPv6 (required for peer discovery)
+* Integrated daemon management
+* One-click synchronization
+* Built-in mining controls
+* Wallet balance tracking
+* Transaction history
+* Network status monitoring
 
-```
-sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-```
+### Mining Dashboard
 
-To make it permanent:
+The CryLo Wallet includes a real-time mining dashboard displaying:
 
-```
-echo "net.ipv6.conf.all.disable_ipv6=1" | sudo tee -a /etc/sysctl.conf
-echo "net.ipv6.conf.default.disable_ipv6=1" | sudo tee -a /etc/sysctl.conf
-```
+* Local Hashrate
+* Network Hashrate
+* Estimated Block Time
+* Expected Blocks Per Day
+* Estimated Daily Rewards
+* Blocks Found
+* Current Difficulty
+* Block Reward
+* Mining Thread Count
 
-### 3. Build the node and wallet
+---
 
-```
-git clone https://github.com/oxynaz/c64chain-mainnet.git
-cd c64chain-mainnet
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-```
+# CryLo Proxy
 
-### 4. Verify the build
+CryLo-Proxy is a supplemental mining service designed specifically for lower-end hardware and resource-constrained devices.
 
-```
-./bin/c64chaind-mainnet --version
-```
+To promote fair network participation and prevent mining centralization, the CryLo Proxy operates with a strict **100 kH/s global hashrate cap**. Once the cap is reached, additional miners are directed to mine directly through the CryLo daemon or Electron wallet.
 
-Should display: `C64 Chain 'Mainnet' (v1.0.0-...)`
+The proxy is not intended to replace solo mining. Instead, it provides an accessible entry point for small miners while encouraging higher-performance systems to contribute directly to the network.
 
-This produces binaries in `build/bin/`:
+### Features
 
-* `c64chaind-mainnet` — the node daemon
-* `c64wallet-mainnet` — the wallet CLI
-* `c64chain-wallet-rpc-mainnet` — wallet RPC server (for exchange/pool integration)
+* Designed for low-power and lower-end hardware
+* Global proxy hashrate cap of **100 kH/s**
+* Automatic hashrate enforcement with grace period protection
+* Fair-share participation for small miners
+* Miner connection tracking and monitoring
+* Centralized hashrate visibility
+* LAN and remote deployment support
+* Direct migration path to daemon and wallet mining
 
-### Updating to a new version
+### Fair Mining Philosophy
 
-```
-cd ~/c64chain-mainnet
-git fetch --tags --force
-git pull
-rm -rf build
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-./bin/c64chaind-mainnet --version
-```
+CryLo prioritizes decentralized, CPU-only solo mining.
 
-> ⚠️ **Always use `git fetch --tags --force`** before `git pull`. Without this, the version will display incorrectly.
-> The `rm -rf build` ensures a clean build with no cached artifacts.
+The CryLo Proxy exists to help smaller miners participate without competing against larger systems. Higher-performance hardware is expected to mine directly through the CryLo daemon or Electron wallet, helping maintain a balanced and decentralized mining ecosystem.
 
-## Run the node
 
-```
-./c64chaind-mainnet --non-interactive --rpc-bind-port=19641 --log-level=1
-```
+---
 
-The node will automatically connect to seed nodes and sync the blockchain.
+# Current Network Status
 
-> **Tip:** Use `screen` to run in background:
->
-> ```
-> screen -dmS node bash -c "cd ~/c64chain-mainnet/build/bin && ./c64chaind-mainnet --non-interactive --log-level=1 --out-peers 64 --in-peers 128"
-> ```
->
-> View the TUI: `screen -r node` (detach with Ctrl+A then D)
+### Testnet Live
 
-### Verify the node is running
+The CryLo Testnet is currently operational and available for external miner testing.
 
-```
-curl -s http://127.0.0.1:19641/json_rpc -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' -H 'Content-Type: application/json' | python3 -c 'import sys,json;d=json.load(sys.stdin)["result"];print("Height:",d["height"],"Peers:",d["outgoing_connections_count"],"out /",d["incoming_connections_count"],"in")'
-```
+Current goals:
 
-### LAN Mining Setup
+* Testnet stability validation
+* Mining performance testing
+* Wallet testing
+* Network growth
+* Community miner onboarding
 
-If you have multiple machines behind the same internet connection (same external IP), only one machine can run a node. The others mine directly on the node's RPC via your local network:
+---
 
-**On the node machine** — add these flags to open RPC on the local network:
+# Technical Specifications
 
-```
-./c64chaind-mainnet --non-interactive --rpc-bind-ip=0.0.0.0 --confirm-external-bind --log-level=1
-```
+| Parameter            | Value            |
+| -------------------- | ---------------- |
+| Coin Ticker          | CRYLO            |
+| Maximum Supply       | 5,000,000        |
+| Block Target         | 210 Seconds      |
+| Starting Reward      | 2.5 CRYLO        |
+| Reward Floor         | 0.2 CRYLO        |
+| Emission Length      | 3,703,704 Blocks |
+| Mining Algorithm     | rx/c64           |
+| Instant Reward       | 50%              |
+| Vested Reward        | 50%              |
+| Vesting Period       | 45 Days          |
+| Development Fund     | 1.0%             |
+| Liquidity Fund       | 0.5%             |
+| Bootstrap Difficulty | 125,000          |
 
-**On other LAN machines** — point the miner to the node machine's local IP:
+---
 
-```
-{
-    "url": "192.168.X.X:19641",
-    "daemon": true
-}
-```
-
-No node needed on the miner-only machines.
-
-## Create a wallet
-
-```
-./c64wallet-mainnet --daemon-address=127.0.0.1:19641 --generate-new-wallet=$HOME/.c64chain_mainnet/mywallet
-```
+# Roadmap
 
-It will ask for a password. **Save your wallet address** (starts with `Wo...`) and your **seed phrase** (25 words). You will need the address to configure the miner.
+## Phase 1 — Testnet Foundation ✅ COMPLETE
 
-## Open an existing wallet
+The CryLo Testnet has successfully launched and all core foundation milestones have been completed.
 
-```
-./c64wallet-mainnet --daemon-address=127.0.0.1:19641 --wallet-file=$HOME/.c64chain_mainnet/mywallet
-```
-
-### Wallet commands
-
-| Command | Description |
-| --- | --- |
-| `balance` | Check your balance (shows locked/unlocked due to vesting) |
-| `vesting` | Show full vesting unlock timeline with per-tier status |
-| `address` | Show your address |
-| `transfer ADDRESS AMOUNT` | Send C64 coins |
-| `seed` | Display your recovery seed phrase |
-| `help` | Show available commands |
-| `exit` | Quit the wallet |
+### Completed Milestones
 
-### The `vesting` command
+✅ Core CryLo blockchain launched and operating on Testnet
 
-The `vesting` command displays a complete overview of your mined rewards and their unlock schedule:
+✅ Custom tokenomics implemented
 
-```
-  === C64 VESTING STATUS ===
-
-  Network height:  1685
-  Total balance:   158811.2489 C64
-  Unlocked:        34156.1846 C64 (21.5%)
-  Locked:          124655.0643 C64 (78.5%)
+* 5,000,000 maximum supply
+* Linear emission schedule
+* 50% instant miner rewards
+* 50% vested miner rewards (45-day vesting)
 
-  --- Per-Tier Status ---
-  Tier 1 (24h): 33811.3783 unlocked, 5805.2324 locked
-  Tier 2 (30d): 0.0000 unlocked, 39616.6106 locked
-  Tier 3 (60d): 0.0000 unlocked, 39616.6106 locked
-  Tier 4 (90d): 0.0000 unlocked, 39616.6106 locked
+✅ Electron Desktop Wallet released
 
-  --- Unlock Timeline ---
-  When                   Date                 + Unlocked   Total available       %
-  Now                    -                             -     34156.1846 C64   21.5%
-  + 24 hours             2026-02-16 13:19   5805.2324 C64    39961.4170 C64   25.2%
-  + 30 days              2026-03-17 13:19  39616.6106 C64    79578.0276 C64   50.1%
-  + 60 days              2026-04-16 14:19  39616.6106 C64   119194.6383 C64   75.1%
-  + 90 days              2026-05-16 14:19  39616.6106 C64   158811.2489 C64  100.0%
+✅ Integrated daemon mining controls
 
-  100% unlocked: 2026-05-16 14:09 (in ~89 days)
-  Total: 158811.2489 C64
-```
+✅ CryLo-Proxy deployed and operational
 
-This shows exactly when your mined coins will become spendable, with projected dates for each vesting tier.
+✅ Real-time Mining Dashboard implemented
 
-## Mine C64
+* Local hashrate
+* Network hashrate
+* Estimated block time
+* Expected blocks per day
+* Estimated daily rewards
+* Blocks found
+* Difficulty monitoring
 
-### Option 1 — GUI Wallet (recommended)
+✅ Network difficulty and emission model validated
 
-Download the GUI wallet for your platform from the [releases page](https://github.com/oxynaz/c64chain-mainnet/releases), open it, navigate to the **Mining tab**, enter your wallet address and click **Start**. The miner is fully integrated — no separate installation required.
-
-### Option 2 — Build the miner from source
-
-```
-git clone https://github.com/oxynaz/c64miner.git
-cd c64miner
-mkdir build && cd build
-cmake .. -DWITH_OPENCL=OFF -DWITH_CUDA=OFF -DWITH_HWLOC=OFF
-make -j$(nproc)
-```
-
-Create a `config.json`:
-
-```
-{
-    "autosave": false,
-    "donate-level": 0,
-    "cpu": { "enabled": true },
-    "opencl": false,
-    "cuda": false,
-    "pools": [{
-        "url": "127.0.0.1:19641",
-        "user": "YOUR_C64_WALLET_ADDRESS_HERE",
-        "algo": "rx/c64",
-        "coin": "c64chain",
-        "daemon": true,
-        "daemon-poll-interval": 1000
-    }],
-    "print-time": 5
-}
-```
-
-> ⚠️ `"daemon": true` and `"coin": "c64chain"` are **required**.
-
-Run the miner:
-
-```
-sudo ./c64miner -c config.json -t $(nproc)
-```
-
-Always run with `sudo` for best performance (huge pages). The miner features a Commodore 64-themed TUI showing hashrate, accepted blocks, and live mining logs.
-
-## Mining Pools
-
-| Pool | URL |
-| --- | --- |
-| **Suprnova** | https://c64.suprnova.cc/index.html |
-| **Rplant** | https://pool.rplant.xyz/#c64chain |
-| **FairMiningPool** | https://fairminingpool.com/c64 |
-| **RabbitMiner** | https://rabbitminer.cc/c64/ |
-
-Each pool's website provides connection instructions and stratum endpoints. For pool mining, replace the `url` in your miner config with the pool's stratum address.
-
-## Exchanges
-
-| Exchange | Pair | URL |
-| --- | --- | --- |
-| **Cexius** | C64/USDT | https://cexius.com/trade/C64-USDT |
-| **Exbitron** | C64/USDT | https://app.exbitron.com/exchange/?market=C64-USDT |
-| **NoirTrade** | C64/USDT | https://noirtrade.com/trade?pair=C64_USDT0 |
-
-## Network Configuration
-
-| Parameter | Value |
-| --- | --- |
-| P2P Port | 19640 |
-| RPC Port | 19641 |
-| Algorithm | rx/c64 |
-| Block time | 5 minutes |
-| Max supply | 19,640,000 |
-| Dev fund | 2% |
-
-## Seed Nodes
-
-5 seed nodes are hardcoded in the node binary across 3 continents (Europe, North America). Your node will automatically discover and connect to them.
-
-## Block Explorer
-
-* **[c64chain.com](https://c64chain.com)** — search blocks, transactions, network stats
-
-## Comparison with Similar Projects
-
-| Feature | C64 Chain | Monero | Wownero |
-| --- | --- | --- | --- |
-| Algorithm | rx/c64 | RandomX | RandomWOW |
-| Max supply | 19.64M | 18.4M + tail | Unlimited |
-| Block time | 5 min | 2 min | 5 min |
-| Dev fund | 2% consensus | Community funded | None |
-| Vesting | 90-day 4-tier | None | None |
-| Privacy | Full CryptoNote | Full CryptoNote | Full CryptoNote |
-| Difficulty algo | LWMA-1 (HF20) | LWMA-1 | LWMA-1 |
-
-## Roadmap
-
-* ~~Testnet launch~~
-* ~~Security audit & fixes~~
-* ~~HF20: LWMA-1 difficulty algorithm, dev fund crypto verification~~
-* ~~Mainnet launch — February 19, 2026~~
-* ~~GUI wallets (Windows / Linux / macOS / Android)~~
-* ~~Mining pool listings (Suprnova, Rplant, FairMiningPool, RabbitMiner)~~
-* ~~Exchange listing (Cexius)~~
-* ~~Exchange listing (Exbitron)~~
-* Additional exchange listings
-* SRBMiner native support ✅
-
-## Community
-
-* Discord: https://discord.gg/MTRgHT8r45
-* X / Twitter: https://x.com/C64Chain
-* GitHub: [github.com/oxynaz](https://github.com/oxynaz)
-* Block Explorer: [c64chain.com](https://c64chain.com)
+✅ Testnet infrastructure operational
+
+✅ External miner testing ready
+
+### Phase 1 Status
+
+🟢 COMPLETE
+
+CryLo has progressed from concept to a fully functioning blockchain ecosystem with a live Testnet, desktop wallet, integrated mining infrastructure, and operational proxy network.
+
+The project is now entering Phase 2: Network Growth and Community Testing.
+
+
+### Phase 2 — Network Growth
+
+* Public miner onboarding
+* Expanded testnet participation
+* Community tooling
+* Mining ecosystem expansion
+
+### Phase 3 — Ecosystem
+
+* Advanced wallet functionality
+* Additional infrastructure services
+* NFT and Layer-2 experimentation
+* Long-term governance initiatives
+
+---
+
+# Vision
+
+CryLo is designed to create a sustainable mining economy where miners are incentivized to participate beyond immediate block rewards. Through predictable emissions, reward vesting, and ecosystem funding, CryLo aims to build a long-lived CPU-mined network focused on decentralization and community growth.
+
 
 ## Credits & License
 
-C64 Chain is a fork of [Wownero](https://codeberg.org/wownero/wownero), which is a fork of [Monero](https://github.com/monero-project/monero).
+CryLo is a custom blockchain project derived from the CryptoNote codebase and inspired by the open-source innovation of the Monero ecosystem.
 
-Licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE).
+Project lineage:
 
-All original Monero and Wownero copyrights remain intact.
+**Monero → Wownero → C64 Chain → CryLo**
+
+CryLo introduces its own economics, mining infrastructure, wallet ecosystem, vesting model, and network architecture while building upon years of open-source development contributed by these projects.
+
+Licensed under the **GNU General Public License v3.0 (GPL-3.0)**. See [LICENSE](LICENSE) for full details.
+
+We thank all upstream developers and contributors whose work laid the foundation for CryLo.
+
