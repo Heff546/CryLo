@@ -356,6 +356,19 @@ function fmtHashrate(hr) {
   return hr.toFixed(0) + ' H/s';
 }
 
+function fmtDuration(seconds) {
+  seconds = Math.max(0, Number(seconds) || 0);
+
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${Math.floor(seconds)}s`;
+}
+
 // ─── Balance ──────────────────────────────────────────────────────────────────
 async function updateBalance() {
   const res = await window.c64.walletRpc('get_balance', { account_index: 0 });
@@ -927,7 +940,41 @@ async function startMining() {
   	    document.getElementById('mining-stat-difficulty').textContent =
     	      (info.result.difficulty || 0).toLocaleString();
 
-  	    if (State.miningStartHeight === null) {
+	    const difficulty = info.result.difficulty || 0;
+	    const targetSeconds = 210; // CryLo current block target
+	    const networkHashrate = difficulty / targetSeconds;
+
+	    document.getElementById('mining-stat-network-hashrate').textContent =
+  	      fmtHashrate(networkHashrate);
+
+	    const minerHashrate = Number(s.hashrate) || 0;
+
+	    if (minerHashrate > 0) {
+  	      const expectedSecondsPerBlock =
+    		(networkHashrate / minerHashrate) * targetSeconds;
+
+  	      document.getElementById('mining-stat-est-block-time').textContent =
+    		fmtDuration(expectedSecondsPerBlock);
+
+	    const blocksPerDay = 86400 / expectedSecondsPerBlock;
+
+	    document.getElementById('mining-stat-blocks-day').textContent =
+  	      blocksPerDay.toFixed(4);
+
+	    if (s.blockReward) {
+  	      const dailyRewards = blocksPerDay * (Number(s.blockReward) / COIN);
+
+  	      document.getElementById('mining-stat-daily-rewards').textContent =
+    		dailyRewards.toFixed(4) + ' CryLo';
+	    }
+
+	    } else {
+  	      document.getElementById('mining-stat-est-block-time').textContent = '—';
+  	      document.getElementById('mining-stat-blocks-day').textContent = '—';
+  	      document.getElementById('mining-stat-daily-rewards').textContent = '—';
+	    }
+
+	    if (State.miningStartHeight === null) {
   	      State.miningStartHeight = height;
 	    }
 
