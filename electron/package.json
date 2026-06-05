@@ -1,11 +1,11 @@
 {
-  "name": "c64chain-wallet",
+  "name": "crylo-wallet",
   "version": "1.1.1",
-  "description": "C64 Chain Wallet - Official GUI Wallet",
+  "description": "CryLo Wallet - Official GUI Wallet",
   "main": "main.js",
   "author": {
-    "name": "C64 Chain",
-    "email": "c64chain@gmail.com"
+    "name": "CryLo",
+    "email": "crylo@crylo.com"
   },
   "license": "MIT",
   "scripts": {
@@ -20,9 +20,9 @@
     "electron-builder": "^25.0.0"
   },
   "build": {
-    "appId": "com.c64chain.wallet",
-    "productName": "C64 Chain Wallet",
-    "copyright": "Copyright © 2025 C64 Chain",
+    "appId": "com.crylo.wallet",
+    "productName": "CryLo Wallet",
+    "copyright": "Copyright © 2025 CryLo",
     "directories": {
       "output": "dist"
     },
@@ -80,7 +80,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "C64 Chain Wallet",
+      "shortcutName": "CryLo Wallet",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico"
     },
@@ -105,5 +105,5 @@
       "icon": "assets/icon.png"
     }
   },
-  "homepage": "https://c64chain.com"
+  "homepage": "https://crylo.com"
 }

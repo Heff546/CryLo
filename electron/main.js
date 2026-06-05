@@ -8,11 +8,11 @@ const http = require('http');
 const os = require('os');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const DAEMON_RPC_PORT   = 19641;
-const WALLET_RPC_PORT   = 19740;
+const DAEMON_RPC_PORT   = 22641;
+const WALLET_RPC_PORT   = 22643;
 const WALLET_DIR_NAME   = 'wallets';
 const LOG_DIR_NAME      = 'logs';
-const DATA_DIR_NAME     = 'c64chain';
+const DATA_DIR_NAME     = 'CryLo-testnet';
 
 // Detect OS
 const IS_WIN   = process.platform === 'win32';
@@ -123,6 +123,45 @@ function rpcCall(port, method, params = {}, timeoutMs = 10000) {
   });
 }
 
+function daemonHttp(path, bodyObj = {}, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(bodyObj);
+
+    const req = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: DAEMON_RPC_PORT,
+        path,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        }
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+    );
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error('timeout'));
+    });
+
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
 function daemonRpc(method, params = {}) {
   return rpcCall(DAEMON_RPC_PORT, method, params);
 }
@@ -156,40 +195,28 @@ function waitForRpc(port, maxMs = 120000) {
 
 // ─── Process management ──────────────────────────────────────────────────────
 function spawnDaemon() {
-  const bin = getBinPath('c64chaind');
-  if (!fs.existsSync(bin)) {
-    sendStatus('error', `Daemon binary not found: ${bin}`);
-    return null;
-  }
   const logger = makeLogger('daemon');
-  const args = [
-    `--rpc-bind-port=${DAEMON_RPC_PORT}`,
-    `--data-dir=${getDataDir()}`,
-    '--non-interactive',
-    '--log-level=1',
-    '--no-zmq'
-  ];
-  logger.write(`Spawning daemon: ${bin} ${args.join(' ')}\n`);
-  const proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, C64_NO_TUI: '1' } });
-  proc.stdout.on('data', (d) => logger.write(d.toString()));
-  proc.stderr.on('data', (d) => logger.write(d.toString()));
-  proc.on('exit', (code) => {
-    logger.write(`Daemon exited with code ${code}\n`);
-    if (!shuttingDown && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('daemon-exit', code);
-    }
-  });
-  return proc;
+
+  logger.write(
+    `Using existing CryLo daemon on 127.0.0.1:${DAEMON_RPC_PORT}\n`
+  );
+
+  return {
+    exitCode: null,
+    once: () => {},
+    kill: () => {}
+  };
 }
 
 function spawnWalletRpc() {
-  const bin = getBinPath('c64chain-wallet-rpc');
+  const bin = getBinPath('CryLo-wallet-rpc');
   if (!fs.existsSync(bin)) {
     sendStatus('error', `Wallet-RPC binary not found: ${bin}`);
     return null;
   }
   const logger = makeLogger('wallet-rpc');
   const args = [
+    '--testnet',
     `--rpc-bind-port=${WALLET_RPC_PORT}`,
     `--daemon-address=127.0.0.1:${DAEMON_RPC_PORT}`,
     `--wallet-dir=${getWalletDir()}`,
@@ -231,7 +258,7 @@ function sendStatus(state, message) {
 // ─── Startup sequence ─────────────────────────────────────────────────────────
 async function startBackend() {
   try {
-    sendStatus('starting', 'Starting C64 Chain daemon...');
+    sendStatus('starting', 'Starting CryLo daemon...');
     daemonProc = spawnDaemon();
     if (!daemonProc) return;
 
@@ -307,47 +334,8 @@ ipcMain.handle('confirm-dialog', async (_, opts) => {
 
 
 // ─── Miner ───────────────────────────────────────────────────────────────────
-function spawnMiner(opts) {
-  const bin = getBinPath('c64miner');
-  if (!fs.existsSync(bin)) throw new Error('Miner binary not found: ' + bin);
-  const logger = makeLogger('miner');
-  const user = opts.walletAddress + '.' + (opts.workerName || 'desktop');
-  const args = [
-    '--algo=rx/c64',
-    '--coin=c64chain',
-    '--url=' + opts.poolUrl,
-    '--user=' + user,
-    '--pass=x',
-    '--threads=' + (opts.threads || 2),
-    '--no-color',
-    '--print-time=5'
-  ];
-  logger.write('Spawning miner: ' + bin + ' ' + args.join(' ') + '\n');
-  minerStats = { hashrate: 0, sharesAccepted: 0, sharesRejected: 0, running: true };
-  const proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  proc.stdout.on('data', (d) => {
-    const txt = d.toString();
-    logger.write(txt);
-    // speed 10s/60s/15m 10041.3 10074.1 n/a H/s
-    const hrMatch = txt.match(/speed\s+10s\/60s\/15m\s+(\d+\.?\d*)/i);
-    if (hrMatch) minerStats.hashrate = parseFloat(hrMatch[1]);
-    // accepted (8/0)
-    const accMatch = txt.match(/accepted\s+\((\d+)\/(\d+)\)/i);
-    if (accMatch) {
-      minerStats.sharesAccepted = parseInt(accMatch[1]);
-      minerStats.sharesRejected = parseInt(accMatch[2]);
-    }
-  });
-  proc.stderr.on('data', (d) => logger.write(d.toString()));
-  proc.on('exit', (code) => {
-    logger.write('Miner exited with code ' + code + '\n');
-    minerStats.running = false;
-    minerProc = null;
-  });
-  return proc;
-}
 
-// Miner IPC
+// Miner IPC — CryLo daemon mining
 ipcMain.handle('miner-get-info', async () => {
   return {
     ok: true,
@@ -358,22 +346,42 @@ ipcMain.handle('miner-get-info', async () => {
 
 ipcMain.handle('miner-start', async (_, opts) => {
   try {
-    if (minerProc) { try { minerProc.kill(); } catch(_) {} minerProc = null; }
-    minerProc = spawnMiner(opts);
-    return { ok: true };
-  } catch(e) { return { ok: false, error: e.message }; }
+    const result = await daemonHttp('/start_mining', {
+      miner_address: opts.walletAddress,
+      threads_count: opts.threads || 2,
+      do_background_mining: false,
+      ignore_battery: true
+    });
+
+    return { ok: true, result };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
 });
 
 ipcMain.handle('miner-stop', async () => {
   try {
-    if (minerProc) { await killProc(minerProc, 'miner'); minerProc = null; }
-    minerStats.running = false;
-    return { ok: true };
-  } catch(e) { return { ok: false, error: e.message }; }
+    const result = await daemonHttp('/stop_mining', {});
+    return { ok: true, result };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
 });
 
 ipcMain.handle('miner-get-status', async () => {
-  return { ok: true, ...minerStats };
+  try {
+    const result = await daemonHttp('/mining_status', {});
+
+    return {
+      ok: true,
+      running: !!result.active,
+      hashrate: result.speed || 0,
+      threads: result.threads_count || 0,
+      blockReward: result.block_reward || 0
+    };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
 });
 
 // ─── Window ───────────────────────────────────────────────────────────────────
@@ -384,7 +392,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 700,
     backgroundColor: '#0d0d1a',
-    title: 'C64 Chain Wallet',
+    title: 'CryLo Wallet',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -410,7 +418,7 @@ function createWindow() {
 if (process.platform === 'darwin') {
   const template = [
     {
-      label: 'C64 Chain Wallet',
+      label: 'CryLo Wallet',
       submenu: [
         { role: 'about' },
         { type: 'separator' },
