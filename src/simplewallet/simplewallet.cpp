@@ -6125,41 +6125,20 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
   uint64_t total_balance = m_wallet->balance(m_current_subaddress_account, false);
   uint64_t locked_balance = total_balance > unlocked_balance ? total_balance - unlocked_balance : 0;
 
-  uint64_t vested_30 = 0;
-  uint64_t vested_60 = 0;
-  uint64_t vested_90 = 0;
-
-  uint64_t current_height = m_wallet->get_blockchain_current_height();
+  uint64_t vested_45 = 0;
 
   for (size_t i = 0; i < m_wallet->get_num_transfer_details(); ++i)
   {
     const auto& td = m_wallet->get_transfer_details(i);
 
-    if (m_wallet->is_transfer_unlocked(td.m_tx.unlock_time, td.m_block_height))
+    // only count the vested miner output
+    if (td.m_internal_output_index != 1)
       continue;
 
-    uint64_t unlock_height = td.m_tx.unlock_time;
-
-    if (unlock_height <= current_height)
+    if (m_wallet->is_transfer_unlocked(td))
       continue;
 
-    uint64_t original_lock_blocks =
-      td.m_tx.unlock_time > td.m_block_height
-        ? td.m_tx.unlock_time - td.m_block_height
-        : 0;
-
-success_msg_writer() 
-  << "DEBUG vest output amount=" << print_money(td.amount())
-  << " block_height=" << td.m_block_height
-  << " unlock_time=" << td.m_tx.unlock_time
-  << " original_lock_blocks=" << original_lock_blocks;
-
-    if (original_lock_blocks <= 12343)
-      vested_30 += td.amount();
-    else if (original_lock_blocks <= 24686)
-      vested_60 += td.amount();
-    else
-      vested_90 += td.amount();
+    vested_45 += td.amount();
   }
 
   success_msg_writer() << tr("Balance: ") << print_money(total_balance) << ", "
@@ -6167,10 +6146,7 @@ success_msg_writer()
     << tr("locked/vested balance: ") << print_money(locked_balance)
     << unlock_time_message << extra;
 
-  success_msg_writer() << tr("30 days: ") << print_money(vested_30);
-  success_msg_writer() << tr("60 days: ") << print_money(vested_60);
-  success_msg_writer() << tr("90 days: ") << print_money(vested_90);
-
+  success_msg_writer() << tr("45-day vested: ") << print_money(vested_45);
   std::map<uint32_t, uint64_t> balance_per_subaddress = m_wallet->balance_per_subaddress(m_current_subaddress_account, false);
   std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> unlocked_balance_per_subaddress = m_wallet->unlocked_balance_per_subaddress(m_current_subaddress_account, false);
   if (!detailed || balance_per_subaddress.empty())

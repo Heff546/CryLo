@@ -7102,12 +7102,22 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
         uint64_t unlock_height = td.m_block_height + std::max<uint64_t>(CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE, CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_BLOCKS);
         // CryLo Chain: use per-output vesting unlock for coinbase
         uint64_t effective_unlock = td.m_tx.unlock_time;
-        if (td.m_tx.vin.size() == 1 && td.m_tx.vin[0].type() == typeid(cryptonote::txin_gen)
-            && td.m_tx.vout.size() == 5 && td.m_internal_output_index < 4) {
-          static const uint64_t vesting_unlocks[] = { 288, 8640, 17280, 25920 };
-          uint64_t cb_height = boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
-          effective_unlock = cb_height + vesting_unlocks[td.m_internal_output_index];
-        }
+        if (td.m_tx.vin.size() == 1 &&
+    	    td.m_tx.vin[0].type() == typeid(cryptonote::txin_gen))
+	{
+  	  uint64_t cb_height =
+    	    boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
+
+  	  // vout[0] = miner 50% instant
+	  // vout[1] = miner 50% vested 45 days
+  	  // vout[2] = dev fund
+  	  // vout[3] = liquidity fund
+
+  	  if (cb_height >= 2 && td.m_internal_output_index == 1)
+    	    effective_unlock = cb_height + 18514;
+  	  else
+    	    effective_unlock = 0;
+	}
         if (effective_unlock < CRYPTONOTE_MAX_BLOCK_NUMBER && effective_unlock > unlock_height)
           unlock_height = effective_unlock;
         uint64_t unlock_time = effective_unlock >= CRYPTONOTE_MAX_BLOCK_NUMBER ? effective_unlock : 0;
@@ -7304,23 +7314,28 @@ void wallet2::rescan_blockchain(bool hard, bool refresh, bool keep_key_images)
 //----------------------------------------------------------------------------------------------------
 bool wallet2::is_transfer_unlocked(const transfer_details& td)
 {
-  // CryLo Chain: HF19+ vesting - per-output unlock times for coinbase
   uint64_t unlock_time = td.m_tx.unlock_time;
-  if (td.m_tx.vin.size() == 1 && td.m_tx.vin[0].type() == typeid(cryptonote::txin_gen)) {
-    // This is a coinbase TX - check if it has vesting outputs (5 outputs = 4 vesting + dev fund)
-    if (td.m_tx.vout.size() == 5 && td.m_internal_output_index < 4) {
-      static const uint64_t vesting_unlocks[] = {
-        CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2,  // 288 (~24h)
-        8640,   // ~30 days
-        17280,  // ~60 days
-        25920   // ~90 days
-      };
-      uint64_t cb_height = boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
-      unlock_time = cb_height + vesting_unlocks[td.m_internal_output_index];
-    }
+
+  if (td.m_tx.vin.size() == 1 &&
+      td.m_tx.vin[0].type() == typeid(cryptonote::txin_gen))
+  {
+    uint64_t cb_height =
+      boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
+
+    // vout[0] = miner instant
+    // vout[1] = miner vested 45 days
+    // vout[2] = dev fund
+    // vout[3] = liquidity fund
+
+    if (cb_height >= 2 && td.m_internal_output_index == 1)
+      unlock_time = cb_height + 18514;
+    else
+      unlock_time = 0;
   }
+
   return is_transfer_unlocked(unlock_time, td.m_block_height);
 }
+
 //----------------------------------------------------------------------------------------------------
 bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height)
 {
