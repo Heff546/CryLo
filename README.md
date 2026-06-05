@@ -63,7 +63,7 @@ This model rewards active miners immediately while encouraging long-term partici
 ### Step 1 — Start the Testnet Daemon
 
 ```bash
-./build/bin/CryLo-daemon --testnet --data-dir ~/.CryLo-testnet
+./build/bin/CryLo-daemon --testnet --data-dir ~/.CryLo-testnet-v2
 ```
 
 Wait until the daemon has synchronized with the network.
@@ -74,7 +74,7 @@ Wait until the daemon has synchronized with the network.
 ./build/bin/CryLo-wallet \
   --testnet \
   --daemon-address=127.0.0.1:22641 \
-  --generate-new-wallet=$HOME/.CryLo-testnet/mywallet
+  --generate-new-wallet=$HOME/.CryLo-testnet-v2/mywallet
 ```
 
 Save your wallet password, wallet address, and 25-word recovery seed phrase.
@@ -120,7 +120,7 @@ Create a new wallet:
 ./build/bin/CryLo-wallet \
   --testnet \
   --daemon-address=127.0.0.1:22641 \
-  --generate-new-wallet=$HOME/.CryLo-testnet/mywallet
+  --generate-new-wallet=$HOME/.CryLo-testnet-v2/mywallet
 ```
 
 When prompted:
@@ -154,7 +154,7 @@ If you have already created a wallet, open it with:
 ./build/bin/CryLo-wallet \
   --testnet \
   --daemon-address=127.0.0.1:22641 \
-  --wallet-file=$HOME/.CryLo-testnet/mywallet
+  --wallet-file=$HOME/.CryLo-testnet-v2/mywallet
 ```
 
 When prompted, enter your wallet password.
@@ -218,7 +218,7 @@ CryLo can be mined directly through the daemon without any external mining softw
 #### Step 1 — Start the CryLo Testnet Daemon
 
 ```bash
-./build/bin/CryLo-daemon --testnet --data-dir ~/.CryLo-testnet
+./build/bin/CryLo-daemon --testnet --data-dir ~/.CryLo-testnet-v2
 ```
 
 Wait for the daemon to synchronize with the network before starting mining.
@@ -241,7 +241,7 @@ Wait until the response shows:
 ./build/bin/CryLo-wallet \
   --testnet \
   --daemon-address=127.0.0.1:22641 \
-  --wallet-file=$HOME/.CryLo-testnet/mywallet
+  --wallet-file=$HOME/.CryLo-testnet-v2/mywallet
 ```
 
 Display your wallet address:
@@ -304,7 +304,7 @@ This setup is ideal for home mining, small testnet deployments, and multi-machin
 ```bash
 ./build/bin/CryLo-daemon \
   --testnet \
-  --data-dir ~/.CryLo-testnet \
+  --data-dir ~/.CryLo-testnet-v2 \
   --rpc-bind-ip=0.0.0.0 \
   --confirm-external-bind \
   --log-level=1
