@@ -4,6 +4,8 @@
 ![Mining](https://img.shields.io/badge/mining-CPU_only-blue)
 ![Supply](https://img.shields.io/badge/max_supply-5M_CRYLO-purple)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
+[![Release](https://img.shields.io/github/v/release/Heff546/CryLo)](https://github.com/Heff546/CryLo/releases)
+
 
 **CryLo (CRYLO) is a CPU-mined digital asset with a fixed supply of 5 million coins, built to support a fair, decentralized, and sustainable blockchain ecosystem.**
 
