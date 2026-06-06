@@ -111,9 +111,9 @@ using namespace cryptonote;
 // used to target a given block weight (additional outputs may be added on top to build fee)
 #define TX_WEIGHT_TARGET(bytes) (bytes*2/3)
 
-#define UNSIGNED_TX_PREFIX "C64Chain unsigned tx set\005"
-#define SIGNED_TX_PREFIX "C64Chain signed tx set\005"
-#define MULTISIG_UNSIGNED_TX_PREFIX "C64Chain multisig unsigned tx set\001"
+#define UNSIGNED_TX_PREFIX "CryLoChain unsigned tx set\005"
+#define SIGNED_TX_PREFIX "CryLoChain signed tx set\005"
+#define MULTISIG_UNSIGNED_TX_PREFIX "CryLoChain multisig unsigned tx set\001"
 
 #define RECENT_OUTPUT_RATIO (0.5) // 50% of outputs are from the recent zone
 #define RECENT_OUTPUT_DAYS (1.8) // last 1.8 day makes up the recent zone (taken from monerolink.pdf, Miller et al)
@@ -127,11 +127,11 @@ using namespace cryptonote;
 #define SUBADDRESS_LOOKAHEAD_MAJOR 50
 #define SUBADDRESS_LOOKAHEAD_MINOR 200
 
-#define KEY_IMAGE_EXPORT_FILE_MAGIC "C64Chain key image export\003"
+#define KEY_IMAGE_EXPORT_FILE_MAGIC "CryLoChain key image export\003"
 
-#define MULTISIG_EXPORT_FILE_MAGIC "C64Chain multisig export\001"
+#define MULTISIG_EXPORT_FILE_MAGIC "CryLoChain multisig export\001"
 
-#define OUTPUT_EXPORT_FILE_MAGIC "C64Chain output export\004"
+#define OUTPUT_EXPORT_FILE_MAGIC "CryLoChain output export\004"
 
 #define SEGREGATION_FORK_HEIGHT 99999999
 #define TESTNET_SEGREGATION_FORK_HEIGHT 99999999
@@ -155,7 +155,7 @@ using namespace cryptonote;
 
 static const std::string MULTISIG_SIGNATURE_MAGIC = "SigMultisigPkV1";
 
-static const std::string ASCII_OUTPUT_MAGIC = "C64ChainAsciiDataV1";
+static const std::string ASCII_OUTPUT_MAGIC = "CryLoChainAsciiDataV1";
 
 static const std::string BACKGROUND_WALLET_SUFFIX = ".background";
 
@@ -1053,7 +1053,7 @@ gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shap
 
 gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets): gamma_picker(rct_offsets, GAMMA_SHAPE, GAMMA_SCALE) {}
 
-// C64 FIX: constructor with explicit unlock_window to exclude vesting-locked outputs.
+// CryLo FIX: constructor with explicit unlock_window to exclude vesting-locked outputs.
 gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shape, double scale, size_t unlock_window):
     rct_offsets(rct_offsets)
 {
@@ -2249,8 +2249,8 @@ void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, cons
     if (!m_encrypt_keys_after_refresh && !m_processing_background_cache)
     {
       boost::optional<epee::wipeable_string> pwd = m_callback->on_get_password(pool ? "output found in pool" : "output received");
-      THROW_WALLET_EXCEPTION_IF(!pwd, error::password_needed, tr("Password is needed to compute key image for incoming c64chain"));
-      THROW_WALLET_EXCEPTION_IF(!verify_password(*pwd), error::password_needed, tr("Invalid password: password is needed to compute key image for incoming c64chain"));
+      THROW_WALLET_EXCEPTION_IF(!pwd, error::password_needed, tr("Password is needed to compute key image for incoming crylo"));
+      THROW_WALLET_EXCEPTION_IF(!verify_password(*pwd), error::password_needed, tr("Invalid password: password is needed to compute key image for incoming crylo"));
       m_encrypt_keys_after_refresh.reset(new wallet_keys_unlocker(*this, m_ask_password == AskPasswordToDecrypt && !m_unattended && !m_watch_only, *pwd));
     }
   }
@@ -3474,7 +3474,7 @@ void wallet2::refresh(bool trusted_daemon, uint64_t start_height, uint64_t & blo
 //----------------------------------------------------------------------------------------------------
 void check_block_hard_fork_version(cryptonote::network_type nettype, uint8_t hf_version, uint64_t height, bool &wallet_is_outdated, bool &daemon_is_outdated)
 {
-  // C64 CHAIN: simplified check - we start at version 17
+  // CryLo Chain: simplified check - we start at version 17
   wallet_is_outdated = false;
   daemon_is_outdated = false;
   if (hf_version < 17) {
@@ -7100,14 +7100,24 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
       else
       {
         uint64_t unlock_height = td.m_block_height + std::max<uint64_t>(CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE, CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_BLOCKS);
-        // C64 CHAIN: use per-output vesting unlock for coinbase
+        // CryLo Chain: use per-output vesting unlock for coinbase
         uint64_t effective_unlock = td.m_tx.unlock_time;
-        if (td.m_tx.vin.size() == 1 && td.m_tx.vin[0].type() == typeid(cryptonote::txin_gen)
-            && td.m_tx.vout.size() == 5 && td.m_internal_output_index < 4) {
-          static const uint64_t vesting_unlocks[] = { 288, 8640, 17280, 25920 };
-          uint64_t cb_height = boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
-          effective_unlock = cb_height + vesting_unlocks[td.m_internal_output_index];
-        }
+        if (td.m_tx.vin.size() == 1 &&
+    	    td.m_tx.vin[0].type() == typeid(cryptonote::txin_gen))
+	{
+  	  uint64_t cb_height =
+    	    boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
+
+  	  // vout[0] = miner 50% instant
+	  // vout[1] = miner 50% vested 45 days
+  	  // vout[2] = dev fund
+  	  // vout[3] = liquidity fund
+
+  	  if (cb_height >= 2 && td.m_internal_output_index == 1)
+    	    effective_unlock = cb_height + 18514;
+  	  else
+    	    effective_unlock = 0;
+	}
         if (effective_unlock < CRYPTONOTE_MAX_BLOCK_NUMBER && effective_unlock > unlock_height)
           unlock_height = effective_unlock;
         uint64_t unlock_time = effective_unlock >= CRYPTONOTE_MAX_BLOCK_NUMBER ? effective_unlock : 0;
@@ -7304,23 +7314,28 @@ void wallet2::rescan_blockchain(bool hard, bool refresh, bool keep_key_images)
 //----------------------------------------------------------------------------------------------------
 bool wallet2::is_transfer_unlocked(const transfer_details& td)
 {
-  // C64 CHAIN: HF19+ vesting - per-output unlock times for coinbase
   uint64_t unlock_time = td.m_tx.unlock_time;
-  if (td.m_tx.vin.size() == 1 && td.m_tx.vin[0].type() == typeid(cryptonote::txin_gen)) {
-    // This is a coinbase TX - check if it has vesting outputs (5 outputs = 4 vesting + dev fund)
-    if (td.m_tx.vout.size() == 5 && td.m_internal_output_index < 4) {
-      static const uint64_t vesting_unlocks[] = {
-        CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2,  // 288 (~24h)
-        8640,   // ~30 days
-        17280,  // ~60 days
-        25920   // ~90 days
-      };
-      uint64_t cb_height = boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
-      unlock_time = cb_height + vesting_unlocks[td.m_internal_output_index];
-    }
+
+  if (td.m_tx.vin.size() == 1 &&
+      td.m_tx.vin[0].type() == typeid(cryptonote::txin_gen))
+  {
+    uint64_t cb_height =
+      boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
+
+    // vout[0] = miner instant
+    // vout[1] = miner vested 45 days
+    // vout[2] = dev fund
+    // vout[3] = liquidity fund
+
+    if (cb_height >= 2 && td.m_internal_output_index == 1)
+      unlock_time = cb_height + 18514;
+    else
+      unlock_time = 0;
   }
+
   return is_transfer_unlocked(unlock_time, td.m_block_height);
 }
+
 //----------------------------------------------------------------------------------------------------
 bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height)
 {
@@ -7350,7 +7365,7 @@ bool wallet2::is_tx_spendtime_unlocked(uint64_t unlock_time, uint64_t block_heig
     catch(...) { adjusted_time = time(NULL); } // use local time if no daemon to report blockchain time
     // XXX: this needs to be fast, so we'd need to get the starting heights
     // from the daemon to be correct once voting kicks in
-    uint64_t v2height = 0; // C64 CHAIN: always post-V2 (Wownero heights removed)
+    uint64_t v2height = 0; // CryLo Chain: always post-V2 (Wownero heights removed)
     uint64_t leeway = block_height < v2height ? CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V1 : CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2;
     if(adjusted_time + leeway >= unlock_time)
       return true;
@@ -9408,8 +9423,8 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     std::unique_ptr<gamma_picker> gamma;
     if (has_rct)
     {
-      // C64 FIX: use the mined-money unlock window as the exclusion boundary
-      // instead of Monero's default (3 blocks). C64 Chain locks coinbase outputs much longer.
+      // CryLo FIX: use the mined-money unlock window as the exclusion boundary
+      // instead of Monero's default (3 blocks). CryLo Chain locks coinbase outputs much longer.
       gamma.reset(new gamma_picker(rct_offsets, GAMMA_SHAPE, GAMMA_SCALE,
           CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW));
     }
@@ -15616,7 +15631,7 @@ std::string wallet2::make_uri(const std::string &address, const std::string &pay
     return std::string();
   }
 
-  std::string uri = "c64chain:" + address;
+  std::string uri = "crylo:" + address;
   unsigned int n_fields = 0;
 
   if (!payment_id.empty())
@@ -15645,9 +15660,9 @@ std::string wallet2::make_uri(const std::string &address, const std::string &pay
 //----------------------------------------------------------------------------------------------------
 bool wallet2::parse_uri(const std::string &uri, std::string &address, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error)
 {
-  if (uri.substr(0, 8) != "c64chain:")
+  if (uri.substr(0, 8) != "crylo:")
   {
-    error = std::string("URI has wrong scheme (expected \"c64chain:\"): ") + uri;
+    error = std::string("URI has wrong scheme (expected \"crylo:\"): ") + uri;
     return false;
   }
 

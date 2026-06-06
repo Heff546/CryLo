@@ -61,5 +61,5 @@ target_link_libraries(simplewallet
     ${EXTRA_LIBRARIES})
 set_property(TARGET simplewallet
   PROPERTY
-    OUTPUT_NAME "c64wallet-mainnet")
+    OUTPUT_NAME "CryLo-wallet")
 install(TARGETS simplewallet DESTINATION bin)

@@ -9,8 +9,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <array>
-#include <cctype>
-#include <sstream>
 
 
 static std::string run_cmd(const char* cmd) {
@@ -127,7 +125,7 @@ enum {
 static void init_colors() {
     start_color();
     if (can_change_color()) {
-        init_color(20, 180, 180, 560);    // CryLo dark gray bg
+        init_color(20, 260, 220, 560);    // CryLo dark blue bg
         init_color(21, 420, 370, 710);    // CryLo light blue
         init_color(22, 1000, 1000, 1000); // White
         init_color(23, 700, 1000, 700);   // Green bright
@@ -135,26 +133,37 @@ static void init_colors() {
         init_color(25, 1000, 1000, 700);  // Yellow bright
         init_color(26, 400, 900, 400);    // Log green
         init_color(27, 400, 600, 1000);   // Log blue
-        init_pair(CP_NORMAL,    22, COLOR_BLACK);
-	init_pair(CP_HEADER,    23, COLOR_BLACK);
-	init_pair(CP_SUCCESS,   23, COLOR_BLACK);
-	init_pair(CP_ERROR,     24, COLOR_BLACK);
-	init_pair(CP_WARNING,   25, COLOR_BLACK);
-	init_pair(CP_LOG_GREEN, 26, COLOR_BLACK);
-	init_pair(CP_LOG_BLUE,  27, COLOR_BLACK);
+        init_pair(CP_NORMAL,    22, 20);
+        init_pair(CP_HEADER,    21, 20);
+        init_pair(CP_SUCCESS,   23, 20);
+        init_pair(CP_ERROR,     24, 20);
+        init_pair(CP_WARNING,   25, 20);
+        init_pair(CP_LOG_GREEN, 26, 20);
+        init_pair(CP_LOG_BLUE,  27, 20);
     } else {
-        init_pair(CP_NORMAL,    COLOR_WHITE,  COLOR_BLACK);
-	init_pair(CP_HEADER,    COLOR_CYAN,   COLOR_BLACK);
-	init_pair(CP_SUCCESS,   COLOR_GREEN,  COLOR_BLACK);
-	init_pair(CP_ERROR,     COLOR_RED,    COLOR_BLACK);
-	init_pair(CP_WARNING,   COLOR_YELLOW, COLOR_BLACK);
-	init_pair(CP_LOG_GREEN, COLOR_GREEN,  COLOR_BLACK);
-	init_pair(CP_LOG_BLUE,  COLOR_CYAN,   COLOR_BLACK);
+        init_pair(CP_NORMAL,    COLOR_WHITE,  COLOR_BLUE);
+        init_pair(CP_HEADER,    COLOR_CYAN,   COLOR_BLUE);
+        init_pair(CP_SUCCESS,   COLOR_GREEN,  COLOR_BLUE);
+        init_pair(CP_ERROR,     COLOR_RED,    COLOR_BLUE);
+        init_pair(CP_WARNING,   COLOR_YELLOW, COLOR_BLUE);
+        init_pair(CP_LOG_GREEN, COLOR_GREEN,  COLOR_BLUE);
+        init_pair(CP_LOG_BLUE,  COLOR_CYAN,   COLOR_BLUE);
     }
 }
 
 static void draw_border(int h, int w) {
-    // Border disabled
+    attron(COLOR_PAIR(CP_NORMAL));
+    mvaddstr(0, 0, "+");
+    for (int x = 1; x < w - 1; x++) mvaddch(0, x, '-');
+    mvaddch(0, w - 1, '+');
+    for (int y = 1; y < h - 1; y++) {
+        mvaddch(y, 0, '|');
+        mvaddch(y, w - 1, '|');
+    }
+    mvaddch(h - 1, 0, '+');
+    for (int x = 1; x < w - 1; x++) mvaddch(h - 1, x, '-');
+    mvaddch(h - 1, w - 1, '+');
+    attroff(COLOR_PAIR(CP_NORMAL));
 }
 
 static void draw_centered(int y, int w, const char* text, int cp) {
@@ -167,34 +176,18 @@ static void draw_centered(int y, int w, const char* text, int cp) {
 }
 
 void run_tui(std::atomic<bool>& stop_signal) {
-    static std::string input;
     auto start_time = std::chrono::steady_clock::now();
-	g_mining_active = false;
-	g_threads = 4;
 
-    // Open /dev/tty directly so ncurses can read keyboard input
+    // Open /dev/tty directly so ncurses works even if stdout is redirected
     FILE* tty = fopen("/dev/tty", "r+");
-    if (!tty) {
-    	tty = stdin;
-    }
-
     SCREEN* scr = newterm(NULL, tty, tty);
-    if (!scr) {
-    	fprintf(stderr, "newterm() failed\n");
-    	if (tty != stdin) fclose(tty);
-    	return;
-    }
-
     set_term(scr);
-
+    clear();
     cbreak();
     noecho();
-    keypad(stdscr, TRUE);
     nodelay(stdscr, TRUE);
     curs_set(0);
-
-    erase();
-    refresh();
+    keypad(stdscr, TRUE);
 
     init_colors();
     bkgd(COLOR_PAIR(CP_NORMAL));
@@ -209,12 +202,11 @@ void run_tui(std::atomic<bool>& stop_signal) {
             auto now_poll = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now_poll - last_rpc_poll).count() >= 5) {
                 last_rpc_poll = now_poll;
-                FILE* rpc = popen("curl -s http://127.0.0.1:22641/get_info 2>/dev/null", "r");
+                FILE* rpc = popen("curl -s http://127.0.0.1:19641/get_info 2>/dev/null", "r");
                 if (rpc) {
                     char rb[4096]; std::string rd;
                     while (fgets(rb, sizeof(rb), rpc)) rd += rb;
                     pclose(rpc);
-
                     auto fv = [&](const char* k) -> uint64_t {
                         auto p = rd.find(k);
                         if (p == std::string::npos) return 0;
@@ -225,50 +217,15 @@ void run_tui(std::atomic<bool>& stop_signal) {
                         return std::stoull(rd.substr(s));
                     };
                     try {
-                        stats.height.store(fv("\"height\""));
-    			stats.difficulty.store(fv("\"difficulty\""));
-    			stats.peers_out.store(fv("\"outgoing_connections_count\""));
-    			stats.peers_in.store(fv("\"incoming_connections_count\""));
+                        stats.peers_out.store(fv("outgoing_connections_count"));
+                        stats.peers_in.store(fv("incoming_connections_count"));
                     } catch (...) {}
                 }
-		FILE* ms = popen("curl -s http://127.0.0.1:22641/mining_status 2>/dev/null", "r");
-		if (ms) {
-    		    char mb[4096];
-		    std::string md;
-
-    		    while (fgets(mb, sizeof(mb),ms))
-			md += mb;
-
-		    pclose(ms);
-
-    		    auto mv = [&](const char* k) -> uint64_t {
-        		auto p = md.find(k);
-        		if (p == std::string::npos) return 0;
-        		auto c = md.find(':', p);
-        		if (c == std::string::npos) return 0;
-        		auto s = md.find_first_of("0123456789", c);
-        		if (s == std::string::npos) return 0;
-        		return std::stoull(md.substr(s));
-    	    	    };
-
-    	    	    try {
-			stats.hashrate.store(mv("\"speed\""));
-
-        		uint64_t reward_atomic = mv("\"block_reward\"");
-        		double reward = (double)reward_atomic / 1000000000000.0;
-
-        		char reward_buf[64];
-        		snprintf(reward_buf, sizeof(reward_buf), "%.12f", reward);
-
-        		std::lock_guard<std::mutex> lock(stats.mtx);
-        		stats.last_reward = reward_buf;
-    	    	    } catch (...) {}
-		}
-	    }
-	}
+            }
+        }
         int h, w;
         getmaxyx(stdscr, h, w);
-        werase(stdscr);
+        erase();
 
         draw_border(h, w);
 
@@ -281,6 +238,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
 
         // READY. / LIST
         attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
+        mvaddstr(y++, 3, "READY.");
         attroff(A_BOLD);
         attron(COLOR_PAIR(CP_NORMAL));
         mvaddstr(y++, 3, "LIST");
@@ -307,6 +265,8 @@ void run_tui(std::atomic<bool>& stop_signal) {
         };
 
         char tmp[64];
+        snprintf(tmp, sizeof(tmp), "%s", status_str.c_str());
+        print_stat(0, "STATUS:", tmp, status_str == "MINING" ? CP_SUCCESS : CP_NORMAL);
 
         snprintf(tmp, sizeof(tmp), "%lu", stats.height.load());
         print_stat(1, "HEIGHT:", tmp, CP_NORMAL);
@@ -315,10 +275,10 @@ void run_tui(std::atomic<bool>& stop_signal) {
         print_stat(2, "DIFFICULTY:", tmp, CP_NORMAL);
 
         snprintf(tmp, sizeof(tmp), "%lu", stats.blocks_added.load());
-        // print_stat(3, "BLOCKS OK:", tmp, stats.blocks_added.load() > 0 ? CP_SUCCESS : CP_NORMAL);
+        print_stat(3, "BLOCKS OK:", tmp, stats.blocks_added.load() > 0 ? CP_SUCCESS : CP_NORMAL);
 
         snprintf(tmp, sizeof(tmp), "%lu", stats.blocks_alt.load());
-        // print_stat(4, "BLOCKS ALT:", tmp, stats.blocks_alt.load() > 0 ? CP_WARNING : CP_NORMAL);
+        print_stat(4, "BLOCKS ALT:", tmp, stats.blocks_alt.load() > 0 ? CP_WARNING : CP_NORMAL);
 
         std::string reward_str;
         {
@@ -326,130 +286,113 @@ void run_tui(std::atomic<bool>& stop_signal) {
             reward_str = stats.last_reward.empty() ? "" : stats.last_reward;
         }
         snprintf(tmp, sizeof(tmp), "%s CryLo", reward_str.c_str());
-        print_stat(3, "REWARD:", tmp, CP_NORMAL);
+        print_stat(5, "REWARD:", tmp, CP_NORMAL);
 
-        // snprintf(tmp, sizeof(tmp), "%lu", stats.rpc_calls.load());
-        // print_stat(4, "RPC CALLS:", tmp, CP_NORMAL);
-
-        snprintf(tmp, sizeof(tmp), "%lu OUT / %lu IN",
-		stats.peers_out.load(),
-	 	stats.peers_in.load());
-
-        print_stat(4, "PEERS:", tmp,
-		stats.peers_out.load() +
-		stats.peers_in.load() > 0 ?
-		CP_SUCCESS : CP_WARNING);
-
-	snprintf(tmp, sizeof(tmp), "%lu H/s",
-             stats.hashrate.load());
-
-	print_stat(5, "HASHRATE:", tmp,
-           	stats.hashrate.load() > 0 ?
-           	CP_SUCCESS : CP_WARNING);
+        snprintf(tmp, sizeof(tmp), "%lu", stats.rpc_calls.load());
+        print_stat(6, "RPC CALLS:", tmp, CP_NORMAL);
+        snprintf(tmp, sizeof(tmp), "%lu OUT / %lu IN", stats.peers_out.load(), stats.peers_in.load());
+        print_stat(7, "PEERS:", tmp, stats.peers_out.load() + stats.peers_in.load() > 0 ? CP_SUCCESS : CP_WARNING);
         {
             uint64_t h = stats.height.load();
             uint64_t t = stats.target_height.load();
-
-	    if (stats.synced.load() || t == 0 || h >= t) {
+            if (stats.synced.load() || t == 0 || h >= t) {
                 snprintf(tmp, sizeof(tmp), "SYNCED");
-                print_stat(6, "SYNC:", tmp, CP_SUCCESS);
+                print_stat(8, "SYNC:", tmp, CP_SUCCESS);
             } else {
                 uint64_t pct = t > 0 ? (h * 100 / t) : 0;
                 snprintf(tmp, sizeof(tmp), "%lu / %lu (%lu%%)", h, t, pct);
-                print_stat(6, "SYNC:", tmp, CP_WARNING);
+                print_stat(8, "SYNC:", tmp, CP_WARNING);
             }
         }
         snprintf(tmp, sizeof(tmp), "%02d:%02d:%02d", hrs, mins, secs);
-        print_stat(7, "UPTIME:", tmp, CP_NORMAL);
+        print_stat(9, "UPTIME:", tmp, CP_NORMAL);
+        y++;
 
-	snprintf(tmp, sizeof(tmp), "%s", g_mining_active ? "STARTED" : "PAUSED");
-	print_stat(8, "MINING:", tmp, g_mining_active ? CP_SUCCESS : CP_WARNING);
+        // Last block info
+        attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
+        mvaddstr(y++, 3, "LAST BLOCK:");
+        attroff(COLOR_PAIR(CP_HEADER) | A_BOLD);
 
-	snprintf(tmp, sizeof(tmp), "%d", g_threads);
-	print_stat(9, "THREADS:", tmp, CP_NORMAL);
+        {
+            std::lock_guard<std::mutex> lock(stats.mtx);
+            if (!stats.last_block_id.empty()) {
+                std::string id_short = stats.last_block_id.substr(0, 32) + "...";
+                std::string pow_short = stats.last_pow.substr(0, 32) + "...";
+                attron(COLOR_PAIR(CP_NORMAL));
+                snprintf(buf, sizeof(buf), "  ID:  %s", id_short.c_str());
+                mvaddnstr(y++, 3, buf, w - 6);
+                snprintf(buf, sizeof(buf), "  POW: %s", pow_short.c_str());
+                mvaddnstr(y++, 3, buf, w - 6);
+                attroff(COLOR_PAIR(CP_NORMAL));
+            } else {
+                attron(COLOR_PAIR(CP_NORMAL));
+                mvaddstr(y++, 3, "  WAITING FOR BLOCKS...");
+                attroff(COLOR_PAIR(CP_NORMAL));
+            }
+        }
+        y++;
 
-	y += 3;
+        // Log section
+        attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
+        mvaddstr(y++, 3, "LOG:");
+        attroff(COLOR_PAIR(CP_HEADER) | A_BOLD);
 
-	// Command input line
-	attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
-	mvprintw(18, 3, "COMMAND: %-100s", input.c_str());
-	attroff(COLOR_PAIR(CP_HEADER) | A_BOLD);
+        int available = h - y - 3;
+        if (available > 0) {
+            std::lock_guard<std::mutex> lock(stats.mtx);
+            int start = (int)stats.log_lines.size() - available;
+            if (start < 0) start = 0;
 
-	// Example mining command
-	attron(COLOR_PAIR(CP_HEADER));
+            for (int i = start; i < (int)stats.log_lines.size() && y < h - 3; i++) {
+                auto& entry = stats.log_lines[i];
+                int cp = CP_NORMAL;
+                switch (entry.second) {
+                    case LOG_SUCCESS: cp = CP_LOG_GREEN; break;
+                    case LOG_ERROR:   cp = CP_ERROR;     break;
+                    case LOG_WARNING: cp = CP_WARNING;   break;
+                    case LOG_INFO:    cp = CP_LOG_BLUE;  break;
+                    default:          cp = CP_NORMAL;    break;
+                }
+                std::string display = entry.first.substr(0, w - 6);
+                attron(COLOR_PAIR(cp));
+                mvaddnstr(y++, 3, display.c_str(), w - 6);
+                attroff(COLOR_PAIR(cp));
+            }
+        }
 
-	mvprintw(h - 5, 3,
-    	    "EXAMPLE: start_mining YOUR_WALLET_ADDRESS 4");
-
-	mvprintw(h - 4, 3,
-    	    "EXAMPLE: stop_mining");
-
-	attroff(COLOR_PAIR(CP_HEADER));
+        // Blinking cursor
+        {
+            const char* cursor = (time(NULL) % 2) ? "READY. _" : "READY.  ";
+            attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
+            mvaddstr(h - 3, 3, cursor);
+            attroff(COLOR_PAIR(CP_HEADER) | A_BOLD);
+        }
 
         // Footer
-        draw_centered(h - 2, w,
-	    "CTRL+C TO QUIT  -  CryLo Chain (C) 2026",
-	    CP_HEADER);
+        draw_centered(h - 2, w, "CTRL+C TO QUIT  -  CryLo Chain (C) 2026", CP_HEADER);
 
         refresh();
 
-        // Draw mining status from daemon RPC
-	std::string mining_status = run_cmd(
-    	    "curl -s http://127.0.0.1:22641/mining_status"
-	);
+        // Input handling
+        static std::string input;
+	// Draw mining status
+	mvprintw(LINES - 5, 2,
+    	    "MINING: %s",
+    	    g_mining_active ? "STARTED" : "STOPPED");
 
-	bool mining_on =
-    	    mining_status.find("\"active\": true") != std::string::npos ||
-    	    mining_status.find("\"active\":true") != std::string::npos;
-
-	g_mining_active = mining_on;
-
-	if (!g_mining_active)
-    	    g_threads = 0;
-
-	size_t speed_pos = mining_status.find("\"speed\":");
-	std::string speed = "0";
-
-	if (speed_pos != std::string::npos) {
-    	    speed_pos = mining_status.find(":", speed_pos);
-
-    	    if (speed_pos != std::string::npos) {
-                speed_pos++;
-
-        	while (speed_pos < mining_status.size() &&
-                      (mining_status[speed_pos] == ' ' ||
-                       mining_status[speed_pos] == '\t'))
-        {
-            speed_pos++;
-        }
-
-        size_t speed_end = speed_pos;
-
-        while (speed_end < mining_status.size() &&
-              (isdigit(mining_status[speed_end]) ||
-               mining_status[speed_end] == '.'))
-        {
-            speed_end++;
-        }
-
-        speed = mining_status.substr(
-            speed_pos,
-            speed_end - speed_pos
-        );
-    }
-}
-
-	//  mvprintw(LINES - 5, 2, "MINING: %s", mining_on ? "STARTED" : "STOPPED");
-	//mvprintw(LINES - 4, 2, "HASHRATE: %s H/s", speed.c_str());
+	mvprintw(LINES - 4, 2,
+    	    "THREADS: %d",
+    	    g_threads);
+	}
 
 	// Draw command line
-	// move(LINES - 2, 0);
-	// clrtoeol();
-	// mvprintw(LINES - 2, 2, "READY. %s", input.c_str());
-	// move(LINES - 2, 9 + input.size());
-	// refresh();
+	move(LINES - 2, 0);
+	clrtoeol();
+	mvprintw(LINES - 2, 2, "READY. %s", input.c_str());
+	move(LINES - 2, 9 + input.size());
+	refresh();
 
-	for (int i = 0; i < 20 && !stop_signal.load(); i++) {
+	for (int i = 0; i < 5 && !stop_signal.load(); i++) {
     	    int ch = getch();
 
     	    if (ch == 27) {
@@ -465,37 +408,32 @@ void run_tui(std::atomic<bool>& stop_signal) {
     	    if (ch == '\n' || ch == '\r' || ch == 10) {
         	if (!input.empty()) {
             	    if (input.rfind("start_mining ", 0) == 0) {
-    			std::istringstream iss(input);
-    			std::string command, address;
-    			int threads = 1;
+    			std::string address =
+        		    input.substr(std::string("start_mining ").size());
 
-    			iss >> command >> address >> threads;
+    			std::string cmd =
+        		    "curl -s http://127.0.0.1:33641/start_mining "
+        		    "-H 'Content-Type: application/json' "
+        		    "-d '{\"miner_address\":\"" + address +
+        		    "\",\"threads_count\":4,"
+        		    "\"do_background_mining\":false,"
+        		    "\"ignore_battery\":true}'";
 
-    			if (!address.empty() && threads > 0) {
-        		    std::string cmd =
-            			"curl -s http://127.0.0.1:22641/start_mining "
-            			"-H 'Content-Type: application/json' "
-            			"-d '{\"miner_address\":\"" + address +
-            			"\",\"threads_count\":" + std::to_string(threads) +
-            			",\"do_background_mining\":false,"
-            			"\"ignore_battery\":true}'";
+    			system(cmd.c_str());
 
-        		    system(cmd.c_str());
-
-        		    g_mining_active = true;
-        		    g_threads = threads;
-    			}
+			g_mining_active = true;
+			g_threads = 4;
 		    }
 
             	    if (input == "stop_mining") {
-                	system("curl -s http://127.0.0.1:22641/stop_mining -d '{}' -H 'Content-Type: application/json'");
+                	system("curl -s http://127.0.0.1:33641/stop_mining -d '{}' -H 'Content-Type: application/json'");
 
 			g_mining_active = false;
 			g_threads = 0;
             	    }
 
             	    if (input == "mining_status") {
-                	system("curl -s http://127.0.0.1:22641/mining_status");
+                	system("curl -s http://127.0.0.1:33641/get_mining_status -d '{}' -H 'Content-Type: application/json'");
             	    }
 
             	    input.clear();
@@ -504,10 +442,9 @@ void run_tui(std::atomic<bool>& stop_signal) {
         	if (!input.empty()) input.pop_back();
     	    } else if (ch >= 32 && ch <= 126) {
         	input.push_back((char)ch);
+    	    }
 
-	    }
-
-    	    usleep(20000);
+    	    usleep(50000);
 	}
     }
 
@@ -735,7 +672,7 @@ void tui_log_handler(const std::string& message) {
         }
         stats.add_log(clean, color);
     }
-}
+
 // ---------- Easylogging++ Callback ----------
 
 void CryLoTuiLogCallback::handle(const el::LogDispatchData* data) {
@@ -757,3 +694,4 @@ void install_tui_log_callback() {
 }
 
 } // namespace c64tui
+

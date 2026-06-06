@@ -981,6 +981,7 @@ namespace cryptonote
   void set_tx_out(const uint64_t amount, const crypto::public_key& output_public_key, const bool use_view_tags, const crypto::view_tag& view_tag, tx_out& out)
   {
     out.amount = amount;
+
     if (use_view_tags)
     {
       txout_to_tagged_key ttk;
@@ -1176,7 +1177,7 @@ namespace cryptonote
     switch (decimal_point)
     {
       case 11:
-        return "c64chain";
+        return "crylo";
       case 8:
         return "verywow";
       case 5:

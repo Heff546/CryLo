@@ -193,7 +193,7 @@ bool t_daemon::run(bool interactive)
 
   try
   {
-    // C64 CHAIN: Play Datasette animation (uses raw ANSI on stderr)
+    // CryLo Chain: Play Datasette animation (uses raw ANSI on stderr)
     c64tui::play_datasette_animation();
 
     // Start TUI in background thread (uses /dev/tty directly)

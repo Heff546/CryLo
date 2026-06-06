@@ -1,10 +1,10 @@
 // Copyright (c) 2014-2022, The Monero Project
-// C64 CHAIN fork - all rights reserved under original BSD license
+// CryLo Chain fork - all rights reserved under original BSD license
 #include "hardforks.h"
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "blockchain.hardforks"
 
-// C64 CHAIN hard forks — MAINNET Option A
+// CryLo Chain hard forks — MAINNET Option A
 // Genesis = v17 (forced). v21 activated at block 2 via vote threshold=1.
 // Block 0 (genesis): major=17, minor=17 → fork index 0 (v17)
 // Block 1: major=17, minor=21 (vote) → 1 vote v21, threshold=1 reached → fork index 1 (v21)

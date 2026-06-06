@@ -136,7 +136,7 @@ static void init_colors() {
         init_color(26, 400, 900, 400);    // Log green
         init_color(27, 400, 600, 1000);   // Log blue
         init_pair(CP_NORMAL,    22, COLOR_BLACK);
-	init_pair(CP_HEADER,    23, COLOR_BLACK);
+	init_pair(CP_HEADER,    21, COLOR_BLACK);
 	init_pair(CP_SUCCESS,   23, COLOR_BLACK);
 	init_pair(CP_ERROR,     24, COLOR_BLACK);
 	init_pair(CP_WARNING,   25, COLOR_BLACK);
@@ -169,7 +169,7 @@ static void draw_centered(int y, int w, const char* text, int cp) {
 void run_tui(std::atomic<bool>& stop_signal) {
     static std::string input;
     auto start_time = std::chrono::steady_clock::now();
-	g_mining_active = false;
+	g_mining_active = true;
 	g_threads = 4;
 
     // Open /dev/tty directly so ncurses can read keyboard input
@@ -178,23 +178,41 @@ void run_tui(std::atomic<bool>& stop_signal) {
     	tty = stdin;
     }
 
-    SCREEN* scr = newterm(NULL, tty, tty);
+    SCREEN* scr = newterm(NULL, stdout, tty);
     if (!scr) {
     	fprintf(stderr, "newterm() failed\n");
     	if (tty != stdin) fclose(tty);
+    	return;
+}
+
+set_term(scr);
+cbreak();
+noecho();
+keypad(stdscr, TRUE);
+nodelay(stdscr, TRUE);
+
+    }
+
+    SCREEN* scr = newterm(NULL, tty, tty);
+    if (!scr) {
+    	fprintf(stderr, "newterm() failed\n");
+    	fclose(tty);
     	return;
     }
 
     set_term(scr);
 
-    cbreak();
-    noecho();
-    keypad(stdscr, TRUE);
-    nodelay(stdscr, TRUE);
-    curs_set(0);
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
 
     erase();
     refresh();
+
+    cbreak();
+    noecho();
+    nodelay(stdscr, TRUE);
+    curs_set(0);
+    keypad(stdscr, TRUE);
 
     init_colors();
     bkgd(COLOR_PAIR(CP_NORMAL));
@@ -281,6 +299,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
 
         // READY. / LIST
         attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
+        mvaddstr(y++, 3, "READY.");
         attroff(A_BOLD);
         attron(COLOR_PAIR(CP_NORMAL));
         mvaddstr(y++, 3, "LIST");
@@ -362,7 +381,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
         snprintf(tmp, sizeof(tmp), "%02d:%02d:%02d", hrs, mins, secs);
         print_stat(7, "UPTIME:", tmp, CP_NORMAL);
 
-	snprintf(tmp, sizeof(tmp), "%s", g_mining_active ? "STARTED" : "PAUSED");
+	snprintf(tmp, sizeof(tmp), "%s", g_mining_active ? "STARTED" : "STOPPED");
 	print_stat(8, "MINING:", tmp, g_mining_active ? CP_SUCCESS : CP_WARNING);
 
 	snprintf(tmp, sizeof(tmp), "%d", g_threads);
@@ -370,26 +389,16 @@ void run_tui(std::atomic<bool>& stop_signal) {
 
 	y += 3;
 
-	// Command input line
-	attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
-	mvprintw(18, 3, "COMMAND: %-100s", input.c_str());
-	attroff(COLOR_PAIR(CP_HEADER) | A_BOLD);
-
-	// Example mining command
-	attron(COLOR_PAIR(CP_HEADER));
-
-	mvprintw(h - 5, 3,
-    	    "EXAMPLE: start_mining YOUR_WALLET_ADDRESS 4");
-
-	mvprintw(h - 4, 3,
-    	    "EXAMPLE: stop_mining");
-
-	attroff(COLOR_PAIR(CP_HEADER));
+        // Blinking cursor
+        {
+            const char* cursor = (time(NULL) % 2) ? "READY. _" : "READY.  ";
+            attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
+            mvaddstr(h - 3, 3, cursor);
+            attroff(COLOR_PAIR(CP_HEADER) | A_BOLD);
+        }
 
         // Footer
-        draw_centered(h - 2, w,
-	    "CTRL+C TO QUIT  -  CryLo Chain (C) 2026",
-	    CP_HEADER);
+        draw_centered(h - 2, w, "CTRL+C TO QUIT  -  CryLo Chain (C) 2026", CP_HEADER);
 
         refresh();
 
@@ -401,11 +410,6 @@ void run_tui(std::atomic<bool>& stop_signal) {
 	bool mining_on =
     	    mining_status.find("\"active\": true") != std::string::npos ||
     	    mining_status.find("\"active\":true") != std::string::npos;
-
-	g_mining_active = mining_on;
-
-	if (!g_mining_active)
-    	    g_threads = 0;
 
 	size_t speed_pos = mining_status.find("\"speed\":");
 	std::string speed = "0";
@@ -449,7 +453,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
 	// move(LINES - 2, 9 + input.size());
 	// refresh();
 
-	for (int i = 0; i < 20 && !stop_signal.load(); i++) {
+	for (int i = 0; i < 5 && !stop_signal.load(); i++) {
     	    int ch = getch();
 
     	    if (ch == 27) {
@@ -504,10 +508,9 @@ void run_tui(std::atomic<bool>& stop_signal) {
         	if (!input.empty()) input.pop_back();
     	    } else if (ch >= 32 && ch <= 126) {
         	input.push_back((char)ch);
+    	    }
 
-	    }
-
-    	    usleep(20000);
+    	    usleep(150000);
 	}
     }
 

@@ -80,28 +80,45 @@ namespace cryptonote {
     return CRYPTONOTE_MAX_TX_SIZE;
   }
   //-----------------------------------------------------------------------------------------------
-  bool get_block_reward(size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, uint64_t &reward, uint8_t version) {
-    static_assert(DIFFICULTY_TARGET_V2%60==0&&DIFFICULTY_TARGET_V1%60==0,"difficulty targets must be a multiple of 60");
+  bool get_block_reward(uint64_t height, size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, uint64_t &reward, uint8_t version) {
+    static_assert(DIFFICULTY_TARGET_V2 > 0 && DIFFICULTY_TARGET_V1 > 0,  "difficulty targets must be positive");
     const int target = version < 2 ? DIFFICULTY_TARGET_V1 : DIFFICULTY_TARGET_V2;
-    const int target_minutes = target / 60;
-    // C64 CHAIN: HF19 changes supply to 19,640,000 and emission speed to 21
+    const double target_minutes = target / 60.0;
+
+    // CryLo Chain: 5,000,000 main emission
     uint64_t money_supply;
-    int emission_speed_factor;
-    if (version >= HF_VERSION_VESTING) {
-      money_supply = MONEY_SUPPLY;  // 19,640,000 C64
-      emission_speed_factor = EMISSION_SPEED_FACTOR_PER_MINUTE - (target_minutes-1);
-    } else {
-      money_supply = MONEY_SUPPLY;  // C64 CHAIN: use same supply for all versions on fresh mainnet
-      emission_speed_factor = 24 - (target_minutes-1);  // old ESF=24
-    }
-    if (already_generated_coins >= money_supply) {
-      reward = FINAL_SUBSIDY_PER_MINUTE * target_minutes;
+    money_supply = MONEY_SUPPLY;
+
+    // Keep existing genesis transaction valid.
+    if (height == 0)
+    {
+      reward = UINT64_C(1873016357421);
       return true;
     }
-    uint64_t base_reward = (money_supply - already_generated_coins) >> emission_speed_factor;
-    if (base_reward < FINAL_SUBSIDY_PER_MINUTE*target_minutes)
+
+    // CryLo custom emission:
+    // 2.5 CRYLO -> 0.2 CRYLO over 3,703,704 blocks,
+    // then continue at 0.2 CRYLO until 5,000,000 CRYLO is reached,
+    // then rewards stop.
+    if (already_generated_coins >= money_supply)
     {
-      base_reward = FINAL_SUBSIDY_PER_MINUTE*target_minutes;
+      reward = 0;
+      return true;
+    }
+
+    uint64_t base_reward = CRYLO_MIN_REWARD;
+
+    if (height < CRYLO_EMISSION_BLOCKS)
+    {
+      const uint64_t reward_range = CRYLO_START_REWARD - CRYLO_MIN_REWARD;
+      const uint64_t reward_drop = (reward_range * height) / CRYLO_EMISSION_BLOCKS;
+      base_reward = CRYLO_START_REWARD - reward_drop;
+    }
+
+    const uint64_t remaining = money_supply - already_generated_coins;
+    if (base_reward > remaining)
+    {
+      base_reward = remaining;
     }
 
     uint64_t full_reward_zone = get_min_block_weight(version);

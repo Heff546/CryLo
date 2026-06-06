@@ -63,16 +63,9 @@
 #define BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW               60
 
 // MONEY_SUPPLY - total number coins to be generated
-#define MONEY_SUPPLY                                    ((uint64_t)500000000000000000ULL) // 5,000,000 CRYLO
-
-// CryLo custom emission: 2.5 CRYLO -> 0.2 CRYLO over 3,703,704 blocks, then stop at 5M
-#define CRYLO_START_REWARD                              ((uint64_t)250000000000ULL) // 2.5 CRYLO
-#define CRYLO_MIN_REWARD                                ((uint64_t)20000000000ULL)  // 0.2 CRYLO
-#define CRYLO_EMISSION_BLOCKS                           ((uint64_t)3703704ULL)
-
-// Legacy compatibility constants; custom CryLo reward curve overrides these after vesting HF
+#define MONEY_SUPPLY                                    ((uint64_t)300000000000000000ULL) // 5 minute blocks: effective shift = 25 - (5 - 1) = 21// 3,000,000 / 2^21 ≈ 1.43 CryLo starting reward
 #define EMISSION_SPEED_FACTOR_PER_MINUTE                (25)
-#define FINAL_SUBSIDY_PER_MINUTE                        ((uint64_t)4000000000ULL) // 0.04 CRY/min = 0.2 CRY per 5-min block
+#define FINAL_SUBSIDY_PER_MINUTE                        ((uint64_t)30000000ULL) // 0.0003 CRY/min
 
 #define CRYPTONOTE_REWARD_BLOCKS_WINDOW                 100
 #define CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2    60000 //size of block (bytes) after which reward for block calculated using block size
@@ -190,19 +183,15 @@
 
 #define CRYPTONOTE_NAME                         "CryLo"
 
-// CryLo Chain: 1% dev fund + 0.5% liquidity fund
-#define CryLo_DEV_FUND_FEE_PERCENT              1
-#define CryLo_DEV_FUND_VIEWKEY                   "69c7be9e6b63749f606b901d52a4fc0b10c5f133aba7483314f38ac1c9876fba"
-#define CryLo_DEV_FUND_VIEWKEY_SECRET            "5a2d86c44b09fa674b41b5a17951824f8118432dd3e27dcaeac578f3c6c0e50e"
-#define CryLo_DEV_FUND_SPENDKEY                  "940e1c7fa91a0fe51073a7eaaecb7ddb705f0925621274b60c2b5704c78a80f3"
-#define CryLo_DEV_FUND_ADDRESS_TESTNET           "9xn4tAKeDRgfKDCUBxmuV6dhqJC7R7VEbXT6At7gM19ZhiQxJdGsguqTf9suZt3DX12rMGQqFcKEw9YZMbdZ9iBgN1aGSxj"
-
-#define CryLo_LIQUIDITY_FUND_FEE_PERMILLE       5
-#define CryLo_LIQUIDITY_FUND_VIEWKEY             "69c7be9e6b63749f606b901d52a4fc0b10c5f133aba7483314f38ac1c9876fba"
-#define CryLo_LIQUIDITY_FUND_SPENDKEY            "940e1c7fa91a0fe51073a7eaaecb7ddb705f0925621274b60c2b5704c78a80f3"
+  // CryLo CHAIN DEV FUND - 2% of block reward
+  #define CryLo_DEV_FUND_FEE_PERCENT              2
+  #define CryLo_DEV_FUND_VIEWKEY                   "dc41f834d2a5b14abb57d8249bf7ca0fbf49e488f3b25fbe89744024f96ca4f0"
+  #define CryLo_DEV_FUND_VIEWKEY_SECRET            "f3f8916eeb8b73e7a81a7877a2a7b796a76660d6b5956d4fdcf4b1ae7befce0e"
+  #define CryLo_DEV_FUND_SPENDKEY                  "76270b7a653b83cf1e0a575c1dd81164d56a756c4a396559b3794b482dd06579"
+  #define CryLo_DEV_FUND_ADDRESS_TESTNET           "9weLtBtxAzEbeJGStHUP1aHsDLkssErXEG1DLetQ2RfrMPCWFW6c8DNDVzYddnpPsw3dmXnY45VJeYsSvNCCibYXUAJp8rx"
 #define CRYPTONOTE_BLOCKCHAINDATA_FILENAME      "data.mdb"
 #define CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME "lock.mdb"
-#define P2P_NET_DATA_FILENAME                   "p2pstate.bin"
+9xn4tAKeDRgfKDCUBxmuV6dhqJC7R7VEbXT6At7gM19ZhiQxJdGsguqTf9suZt3DX12rMGQqFcKEw9YZMbdZ9iBgN1aGSxj#define P2P_NET_DATA_FILENAME                   "p2pstate.bin"
 #define RPC_PAYMENTS_DATA_FILENAME              "rpcpayments.bin"
 #define MINER_CONFIG_FILE_NAME                  "miner_conf.json"
 

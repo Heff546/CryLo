@@ -52,7 +52,7 @@
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "wallet.simplewallet"
-// C64 CHAIN: Donation address (replace with valid mainnet address after wallet creation)
+// CryLo Chain: Donation address (replace with valid mainnet address after wallet creation)
 constexpr const char MONERO_DONATION_ADDR[] = "Wo45h477wwxP3iMFYTnHA73uk4ZhXvf6QHxE6YcD8mjdHySnEPfM8xtWexKKBkcFvNaoFVGyKSHtVH1qh53TCBo12R8n715mD";
 
 /*!

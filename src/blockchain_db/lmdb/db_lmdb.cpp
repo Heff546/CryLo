@@ -1568,7 +1568,7 @@ void BlockchainLMDB::open(const std::string& filename, const int db_flags)
         mdb_env_close(m_env);
         m_open = false;
         MFATAL("Existing lmdb database needs to be converted, which cannot be done on a read-only database.");
-        MFATAL("Please run c64chaind-mainnet once to convert the database.");
+        MFATAL("Please run CryLo-daemon once to convert the database.");
         return;
       }
       // Note that there was a schema change within version 0 as well.
@@ -4309,7 +4309,7 @@ std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> BlockchainLMDB::get
       uint64_t num_elems = std::get<0>(i->second);
       while (num_elems > 0) {
         // C64 FIX: Use the real unlock_time stored in output_data_t.
-        // Coinbase outputs have long vesting locks — height+4 is wrong for C64 Chain.
+        // Coinbase outputs have long vesting locks — height+4 is wrong for CryLo Chain.
         const output_data_t od = get_output_key(amount, num_elems - 1, false);
         if (od.unlock_time <= blockchain_height)
           break;

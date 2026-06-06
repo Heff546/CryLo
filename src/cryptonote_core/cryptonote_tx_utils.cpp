@@ -93,7 +93,7 @@ namespace cryptonote
     in.height = height;
 
     uint64_t block_reward;
-    if(!get_block_reward(median_weight, current_block_weight, already_generated_coins, block_reward, hard_fork_version))
+    if(!get_block_reward(height, median_weight, current_block_weight, already_generated_coins, block_reward, hard_fork_version))
     {
       LOG_PRINT_L0("Block is too big");
       return false;
@@ -105,19 +105,44 @@ namespace cryptonote
 #endif
     block_reward += fee;
 
-    // C64 CHAIN: 2% dev fund
+    // CryLo Chain: 1% dev fund + 0.5% liquidity fund
     uint64_t dev_fund_amount = 0;
+    uint64_t liquidity_fund_amount = 0;
+
     account_public_address dev_fund_addr = AUTO_VAL_INIT(dev_fund_addr);
-    if (height > 0) {
-      dev_fund_amount = block_reward * C64_DEV_FUND_FEE_PERCENT / 100;
-      if (dev_fund_amount > 0) {
+    account_public_address liquidity_fund_addr = AUTO_VAL_INIT(liquidity_fund_addr);
+
+    if (height > 0)
+    {
+      dev_fund_amount = block_reward * CryLo_DEV_FUND_FEE_PERCENT / 100;
+      liquidity_fund_amount = block_reward * 5 / 1000; // 0.5%
+
+      if (dev_fund_amount > 0)
+      {
         block_reward -= dev_fund_amount;
+
         crypto::public_key dev_spend_pkey;
         crypto::public_key dev_view_pkey;
-        epee::string_tools::hex_to_pod(C64_DEV_FUND_SPENDKEY, dev_spend_pkey);
-        epee::string_tools::hex_to_pod(C64_DEV_FUND_VIEWKEY, dev_view_pkey);
+
+        epee::string_tools::hex_to_pod(CryLo_DEV_FUND_SPENDKEY, dev_spend_pkey);
+        epee::string_tools::hex_to_pod(CryLo_DEV_FUND_VIEWKEY, dev_view_pkey);
+
         dev_fund_addr.m_spend_public_key = dev_spend_pkey;
         dev_fund_addr.m_view_public_key = dev_view_pkey;
+      }
+
+      if (liquidity_fund_amount > 0)
+      {
+        block_reward -= liquidity_fund_amount;
+
+        crypto::public_key liq_spend_pkey;
+        crypto::public_key liq_view_pkey;
+
+        epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_SPENDKEY, liq_spend_pkey);
+        epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_VIEWKEY, liq_view_pkey);
+
+        liquidity_fund_addr.m_spend_public_key = liq_spend_pkey;
+        liquidity_fund_addr.m_view_public_key = liq_view_pkey;
       }
     }
 
@@ -131,16 +156,17 @@ namespace cryptonote
       block_reward = block_reward - block_reward % ::config::BASE_REWARD_CLAMP_THRESHOLD;
     }
     std::vector<uint64_t> out_amounts;
-    // C64 CHAIN: HF19+ vesting - split block reward into 4 outputs with staggered unlock
-    if (hard_fork_version >= HF_VERSION_VESTING && height > 0) {
-      // Split block_reward into 4 equal parts (remainder goes to first output)
-      uint64_t quarter = block_reward / C64_VESTING_OUTPUTS;
-      uint64_t remainder = block_reward - (quarter * C64_VESTING_OUTPUTS);
-      out_amounts.push_back(quarter + remainder);  // output 0: 25% + dust
-      out_amounts.push_back(quarter);              // output 1: 25%
-      out_amounts.push_back(quarter);              // output 2: 25%
-      out_amounts.push_back(quarter);              // output 3: 25%
-    } else {
+    // CryLo Chain: 50% miner instant + 50% miner vested 45 days
+    if (hard_fork_version >= HF_VERSION_VESTING && height > 0)
+    {
+      uint64_t instant = block_reward / 2;
+      uint64_t vested = block_reward - instant;
+
+      out_amounts.push_back(instant);
+      out_amounts.push_back(vested);
+    }
+    else
+    {
       // Pre-HF19: original decomposition
       decompose_amount_into_digits(block_reward, hard_fork_version >= 2 ? 0 : ::config::DEFAULT_DUST_THRESHOLD,
         [&out_amounts](uint64_t a_chunk) { out_amounts.push_back(a_chunk); },
@@ -184,11 +210,12 @@ namespace cryptonote
 
       tx_out out;
       cryptonote::set_tx_out(amount, out_eph_public_key, use_view_tags, view_tag, out);
+
       tx.vout.push_back(out);
     }
 
 
-    // C64 CHAIN: add dev fund output
+    // CryLo Chain: add dev fund output
     if (dev_fund_amount > 0) {
       crypto::key_derivation dev_derivation = AUTO_VAL_INIT(dev_derivation);
       crypto::public_key dev_out_eph_public_key = AUTO_VAL_INIT(dev_out_eph_public_key);
@@ -202,11 +229,40 @@ namespace cryptonote
       if (use_view_tags)
         crypto::derive_view_tag(dev_derivation, dev_out_index, dev_view_tag);
       tx_out dev_out;
-      cryptonote::set_tx_out(dev_fund_amount, dev_out_eph_public_key, use_view_tags, dev_view_tag, dev_out);
+      cryptonote::set_tx_out(dev_fund_amount, dev_out_eph_public_key, use_view_tags, dev_view_tag, dev_out);	
       tx.vout.push_back(dev_out);
       summary_amounts += dev_fund_amount;
+      }
+    // CryLo Chain: add liquidity fund output
+    if (liquidity_fund_amount > 0) {
+      crypto::key_derivation liq_derivation = AUTO_VAL_INIT(liq_derivation);
+      crypto::public_key liq_out_eph_public_key = AUTO_VAL_INIT(liq_out_eph_public_key);
+
+      bool r = crypto::generate_key_derivation(liquidity_fund_addr.m_view_public_key, txkey.sec, liq_derivation);
+      CHECK_AND_ASSERT_MES(r, false, "while creating liquidity fund out: failed to generate_key_derivation");
+
+      size_t liq_out_index = tx.vout.size();
+
+      r = crypto::derive_public_key(liq_derivation, liq_out_index, liquidity_fund_addr.m_spend_public_key, liq_out_eph_public_key);
+      CHECK_AND_ASSERT_MES(r, false, "while creating liquidity fund out: failed to derive_public_key");
+
+      bool use_view_tags = hard_fork_version >= HF_VERSION_VIEW_TAGS;
+      crypto::view_tag liq_view_tag;
+      if (use_view_tags)
+        crypto::derive_view_tag(liq_derivation, liq_out_index, liq_view_tag);
+
+      tx_out liq_out;
+      cryptonote::set_tx_out(liquidity_fund_amount, liq_out_eph_public_key, use_view_tags, liq_view_tag, liq_out);
+      tx.vout.push_back(liq_out);
+      summary_amounts += liquidity_fund_amount;
     }
-    CHECK_AND_ASSERT_MES(summary_amounts == (block_reward + dev_fund_amount), false, "Failed to construct miner tx, summary_amounts = " << summary_amounts << " not equal block_reward + dev_fund = " << (block_reward + dev_fund_amount));
+    CHECK_AND_ASSERT_MES(
+      summary_amounts == (block_reward + dev_fund_amount + liquidity_fund_amount),
+      false,
+      "Failed to construct miner tx, summary_amounts = " << summary_amounts
+        << " not equal block_reward + dev_fund + liquidity_fund = "
+        << (block_reward + dev_fund_amount + liquidity_fund_amount)
+    );
 
     if (hard_fork_version >= 4)
       tx.version = 2;
@@ -705,21 +761,22 @@ namespace cryptonote
   }
   //---------------------------------------------------------------
   bool generate_genesis_block(
-      block& bl
-    , std::string const & genesis_tx
-    , uint32_t nonce
-    )
-  {
-    //genesis block
+    block& bl,
+    std::string const & genesis_tx,
+    uint32_t nonce)
+{
+    // genesis block
     bl = {};
 
     blobdata tx_bl;
     bool r = string_tools::parse_hexstr_to_binbuff(genesis_tx, tx_bl);
     CHECK_AND_ASSERT_MES(r, false, "failed to parse coinbase tx from hard coded blob");
+
     r = parse_and_validate_tx_from_blob(tx_bl, bl.miner_tx);
     CHECK_AND_ASSERT_MES(r, false, "failed to parse coinbase tx from hard coded blob");
-    bl.major_version = 17;  // Genesis block always version 17
-    bl.minor_version = 17;  // Genesis block always version 17
+
+    bl.major_version = 17;
+    bl.minor_version = 17;
     bl.timestamp = 0;
     bl.nonce = nonce;
     miner::find_nonce_for_given_block([](const cryptonote::block &b, uint64_t height, const crypto::hash *seed_hash, unsigned int threads, crypto::hash &hash){
@@ -737,7 +794,7 @@ namespace cryptonote
 
   bool get_block_longhash(const Blockchain *pbc, const blobdata& bd, crypto::hash& res, const uint64_t height, const int major_version, const crypto::hash *seed_hash, const int miners)
   {
-    // C64 CHAIN: Wownero block 202612 workaround removed
+    // CryLo Chain: Wownero block 202612 workaround removed
     if (major_version >= RX_BLOCK_VERSION)
     {
       crypto::hash hash;

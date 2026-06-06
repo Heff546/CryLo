@@ -459,7 +459,7 @@ namespace cryptonote
   //------------------------------------------------------------------------------------------------------------------------------
   bool core_rpc_server::add_host_fail(const connection_context *ctx, unsigned int score)
   {
-    if(!ctx || !ctx->m_remote_address.is_blockable() || disable_rpc_ban)
+    if(!ctx || ctx->m_remote_address.is_loopback() || !ctx->m_remote_address.is_blockable() || disable_rpc_ban)
       return false;
 
     CRITICAL_REGION_LOCAL(m_host_fails_score_lock);
@@ -1400,7 +1400,8 @@ namespace cryptonote
   bool core_rpc_server::on_start_mining(const COMMAND_RPC_START_MINING::request& req, COMMAND_RPC_START_MINING::response& res, const connection_context *ctx)
   {
     RPC_TRACKER(start_mining);
-    CHECK_CORE_READY();
+    // CHECK_CORE_READY(); // CryLo testnet: allow mining before synced
+    
     cryptonote::address_parse_info info;
     if(!get_account_address_from_str(info, nettype(), req.miner_address))
     {
@@ -3135,7 +3136,7 @@ namespace cryptonote
       return true;
     }
 
-    static const char software[] = "c64chain";
+    static const char software[] = "crylo";
 #ifdef BUILD_TAG
     static const char buildtag[] = BOOST_PP_STRINGIZE(BUILD_TAG);
     static const char subdir[] = "cli";
