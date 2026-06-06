@@ -6,12 +6,9 @@
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 [![Release](https://img.shields.io/github/v/release/Heff546/CryLo)](https://github.com/Heff546/CryLo/releases)
 
-💬 Join the CryLo Community
-
 Need help getting started?
+Join the official CryLo Discord: https://discord.gg/Vd5HtkGHQU
 
-Join the official CryLo Discord:
-https://discord.gg/Vd5HtkGHQU
 
 **CryLo (CRYLO) is a CPU-mined digital asset with a fixed supply of 5 million coins, built to support a fair, decentralized, and sustainable blockchain ecosystem.**
 
