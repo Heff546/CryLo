@@ -192,14 +192,14 @@
 
 // CryLo Chain: 1% dev fund + 0.5% liquidity fund
 #define CryLo_DEV_FUND_FEE_PERCENT              1
-#define CryLo_DEV_FUND_VIEWKEY                   "69c7be9e6b63749f606b901d52a4fc0b10c5f133aba7483314f38ac1c9876fba"
-#define CryLo_DEV_FUND_VIEWKEY_SECRET            "5a2d86c44b09fa674b41b5a17951824f8118432dd3e27dcaeac578f3c6c0e50e"
-#define CryLo_DEV_FUND_SPENDKEY                  "940e1c7fa91a0fe51073a7eaaecb7ddb705f0925621274b60c2b5704c78a80f3"
-#define CryLo_DEV_FUND_ADDRESS_TESTNET           "9xn4tAKeDRgfKDCUBxmuV6dhqJC7R7VEbXT6At7gM19ZhiQxJdGsguqTf9suZt3DX12rMGQqFcKEw9YZMbdZ9iBgN1aGSxj"
+#define CryLo_DEV_FUND_VIEWKEY                   "3847665251fbb4b9cf1e3ce13cce9b4af0decd740a7527df72218e6629540f21"
+#define CryLo_DEV_FUND_VIEWKEY_SECRET            "8ce4343589f1a6890a83cd1b4a3033553ff277082eed2c89575d16e151593d09"
+#define CryLo_DEV_FUND_SPENDKEY                  "e0d2a33356a379d24842f98be0d5b8ee43f3e346d9c15c02554c5c8cfee29ac5"
+#define CryLo_DEV_FUND_ADDRESS_TESTNET           "A1goGSHDZtkcB15sZuucudgrUSxUUGLaF1Pdpu6F2jqjZzHDCx5CDbyY5ag6qPQPfpDY2CJfiyNVCeNhrbQqfnia4q5JXZ9"
 
 #define CryLo_LIQUIDITY_FUND_FEE_PERMILLE       5
-#define CryLo_LIQUIDITY_FUND_VIEWKEY             "69c7be9e6b63749f606b901d52a4fc0b10c5f133aba7483314f38ac1c9876fba"
-#define CryLo_LIQUIDITY_FUND_SPENDKEY            "940e1c7fa91a0fe51073a7eaaecb7ddb705f0925621274b60c2b5704c78a80f3"
+#define CryLo_LIQUIDITY_FUND_VIEWKEY             "31102d30fdc1a05945af699efd3236520f153b6aef701e543ea51247980bfb23"
+#define CryLo_LIQUIDITY_FUND_SPENDKEY            "3d5aacc7c137b83e3fa8e63af0e1233816aebb2cbeea3f999564b9a8af26bcdf"
 #define CRYPTONOTE_BLOCKCHAINDATA_FILENAME      "data.mdb"
 #define CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME "lock.mdb"
 #define P2P_NET_DATA_FILENAME                   "p2pstate.bin"
