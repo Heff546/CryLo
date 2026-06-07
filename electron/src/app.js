@@ -1058,7 +1058,10 @@ async function loadNexusBuyback() {
           <div>Eligible: ${nft.eligible ? 'YES' : 'NO'}</div>
           <div>Pool Balance: ${nft.codePool} wCRYLO</div>
           <div>Redeemed: ${nft.redeemed}</div>
-	  ${nft.eligible ? `<button class="btn btn-primary nexus-buyback-btn" style="margin-top:10px" data-token-id="${nft.tokenId}">Buy Back NFT</button>` : ''}
+	  ${nft.eligible
+  	    ? `<button class="btn btn-primary nexus-buyback-btn" style="margin-top:10px" data-token-id="${nft.tokenId}">Buy Back NFT</button>`
+  	    : `<button class="btn btn-secondary nexus-burn-btn" style="margin-top:10px" data-token-id="${nft.tokenId}">Burn NFT</button>`
+	  }
         </div>
       `;
     }
@@ -1068,6 +1071,12 @@ async function loadNexusBuyback() {
     document.querySelectorAll('.nexus-buyback-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         buyBackNexusNFT(btn.dataset.tokenId);
+      });
+    });
+
+    document.querySelectorAll('.nexus-burn-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        burnNexusNFT(btn.dataset.tokenId);
       });
     });
 
@@ -1124,6 +1133,35 @@ async function buyBackNexusNFT(tokenId) {
     statusEl.textContent = 'Buyback failed.';
   }
 }
+async function burnNexusNFT(tokenId) {
+  const statusEl = document.getElementById('nexus-status');
+
+  statusEl.textContent = `Burning NFT #${tokenId}...`;
+
+  try {
+    const result = await window.c64.nexusBurnNft(tokenId);
+
+    if (!result.ok) {
+      statusEl.textContent =
+        `Burn failed for NFT #${tokenId}: ${result.error || 'Unknown error'}`;
+      return;
+    }
+
+    statusEl.textContent =
+      `NFT #${tokenId} burned successfully. Refreshing NFT list...`;
+
+    await loadNexusBuyback();
+
+    statusEl.textContent =
+      `NFT #${tokenId} burned successfully. Burn refund will be processed if eligible.`;
+
+  } catch (err) {
+    console.error(err);
+
+    statusEl.textContent =
+      `Burn failed for NFT #${tokenId}`;
+  }
+}
 
 window.App = {
   sendMax,
@@ -1145,5 +1183,6 @@ window.App = {
   loadNexusBuyback,
   saveNexusLinkedAddress,
   buyBackNexusNFT,
+  burnNexusNFT,
   initMiningTab
 };

@@ -394,8 +394,8 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
       'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
 
     const tokenAddress = '0xA2240adb73E11a368600efc0F68DF85daE843C83';
-    const nftAddress = '0xA2BF9e819fD481a00AD1e559c2B4676e188BBFEe';
-    const vaultAddress = '0x476052d25599356bd9A2d25CBE75fbe7Fdf15aC4';
+    const nftAddress = '0x4E3ebe3B5bE53470F5ecb749e2e84eebE8Ba520d';
+    const vaultAddress = '0xA23DE15d173925Dd4F320fcD174F91f5B095db3C';
 
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
     const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
@@ -464,8 +464,8 @@ ipcMain.handle('nexus-buyback-nft', async (_, tokenId) => {
     const rpc =
       'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
 
-    const nftAddress = '0xA2BF9e819fD481a00AD1e559c2B4676e188BBFEe';
-    const vaultAddress = '0x476052d25599356bd9A2d25CBE75fbe7Fdf15aC4';
+    const nftAddress = '0x4E3ebe3B5bE53470F5ecb749e2e84eebE8Ba520d';
+    const vaultAddress = '0xA23DE15d173925Dd4F320fcD174F91f5B095db3C';
 
     const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
     const vaultArtifact = require('./src/abis/CryLoBuybackVault.json');
@@ -509,6 +509,55 @@ ipcMain.handle('nexus-buyback-nft', async (_, tokenId) => {
       blockNumber: receipt.blockNumber,
       newOwner
     };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
+  }
+});
+
+ipcMain.handle('nexus-burn-nft', async (_, tokenId) => {
+  try {
+    const rpc =
+      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+
+    const nftAddress = '0x4E3ebe3B5bE53470F5ecb749e2e84eebE8Ba520d';
+
+    const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const wallet = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+
+    const nft = new ethers.Contract(nftAddress, nftArtifact.abi, wallet);
+
+    const id = Number(tokenId);
+
+    const owner = await nft.ownerOf(id);
+    if (owner.toLowerCase() !== wallet.address.toLowerCase()) {
+      return { ok: false, error: 'Linked wallet does not own this NFT.' };
+    }
+
+    const nonce = await provider.getTransactionCount(wallet.address, 'pending');
+
+    const tx = await nft.burn(id, { nonce });
+    const receipt = await tx.wait();
+
+    try {
+      await nft.ownerOf(id);
+      return {
+        ok: false,
+        error: `Burn transaction completed, but NFT #${id} still exists.`,
+        txHash: tx.hash
+      };
+    } catch (_) {
+      return {
+        ok: true,
+        tokenId: id,
+        txHash: tx.hash,
+        blockNumber: receipt.blockNumber
+      };
+    }
   } catch (e) {
     return {
       ok: false,
