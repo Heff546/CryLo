@@ -6,6 +6,7 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const http = require('http');
 const os = require('os');
+const { ethers } = require('ethers');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const DAEMON_RPC_PORT   = 22641;
@@ -380,6 +381,78 @@ ipcMain.handle('miner-get-status', async () => {
       blockReward: result.block_reward || 0
     };
   } catch(e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// ─── CryLo Nexus ──────────────────────────────────────────────────────────────
+ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
+  try {
+    const rpc =
+      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+
+    const tokenAddress = '0xA2240adb73E11a368600efc0F68DF85daE843C83';
+    const nftAddress = '0xA2BF9e819fD481a00AD1e559c2B4676e188BBFEe';
+    const vaultAddress = '0x476052d25599356bd9A2d25CBE75fbe7Fdf15aC4';
+
+    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
+    const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
+    const vaultArtifact = require('./src/abis/CryLoBuybackVault.json');
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+
+    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, provider);
+    const nft = new ethers.Contract(nftAddress, nftArtifact.abi, provider);
+    const vault = new ethers.Contract(vaultAddress, vaultArtifact.abi, provider);
+
+    const normalizedLinked = String(linkedAddress || '').toLowerCase();
+
+    if (!ethers.isAddress(normalizedLinked)) {
+      return { ok: false, error: 'Invalid linked Nexus address' };
+    }
+
+    const nextTokenId = Number(await nft.nextTokenId());
+    const vaultBalance = await token.balanceOf(vaultAddress);
+
+    const owned = [];
+
+    for (let tokenId = 0; tokenId < nextTokenId; tokenId++) {
+      try {
+        const owner = await nft.ownerOf(tokenId);
+
+        if (owner.toLowerCase() !== normalizedLinked) {
+          continue;
+        }
+
+        const code = await nft.getMintCode(tokenId);
+        const codeHash = ethers.keccak256(ethers.toUtf8Bytes(code));
+        const poolData = await vault.codePools(codeHash);
+
+        const approved = poolData[0];
+        const poolBalance = poolData[1];
+        const redeemedCount = poolData[2];
+
+        owned.push({
+          tokenId,
+          owner,
+          code,
+          eligible: !!approved,
+          codePool: ethers.formatEther(poolBalance),
+          redeemed: redeemedCount.toString()
+        });
+      } catch (_) {
+        // burned/nonexistent token or unreadable token; skip
+      }
+    }
+
+    return {
+      ok: true,
+      linkedAddress,
+      nextTokenId,
+      vaultBalance: ethers.formatEther(vaultBalance),
+      nfts: owned
+    };
+  } catch (e) {
     return { ok: false, error: e.message };
   }
 });

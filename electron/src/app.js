@@ -804,6 +804,7 @@ function switchTab(tab) {
   if (tab === 'vesting')      loadVesting();
   if (tab === 'receive')      loadAddress();
   if (tab === 'mining')       initMiningTab();
+  if (tab === 'nexus')        loadSavedNexusLinkedAddress();
 }
 
 async function switchWallet() {
@@ -1021,6 +1022,75 @@ async function stopMining() {
   const mode = document.getElementById('mining-mode');
   if (mode) mode.style.display = 'none';
 }
+async function loadNexusBuyback() {
+  const statusEl = document.getElementById('nexus-status');
+  const listEl = document.getElementById('nexus-nft-list');
+
+  const linkedAddress =
+    document.getElementById('nexus-linked-address').value.trim();
+
+  if (!linkedAddress) {
+    statusEl.textContent = 'No Nexus wallet linked.';
+    return;
+  }
+
+  statusEl.textContent = 'Scanning CryLo Nexus NFTs...';
+  listEl.innerHTML = '';
+
+  try {
+    const result = await window.c64.nexusScanNfts(linkedAddress);
+
+    if (!result.ok) {
+      statusEl.textContent = result.error || 'Scan failed.';
+      return;
+    }
+
+    statusEl.textContent =
+      `Found ${result.nfts.length} NFT(s) | Vault: ${result.vaultBalance} wCRYLO`;
+
+    let html = '';
+
+    for (const nft of result.nfts) {
+      html += `
+        <div class="card" style="margin-bottom:12px">
+          <div><strong>NFT #${nft.tokenId}</strong></div>
+          <div>Mint Code: ${nft.code}</div>
+          <div>Eligible: ${nft.eligible ? 'YES' : 'NO'}</div>
+          <div>Pool Balance: ${nft.codePool} wCRYLO</div>
+          <div>Redeemed: ${nft.redeemed}</div>
+        </div>
+      `;
+    }
+
+    listEl.innerHTML = html || '<div class="card">No NFTs found.</div>';
+
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Failed to load Nexus NFTs.';
+  }
+}
+
+function saveNexusLinkedAddress() {
+  const addr = document.getElementById('nexus-linked-address').value.trim();
+
+  localStorage.setItem('crylo_nexus_address', addr);
+
+  const status = document.getElementById('nexus-linked-status');
+  status.textContent = `Linked Nexus wallet: ${addr}`;
+}
+
+function loadSavedNexusLinkedAddress() {
+  const addr = localStorage.getItem('crylo_nexus_address') || '';
+
+  const input = document.getElementById('nexus-linked-address');
+  const status = document.getElementById('nexus-linked-status');
+
+  if (input) input.value = addr;
+
+  if (addr) {
+    status.textContent = `Linked Nexus wallet: ${addr}`;
+  }
+}
 
 window.App = {
   sendMax,
@@ -1039,5 +1109,7 @@ window.App = {
   copyAddress,
   copyPaymentRequest,
   toggleMining,
+  loadNexusBuyback,
+  saveNexusLinkedAddress,
   initMiningTab
 };

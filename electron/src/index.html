@@ -161,6 +161,7 @@
       <button class="tab-btn" data-tab="receive"      onclick="App.switchTab('receive')">↓ Receive</button>
       <button class="tab-btn" data-tab="vesting"      onclick="App.switchTab('vesting')">🔒 Vesting</button>
       <button class="tab-btn" data-tab="mining"      onclick="App.switchTab('mining')">⛏ Mining</button>
+      <button class="tab-btn" data-tab="nexus" onclick="App.switchTab('nexus')">🌉 Nexus</button>
     </div>
 
     <!-- Tab content -->
@@ -318,7 +319,36 @@
         <div class="hint">
   	  CryLo mining uses the local daemon. Pool mining links removed.
 	</div>
+        </div>
+	</div>
+    <div class="tab-panel" id="tab-nexus">
+  <h3>🌉 CryLo Nexus Buyback</h3>
+
+  <div class="card">
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px">
+      Link your Nexus wallet, scan only your NFTs, check exact full mint-code eligibility, and buy back approved NFTs through the vault.
     </div>
+
+    <div style="margin-bottom:12px">
+      <label>Linked Nexus Wallet Address</label>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <input type="text" id="nexus-linked-address" placeholder="0x..." autocomplete="off" style="flex:1" />
+        <button class="btn btn-secondary" onclick="App.saveNexusLinkedAddress()">Save</button>
+      </div>
+      <div id="nexus-linked-status" style="font-size:12px;color:var(--text-dim);margin-top:6px">
+        No Nexus wallet linked yet.
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="App.loadNexusBuyback()">🔍 Scan My Nexus NFTs</button>
+
+    <div id="nexus-status" style="margin-top:12px;color:var(--text-dim);font-size:13px">
+      Not scanned yet.
+    </div>
+
+    <div id="nexus-nft-list" style="margin-top:16px"></div>
+  </div>
+</div>
     </div><!-- /tab-content -->
 
     <!-- Status bar -->
