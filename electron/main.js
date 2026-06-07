@@ -457,6 +457,13 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
   }
 });
 
+ipcMain.handle('nexus-buyback-nft', async (_, tokenId) => {
+  return {
+    ok: false,
+    error: 'Buyback transaction signing not enabled yet. Next step is adding Nexus private-key or wallet-signing support.'
+  };
+});
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({

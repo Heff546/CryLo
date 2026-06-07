@@ -1058,6 +1058,7 @@ async function loadNexusBuyback() {
           <div>Eligible: ${nft.eligible ? 'YES' : 'NO'}</div>
           <div>Pool Balance: ${nft.codePool} wCRYLO</div>
           <div>Redeemed: ${nft.redeemed}</div>
+	  ${nft.eligible ? `<button class="btn btn-primary" style="margin-top:10px" onclick="App.buyBackNexusNFT(${nft.tokenId})">Buy Back NFT</button>` : ''}
         </div>
       `;
     }
@@ -1092,6 +1093,28 @@ function loadSavedNexusLinkedAddress() {
   }
 }
 
+async function buyBackNexusNFT(tokenId) {
+  const statusEl = document.getElementById('nexus-status');
+
+  statusEl.textContent = `Processing buyback for NFT #${tokenId}...`;
+
+  try {
+    const result = await window.c64.nexusBuyBackNft(tokenId);
+
+    if (!result.ok) {
+      statusEl.textContent = result.error || 'Buyback failed.';
+      return;
+    }
+
+    statusEl.textContent = `Buyback completed for NFT #${tokenId}`;
+
+    await loadNexusBuyback();
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Buyback failed.';
+  }
+}
+
 window.App = {
   sendMax,
   toggleAdvanced,
@@ -1111,5 +1134,6 @@ window.App = {
   toggleMining,
   loadNexusBuyback,
   saveNexusLinkedAddress,
+  buyBackNexusNFT,
   initMiningTab
 };

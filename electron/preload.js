@@ -16,7 +16,11 @@ contextBridge.exposeInMainWorld('c64', {
   minerGetStatus: ()             => ipcRenderer.invoke('miner-get-status'),
   minerGetInfo:   ()             => ipcRenderer.invoke('miner-get-info'),
   // ── Nexus ─────────────────────────────────────────────────────────────
-  nexusScanNfts:  (linkedAddress) => ipcRenderer.invoke('nexus-scan-nfts', linkedAddress),
+  nexusScanNfts: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-scan-nfts', linkedAddress),
+
+  nexusBuyBackNft: (tokenId) =>
+    ipcRenderer.invoke('nexus-buyback-nft', tokenId),
   // ── Events (main → renderer) ──────────────────────────────────────────
   onStartupStatus: (cb)          => ipcRenderer.on('startup-status', (_, data) => cb(data)),
   onLog:           (cb)          => ipcRenderer.on('log',            (_, data) => cb(data)),
