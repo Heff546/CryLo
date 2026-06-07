@@ -282,6 +282,7 @@ async function refreshAll() {
   await Promise.all([
     updateSyncStatus(),
     updateBalance(),
+    refreshNexusWcryloBalance(),
     refreshActiveTab()
   ]);
 }
@@ -1133,6 +1134,7 @@ async function buyBackNexusNFT(tokenId) {
     statusEl.textContent = 'Buyback failed.';
   }
 }
+
 async function burnNexusNFT(tokenId) {
   const statusEl = document.getElementById('nexus-status');
 
@@ -1163,6 +1165,32 @@ async function burnNexusNFT(tokenId) {
   }
 }
 
+async function refreshNexusWcryloBalance() {
+  const el = document.getElementById('bal-wcrylo');
+  if (!el) return;
+
+  const linkedAddress = localStorage.getItem('crylo_nexus_address') || '';
+
+  if (!linkedAddress) {
+    el.innerHTML = `—<span class="balance-unit"> wCRYLO</span>`;
+    return;
+  }
+
+  try {
+    const result = await window.c64.nexusWcryloBalance(linkedAddress);
+
+    if (!result.ok) {
+      el.innerHTML = `—<span class="balance-unit"> wCRYLO</span>`;
+      return;
+    }
+
+    el.innerHTML = `${Number(result.balance).toFixed(4)}<span class="balance-unit"> wCRYLO</span>`;
+  } catch (err) {
+    console.error(err);
+    el.innerHTML = `—<span class="balance-unit"> wCRYLO</span>`;
+  }
+}
+
 window.App = {
   sendMax,
   toggleAdvanced,
@@ -1180,6 +1208,7 @@ window.App = {
   copyAddress,
   copyPaymentRequest,
   toggleMining,
+  refreshNexusWcryloBalance,
   loadNexusBuyback,
   saveNexusLinkedAddress,
   buyBackNexusNFT,

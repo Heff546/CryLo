@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('c64', {
 
   nexusBurnNft: (tokenId) =>
     ipcRenderer.invoke('nexus-burn-nft', tokenId),
+
+  nexusWcryloBalance: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-wcrylo-balance', linkedAddress),
   // ── Events (main → renderer) ──────────────────────────────────────────
   onStartupStatus: (cb)          => ipcRenderer.on('startup-status', (_, data) => cb(data)),
   onLog:           (cb)          => ipcRenderer.on('log',            (_, data) => cb(data)),

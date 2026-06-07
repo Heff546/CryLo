@@ -566,6 +566,32 @@ ipcMain.handle('nexus-burn-nft', async (_, tokenId) => {
   }
 });
 
+ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
+  try {
+    const rpc =
+      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+
+    const tokenAddress = '0xA2240adb73E11a368600efc0F68DF85daE843C83';
+    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, provider);
+
+    if (!ethers.isAddress(linkedAddress)) {
+      return { ok: false, error: 'Invalid Nexus address' };
+    }
+
+    const balance = await token.balanceOf(linkedAddress);
+
+    return {
+      ok: true,
+      balance: ethers.formatEther(balance)
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
