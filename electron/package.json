@@ -105,5 +105,8 @@
       "icon": "assets/icon.png"
     }
   },
-  "homepage": "https://crylo.com"
+  "homepage": "https://crylo.com",
+  "dependencies": {
+    "ethers": "^6.16.0"
+  }
 }
