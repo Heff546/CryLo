@@ -1058,12 +1058,18 @@ async function loadNexusBuyback() {
           <div>Eligible: ${nft.eligible ? 'YES' : 'NO'}</div>
           <div>Pool Balance: ${nft.codePool} wCRYLO</div>
           <div>Redeemed: ${nft.redeemed}</div>
-	  ${nft.eligible ? `<button class="btn btn-primary" style="margin-top:10px" onclick="App.buyBackNexusNFT(${nft.tokenId})">Buy Back NFT</button>` : ''}
+	  ${nft.eligible ? `<button class="btn btn-primary nexus-buyback-btn" style="margin-top:10px" data-token-id="${nft.tokenId}">Buy Back NFT</button>` : ''}
         </div>
       `;
     }
 
     listEl.innerHTML = html || '<div class="card">No NFTs found.</div>';
+    
+    document.querySelectorAll('.nexus-buyback-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        buyBackNexusNFT(btn.dataset.tokenId);
+      });
+    });
 
   } catch (err) {
     console.error(err);
@@ -1102,13 +1108,17 @@ async function buyBackNexusNFT(tokenId) {
     const result = await window.c64.nexusBuyBackNft(tokenId);
 
     if (!result.ok) {
-      statusEl.textContent = result.error || 'Buyback failed.';
-      return;
+      statusEl.textContent =
+        `Buyback failed for NFT #${tokenId}: ${result.error || 'Unknown error'}`;
     }
 
-    statusEl.textContent = `Buyback completed for NFT #${tokenId}`;
+    statusEl.textContent =
+      `Buyback completed for NFT #${tokenId}. Refreshing NFT list...`;
 
     await loadNexusBuyback();
+
+    statusEl.textContent =
+      `Buyback completed for NFT #${tokenId}.`;
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Buyback failed.';

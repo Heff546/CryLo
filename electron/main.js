@@ -1,5 +1,7 @@
 'use strict';
 
+require('dotenv').config();
+
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -458,10 +460,61 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
 });
 
 ipcMain.handle('nexus-buyback-nft', async (_, tokenId) => {
-  return {
-    ok: false,
-    error: 'Buyback transaction signing not enabled yet. Next step is adding Nexus private-key or wallet-signing support.'
-  };
+  try {
+    const rpc =
+      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+
+    const nftAddress = '0xA2BF9e819fD481a00AD1e559c2B4676e188BBFEe';
+    const vaultAddress = '0x476052d25599356bd9A2d25CBE75fbe7Fdf15aC4';
+
+    const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
+    const vaultArtifact = require('./src/abis/CryLoBuybackVault.json');
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const wallet = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+
+    const nft = new ethers.Contract(nftAddress, nftArtifact.abi, wallet);
+    const vault = new ethers.Contract(vaultAddress, vaultArtifact.abi, wallet);
+
+    const id = Number(tokenId);
+
+    const owner = await nft.ownerOf(id);
+    if (owner.toLowerCase() !== wallet.address.toLowerCase()) {
+      return { ok: false, error: 'Linked wallet does not own this NFT.' };
+    }
+
+    let nonce = await provider.getTransactionCount(wallet.address, 'pending');
+
+    let tx = await nft.approve(vaultAddress, id, { nonce });
+    await tx.wait();
+    nonce++;
+
+    tx = await vault.buyBack(id, { nonce });
+    const receipt = await tx.wait();
+
+    const newOwner = await nft.ownerOf(id);
+
+    if (newOwner.toLowerCase() !== vaultAddress.toLowerCase()) {
+      return {
+        ok: false,
+        error: `Buyback transaction completed, but NFT #${id} is still owned by ${newOwner}`,
+        txHash: tx.hash
+      };
+    }
+
+    return {
+      ok: true,
+      tokenId: id,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      newOwner
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
+  }
 });
 
 // ─── Window ───────────────────────────────────────────────────────────────────

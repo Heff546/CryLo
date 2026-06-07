@@ -107,6 +107,7 @@
   },
   "homepage": "https://crylo.com",
   "dependencies": {
+    "dotenv": "^17.4.2",
     "ethers": "^6.16.0"
   }
 }
