@@ -592,6 +592,32 @@ ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
   }
 });
 
+ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
+  try {
+    const rpc =
+      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+
+    const stakingAddress = '0x6a077B00e0C2132300c2262BdB52E3581a0aA0C3';
+    const stakingArtifact = require('./src/abis/CryLoStaking.json');
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, provider);
+
+    if (!ethers.isAddress(linkedAddress)) {
+      return { ok: false, error: 'Invalid Nexus address' };
+    }
+
+    const balance = await staking.stakedBalance(linkedAddress);
+
+    return {
+      ok: true,
+      balance: ethers.formatEther(balance)
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({

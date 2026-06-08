@@ -283,6 +283,7 @@ async function refreshAll() {
     updateSyncStatus(),
     updateBalance(),
     refreshNexusWcryloBalance(),
+    refreshNexusStakedBalance(),
     refreshActiveTab()
   ]);
 }
@@ -1191,6 +1192,41 @@ async function refreshNexusWcryloBalance() {
   }
 }
 
+async function refreshNexusStakedBalance() {
+  const el = document.getElementById('bal-staked-wcrylo');
+  if (!el) return;
+
+  const linkedAddress =
+    localStorage.getItem('crylo_nexus_address') || '';
+
+  if (!linkedAddress) {
+    el.innerHTML =
+      `—<span class="balance-unit"> wCRYLO</span>`;
+    return;
+  }
+
+  try {
+    const result =
+      await window.c64.nexusStakedBalance(linkedAddress);
+
+    console.log('STAKED RESULT:', result);
+
+    if (!result.ok) {
+      el.innerHTML =
+        `0.0000<span class="balance-unit"> wCRYLO</span>`;
+      return;
+    }
+
+    el.innerHTML =
+      `${Number(result.balance).toFixed(4)}<span class="balance-unit"> wCRYLO</span>`;
+  } catch (err) {
+    console.error(err);
+
+    el.innerHTML =
+      `0.0000<span class="balance-unit"> wCRYLO</span>`;
+  }
+}
+
 window.App = {
   sendMax,
   toggleAdvanced,
@@ -1209,6 +1245,7 @@ window.App = {
   copyPaymentRequest,
   toggleMining,
   refreshNexusWcryloBalance,
+  refreshNexusStakedBalance,
   loadNexusBuyback,
   saveNexusLinkedAddress,
   buyBackNexusNFT,
