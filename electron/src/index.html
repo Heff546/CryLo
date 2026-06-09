@@ -357,6 +357,16 @@
         <button class="btn btn-secondary" onclick="App.unstakeNexusWcrylo()">Unstake</button>
       </div>
 
+            <div style="margin-top:10px;font-size:13px;color:var(--text-dim)">
+        Pending Rewards:
+        <strong id="nexus-pending-rewards">—</strong>
+        <span>wCRYLO</span>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-secondary" onclick="App.claimNexusRewards()">Claim Rewards</button>
+      </div>
+
       <div id="nexus-staking-status" style="font-size:12px;color:var(--text-dim);margin-top:6px">
         Enter an amount to stake or unstake wCRYLO.
       </div>

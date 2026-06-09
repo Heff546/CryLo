@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('c64', {
   nexusStakeWcrylo: (amountText) =>
     ipcRenderer.invoke('nexus-stake-wcrylo', amountText),
 
+    nexusPendingRewards: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-pending-rewards', linkedAddress),
+
+  nexusClaimRewards: () =>
+    ipcRenderer.invoke('nexus-claim-rewards'),
+
   nexusUnstakeWcrylo: (amountText) =>
     ipcRenderer.invoke('nexus-unstake-wcrylo', amountText),
 

@@ -597,7 +597,7 @@ ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
     const rpc =
       'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
 
-    const stakingAddress = '0x6a077B00e0C2132300c2262BdB52E3581a0aA0C3';
+    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -618,13 +618,68 @@ ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
   }
 });
 
+ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
+  try {
+    const rpc =
+      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+
+    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
+    const stakingArtifact = require('./src/abis/CryLoStaking.json');
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, provider);
+
+    if (!ethers.isAddress(linkedAddress)) {
+      return { ok: false, error: 'Invalid Nexus address' };
+    }
+
+    const rewards = await staking.pendingRewards(linkedAddress);
+
+    return {
+      ok: true,
+      rewards: ethers.formatEther(rewards)
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('nexus-claim-rewards', async () => {
+  try {
+    const rpc =
+      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+
+    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
+    const stakingArtifact = require('./src/abis/CryLoStaking.json');
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const wallet = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+
+    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
+
+    const tx = await staking.claimRewards();
+    const receipt = await tx.wait();
+
+    return {
+      ok: true,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
+  }
+});
+
 ipcMain.handle('nexus-stake-wcrylo', async (_, amountText) => {
   try {
     const rpc =
       'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
 
     const tokenAddress = '0xA2240adb73E11a368600efc0F68DF85daE843C83';
-    const stakingAddress = '0x6a077B00e0C2132300c2262BdB52E3581a0aA0C3';
+    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
 
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
@@ -663,7 +718,7 @@ ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText) => {
     const rpc =
       'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
 
-    const stakingAddress = '0x6a077B00e0C2132300c2262BdB52E3581a0aA0C3';
+    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);

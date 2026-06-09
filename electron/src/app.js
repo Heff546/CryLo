@@ -284,6 +284,7 @@ async function refreshAll() {
     updateBalance(),
     refreshNexusWcryloBalance(),
     refreshNexusStakedBalance(),
+    refreshNexusPendingRewards(),
     refreshActiveTab()
   ]);
 }
@@ -1227,6 +1228,34 @@ async function refreshNexusStakedBalance() {
   }
 }
 
+async function refreshNexusPendingRewards() {
+  const el = document.getElementById('nexus-pending-rewards');
+  if (!el) return;
+
+  const linkedAddress =
+    localStorage.getItem('crylo_nexus_address') || '';
+
+  if (!linkedAddress) {
+    el.textContent = '—';
+    return;
+  }
+
+  try {
+    const result =
+      await window.c64.nexusPendingRewards(linkedAddress);
+
+    if (!result.ok) {
+      el.textContent = '0.0000';
+      return;
+    }
+
+    el.textContent = Number(result.rewards).toFixed(6);
+  } catch (err) {
+    console.error(err);
+    el.textContent = '0.0000';
+  }
+}
+
 async function stakeNexusWcrylo() {
   const statusEl = document.getElementById('nexus-staking-status');
   const input = document.getElementById('nexus-stake-amount');
@@ -1252,6 +1281,7 @@ async function stakeNexusWcrylo() {
 
     await refreshNexusWcryloBalance();
     await refreshNexusStakedBalance();
+    await refreshNexusPendingRewards();
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Stake failed.';
@@ -1283,9 +1313,46 @@ async function unstakeNexusWcrylo() {
 
     await refreshNexusWcryloBalance();
     await refreshNexusStakedBalance();
+    await refreshNexusPendingRewards();
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Unstake failed.';
+  }
+}
+
+async function claimNexusRewards() {
+  const statusEl = document.getElementById('nexus-staking-status');
+
+  statusEl.textContent = 'Claiming staking rewards...';
+
+  try {
+    const result = await window.c64.nexusClaimRewards();
+
+    if (!result.ok) {
+      const errorText = String(result.error || '').toLowerCase();
+
+      if (
+        errorText.includes('no rewards') ||
+        errorText.includes('execution reverted')
+      ) {
+        statusEl.textContent = 'No rewards available to claim.';
+        return;
+      }
+
+      statusEl.textContent =
+        `Claim failed: ${result.error || 'Unknown error'}`;
+      return;
+    }
+
+    statusEl.textContent =
+      'Staking rewards claimed successfully.';
+
+    await refreshNexusWcryloBalance();
+    await refreshNexusStakedBalance();
+    await refreshNexusPendingRewards();
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Claim failed.';
   }
 }
 
@@ -1308,6 +1375,8 @@ window.App = {
   toggleMining,
   refreshNexusWcryloBalance,
   refreshNexusStakedBalance,
+  refreshNexusPendingRewards,
+  claimNexusRewards,
   stakeNexusWcrylo,
   unstakeNexusWcrylo,
   loadNexusBuyback,
