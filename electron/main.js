@@ -618,6 +618,78 @@ ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
   }
 });
 
+ipcMain.handle('nexus-stake-wcrylo', async (_, amountText) => {
+  try {
+    const rpc =
+      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+
+    const tokenAddress = '0xA2240adb73E11a368600efc0F68DF85daE843C83';
+    const stakingAddress = '0x6a077B00e0C2132300c2262BdB52E3581a0aA0C3';
+
+    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
+    const stakingArtifact = require('./src/abis/CryLoStaking.json');
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const wallet = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+
+    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
+    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
+
+    const amount = ethers.parseEther(String(amountText));
+    let nonce = await provider.getTransactionCount(wallet.address, 'pending');
+
+    let tx = await token.approve(stakingAddress, amount, { nonce });
+    await tx.wait();
+    nonce++;
+
+    tx = await staking.stake(amount, { nonce });
+    const receipt = await tx.wait();
+
+    return {
+      ok: true,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
+  }
+});
+
+ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText) => {
+  try {
+    const rpc =
+      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+
+    const stakingAddress = '0x6a077B00e0C2132300c2262BdB52E3581a0aA0C3';
+    const stakingArtifact = require('./src/abis/CryLoStaking.json');
+
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const wallet = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+
+    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
+
+    const amount = ethers.parseEther(String(amountText));
+    const nonce = await provider.getTransactionCount(wallet.address, 'pending');
+
+    const tx = await staking.unstake(amount, { nonce });
+    const receipt = await tx.wait();
+
+    return {
+      ok: true,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
+  }
+});
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({

@@ -31,6 +31,12 @@ contextBridge.exposeInMainWorld('c64', {
   nexusStakedBalance: (linkedAddress) =>
     ipcRenderer.invoke('nexus-staked-balance', linkedAddress),
 
+  nexusStakeWcrylo: (amountText) =>
+    ipcRenderer.invoke('nexus-stake-wcrylo', amountText),
+
+  nexusUnstakeWcrylo: (amountText) =>
+    ipcRenderer.invoke('nexus-unstake-wcrylo', amountText),
+
   // ── Events (main → renderer) ──────────────────────────────────────────
   onStartupStatus: (cb)          => ipcRenderer.on('startup-status', (_, data) => cb(data)),
   onLog:           (cb)          => ipcRenderer.on('log',            (_, data) => cb(data)),

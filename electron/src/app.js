@@ -1227,6 +1227,68 @@ async function refreshNexusStakedBalance() {
   }
 }
 
+async function stakeNexusWcrylo() {
+  const statusEl = document.getElementById('nexus-staking-status');
+  const input = document.getElementById('nexus-stake-amount');
+  const amount = input.value.trim();
+
+  if (!amount || Number(amount) <= 0) {
+    statusEl.textContent = 'Enter a valid staking amount.';
+    return;
+  }
+
+  statusEl.textContent = `Staking ${amount} wCRYLO...`;
+
+  try {
+    const result = await window.c64.nexusStakeWcrylo(amount);
+
+    if (!result.ok) {
+      statusEl.textContent = `Stake failed: ${result.error || 'Unknown error'}`;
+      return;
+    }
+
+    statusEl.textContent = `Staked ${amount} wCRYLO successfully.`;
+    input.value = '';
+
+    await refreshNexusWcryloBalance();
+    await refreshNexusStakedBalance();
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Stake failed.';
+  }
+}
+
+async function unstakeNexusWcrylo() {
+  const statusEl = document.getElementById('nexus-staking-status');
+  const input = document.getElementById('nexus-stake-amount');
+  const amount = input.value.trim();
+
+  if (!amount || Number(amount) <= 0) {
+    statusEl.textContent = 'Enter a valid unstaking amount.';
+    return;
+  }
+
+  statusEl.textContent = `Unstaking ${amount} wCRYLO...`;
+
+  try {
+    const result = await window.c64.nexusUnstakeWcrylo(amount);
+
+    if (!result.ok) {
+      statusEl.textContent = `Unstake failed: ${result.error || 'Unknown error'}`;
+      return;
+    }
+
+    statusEl.textContent = `Unstaked ${amount} wCRYLO successfully.`;
+    input.value = '';
+
+    await refreshNexusWcryloBalance();
+    await refreshNexusStakedBalance();
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Unstake failed.';
+  }
+}
+
 window.App = {
   sendMax,
   toggleAdvanced,
@@ -1246,6 +1308,8 @@ window.App = {
   toggleMining,
   refreshNexusWcryloBalance,
   refreshNexusStakedBalance,
+  stakeNexusWcrylo,
+  unstakeNexusWcrylo,
   loadNexusBuyback,
   saveNexusLinkedAddress,
   buyBackNexusNFT,
