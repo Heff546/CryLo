@@ -1,3 +1,4 @@
 build/
 electron/dist/
 electron/node_modules/
+electron/.env
