@@ -190,16 +190,20 @@
 
 #define CRYPTONOTE_NAME                         "CryLo"
 
-// CryLo Chain: 1% dev fund + 0.5% liquidity fund
-#define CryLo_DEV_FUND_FEE_PERCENT              1
+// CryLo Chain: 0.75% dev fund + 0.25% liquidity fund + 0.50% NEX gas fund
+#define CryLo_DEV_FUND_FEE_BPS                  75
 #define CryLo_DEV_FUND_VIEWKEY                   "3847665251fbb4b9cf1e3ce13cce9b4af0decd740a7527df72218e6629540f21"
 #define CryLo_DEV_FUND_VIEWKEY_SECRET            "8ce4343589f1a6890a83cd1b4a3033553ff277082eed2c89575d16e151593d09"
 #define CryLo_DEV_FUND_SPENDKEY                  "e0d2a33356a379d24842f98be0d5b8ee43f3e346d9c15c02554c5c8cfee29ac5"
 #define CryLo_DEV_FUND_ADDRESS_TESTNET           "A1goGSHDZtkcB15sZuucudgrUSxUUGLaF1Pdpu6F2jqjZzHDCx5CDbyY5ag6qPQPfpDY2CJfiyNVCeNhrbQqfnia4q5JXZ9"
 
-#define CryLo_LIQUIDITY_FUND_FEE_PERMILLE       5
+#define CryLo_LIQUIDITY_FUND_FEE_BPS           25
+#define CryLo_GAS_TREASURY_FEE_BPS              50
 #define CryLo_LIQUIDITY_FUND_VIEWKEY             "31102d30fdc1a05945af699efd3236520f153b6aef701e543ea51247980bfb23"
 #define CryLo_LIQUIDITY_FUND_SPENDKEY            "3d5aacc7c137b83e3fa8e63af0e1233816aebb2cbeea3f999564b9a8af26bcdf"
+
+#define CryLo_GAS_TREASURY_VIEWKEY               "ac7c3664c2f5580e8a7cc210a4c05c8b6216a8b8df82257faff264174f2e604c"
+#define CryLo_GAS_TREASURY_SPENDKEY              "c4cb19603178d94640b6cb0028bae51877490f9040c1d94949371a3ec397ca6b"
 #define CRYPTONOTE_BLOCKCHAINDATA_FILENAME      "data.mdb"
 #define CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME "lock.mdb"
 #define P2P_NET_DATA_FILENAME                   "p2pstate.bin"

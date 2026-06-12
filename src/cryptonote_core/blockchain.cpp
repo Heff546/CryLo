@@ -1491,16 +1491,17 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
   // CryLo Chain: HF19+ validate 50/50 miner split + dev + liquidity
   if (version >= HF_VERSION_VESTING && b.miner_tx.vout.size() > 0)
   {
-    if (b.miner_tx.vout.size() != 4)
+    if (b.miner_tx.vout.size() != 5)
     {
-      MERROR_VER("HF19+ coinbase must have exactly 4 outputs, got " << b.miner_tx.vout.size());
+      MERROR_VER("HF19+ coinbase must have exactly 5 outputs, got " << b.miner_tx.vout.size());
       return false;
     }
 
     uint64_t total_reward = base_reward + fee;
-    uint64_t dev_fund_expected = total_reward * CryLo_DEV_FUND_FEE_PERCENT / 100;
-    uint64_t liquidity_fund_expected = total_reward * CryLo_LIQUIDITY_FUND_FEE_PERMILLE / 1000;
-    uint64_t miner_reward = total_reward - dev_fund_expected - liquidity_fund_expected;
+    uint64_t dev_fund_expected = total_reward * CryLo_DEV_FUND_FEE_BPS / 10000;
+    uint64_t liquidity_fund_expected = total_reward * CryLo_LIQUIDITY_FUND_FEE_BPS / 10000;
+    uint64_t gas_treasury_expected = total_reward * CryLo_GAS_TREASURY_FEE_BPS / 10000;
+    uint64_t miner_reward = total_reward - dev_fund_expected - liquidity_fund_expected - gas_treasury_expected;
 
     uint64_t miner_instant_expected = miner_reward / 2;
     uint64_t miner_vested_expected = miner_reward - miner_instant_expected;
@@ -1509,6 +1510,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     if (b.miner_tx.vout[1].amount != miner_vested_expected) return false;
     if (b.miner_tx.vout[2].amount != dev_fund_expected) return false;
     if (b.miner_tx.vout[3].amount != liquidity_fund_expected) return false;
+    if (b.miner_tx.vout[4].amount != gas_treasury_expected) return false;
     // Verify dev fund output key is derived from the correct dev fund address
     crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(b.miner_tx);
     if (tx_pub_key == crypto::null_pkey)
@@ -1563,7 +1565,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
 
     uint64_t dev_fund_actual = b.miner_tx.vout[2].amount;
 
-    LOG_PRINT_L2("Dev fund validation passed: " << print_money(dev_fund_actual) << " C64 (" << CryLo_DEV_FUND_FEE_PERCENT << "%) - address cryptographically verified");
+    LOG_PRINT_L2("Dev fund validation passed: " << print_money(dev_fund_actual) << " C64 - address cryptographically verified");
   }
 
   return true;

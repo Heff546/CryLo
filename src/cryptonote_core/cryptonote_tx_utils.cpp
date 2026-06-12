@@ -105,17 +105,20 @@ namespace cryptonote
 #endif
     block_reward += fee;
 
-    // CryLo Chain: 1% dev fund + 0.5% liquidity fund
+    // CryLo Chain: 0.75% dev fund + 0.25% liquidity fund + 0.50% NEX gas fund
     uint64_t dev_fund_amount = 0;
     uint64_t liquidity_fund_amount = 0;
+    uint64_t gas_treasury_amount = 0;
 
     account_public_address dev_fund_addr = AUTO_VAL_INIT(dev_fund_addr);
     account_public_address liquidity_fund_addr = AUTO_VAL_INIT(liquidity_fund_addr);
+    account_public_address gas_treasury_addr = AUTO_VAL_INIT(gas_treasury_addr);
 
     if (height > 0)
     {
-      dev_fund_amount = block_reward * CryLo_DEV_FUND_FEE_PERCENT / 100;
-      liquidity_fund_amount = block_reward * 5 / 1000; // 0.5%
+      dev_fund_amount = block_reward * CryLo_DEV_FUND_FEE_BPS / 10000;
+      liquidity_fund_amount = block_reward * CryLo_LIQUIDITY_FUND_FEE_BPS / 10000;
+      gas_treasury_amount = block_reward * CryLo_GAS_TREASURY_FEE_BPS / 10000;
 
       if (dev_fund_amount > 0)
       {
@@ -141,8 +144,22 @@ namespace cryptonote
         epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_SPENDKEY, liq_spend_pkey);
         epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_VIEWKEY, liq_view_pkey);
 
-        liquidity_fund_addr.m_spend_public_key = liq_spend_pkey;
+                liquidity_fund_addr.m_spend_public_key = liq_spend_pkey;
         liquidity_fund_addr.m_view_public_key = liq_view_pkey;
+      }
+
+      if (gas_treasury_amount > 0)
+      {
+        block_reward -= gas_treasury_amount;
+
+        crypto::public_key gas_treasury_spend_pkey;
+        crypto::public_key gas_treasury_view_pkey;
+
+        epee::string_tools::hex_to_pod(CryLo_GAS_TREASURY_SPENDKEY, gas_treasury_spend_pkey);
+        epee::string_tools::hex_to_pod(CryLo_GAS_TREASURY_VIEWKEY, gas_treasury_view_pkey);
+
+        gas_treasury_addr.m_spend_public_key = gas_treasury_spend_pkey;
+        gas_treasury_addr.m_view_public_key = gas_treasury_view_pkey;
       }
     }
 
@@ -256,12 +273,37 @@ namespace cryptonote
       tx.vout.push_back(liq_out);
       summary_amounts += liquidity_fund_amount;
     }
+
+    // CryLo Chain: add NEX gas fund output
+    if (gas_treasury_amount > 0) {
+      crypto::key_derivation gas_treasury_derivation = AUTO_VAL_INIT(gas_treasury_derivation);
+      crypto::public_key gas_treasury_out_eph_public_key = AUTO_VAL_INIT(gas_treasury_out_eph_public_key);
+
+      bool r = crypto::generate_key_derivation(gas_treasury_addr.m_view_public_key, txkey.sec, gas_treasury_derivation);
+      CHECK_AND_ASSERT_MES(r, false, "while creating NEX gas fund out: failed to generate_key_derivation");
+
+      size_t gas_treasury_out_index = tx.vout.size();
+
+      r = crypto::derive_public_key(gas_treasury_derivation, gas_treasury_out_index, gas_treasury_addr.m_spend_public_key, gas_treasury_out_eph_public_key);
+      CHECK_AND_ASSERT_MES(r, false, "while creating NEX gas fund out: failed to derive_public_key");
+
+      bool use_view_tags = hard_fork_version >= HF_VERSION_VIEW_TAGS;
+      crypto::view_tag gas_treasury_view_tag;
+      if (use_view_tags)
+        crypto::derive_view_tag(gas_treasury_derivation, gas_treasury_out_index, gas_treasury_view_tag);
+
+      tx_out gas_treasury_out;
+      cryptonote::set_tx_out(gas_treasury_amount, gas_treasury_out_eph_public_key, use_view_tags, gas_treasury_view_tag, gas_treasury_out);
+      tx.vout.push_back(gas_treasury_out);
+      summary_amounts += gas_treasury_amount;
+    }
+
     CHECK_AND_ASSERT_MES(
-      summary_amounts == (block_reward + dev_fund_amount + liquidity_fund_amount),
+      summary_amounts == (block_reward + dev_fund_amount + liquidity_fund_amount + gas_treasury_amount),
       false,
       "Failed to construct miner tx, summary_amounts = " << summary_amounts
-        << " not equal block_reward + dev_fund + liquidity_fund = "
-        << (block_reward + dev_fund_amount + liquidity_fund_amount)
+        << " not equal block_reward + dev_fund + liquidity_fund + gas_treasury = "
+        << (block_reward + dev_fund_amount + liquidity_fund_amount + gas_treasury_amount)
     );
 
     if (hard_fork_version >= 4)
