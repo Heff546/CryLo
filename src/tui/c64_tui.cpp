@@ -61,54 +61,53 @@ void NodeStats::set_block_info(const std::string& id, const std::string& pow, co
 // ---------- Datasette Animation ----------
 
 void play_datasette_animation() {
-    const char* colors[] = {
-        "\033[41m", "\033[42m", "\033[43m", "\033[44m",
-        "\033[45m", "\033[46m", "\033[47m", "\033[44m",
-        "\033[41m", "\033[43m", "\033[42m", "\033[45m",
-        "\033[46m", "\033[41m", "\033[44m", "\033[47m"
-    };
-    const char* reset = "\033[0m";
-
-    // Get terminal width
-    struct winsize ws;
-    int tw = 60;
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0)
-        tw = ws.ws_col - 4;
-
     fprintf(stderr, "\033[2J\033[H"); // clear screen
-    fprintf(stderr, "\n\033[36m    PRESS PLAY ON TAPE\033[0m\n\n");
     fflush(stderr);
-    usleep(1500000);
-    fprintf(stderr, "\033[36m    OK\033[0m\n\n");
-    fflush(stderr);
-    usleep(500000);
+    usleep(150000);
 
-    srand(time(NULL));
-    for (int f = 0; f < 120; f++) {
-        std::string ln = "    ";
-        for (int x = 0; x < tw; x++) {
-            int ci = (x + f * 3 + (rand() % 3)) % 16;
-            ln += colors[ci];
-            ln += " ";
-        }
-        ln += reset;
-        fprintf(stderr, "%s\n", ln.c_str());
+    fprintf(stderr, "\033[36m\n");
+    fprintf(stderr, "      ██████╗██████╗ ██╗   ██╗██╗      ██████╗\n");
+    fprintf(stderr, "     ██╔════╝██╔══██╗╚██╗ ██╔╝██║     ██╔═══██╗\n");
+    fprintf(stderr, "     ██║     ██████╔╝ ╚████╔╝ ██║     ██║   ██║\n");
+    fprintf(stderr, "     ██║     ██╔══██╗  ╚██╔╝  ██║     ██║   ██║\n");
+    fprintf(stderr, "     ╚██████╗██║  ██║   ██║   ███████╗╚██████╔╝\n");
+    fprintf(stderr, "      ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝ ╚═════╝\n\n");
+    fprintf(stderr, "                CryLo Network Daemon\n");
+    fprintf(stderr, "              FAST. PRIVATE. SECURE.\n\n");
+    fprintf(stderr, "    ┌──────────────────────────────────────────────────────────────┐\n");
+    fprintf(stderr, "    │  ◌  Connecting to CryLo Testnet v3        ............       │\n");
+    fprintf(stderr, "    │  ⛓  Initializing P2P Network              ............       │\n");
+    fprintf(stderr, "    │  ◈  Verifying Blockchain Integrity        ............       │\n");
+    fprintf(stderr, "    │  ▣  Preparing for Synchronization         ............       │\n");
+    fprintf(stderr, "    │  ≋  Sync in Progress                      [----------]       │\n");
+    fprintf(stderr, "    └──────────────────────────────────────────────────────────────┘\n\n");
+    fprintf(stderr, "\033[0m");
+
+    const char* steps[] = {
+        "Connecting to CryLo Testnet v3",
+        "Initializing P2P Network",
+        "Verifying Blockchain Integrity",
+        "Preparing for Synchronization"
+    };
+
+    for (const char* step : steps) {
+        fprintf(stderr, "\033[36m    [*] %s\033[0m", step);
         fflush(stderr);
-        usleep(50000);
+
+        for (int i = 0; i < 12; ++i) {
+            fprintf(stderr, "\033[36m.\033[0m");
+            fflush(stderr);
+            usleep(40000);
+        }
+
+        fprintf(stderr, " \033[32mOK\033[0m\n");
+        fflush(stderr);
+        usleep(100000);
     }
 
-    fprintf(stderr, "\n");
+    fprintf(stderr, "\n    \033[32mREADY.\033[0m\n\n");
     fflush(stderr);
-    usleep(500000);
-    fprintf(stderr, "\033[36m    FOUND CryLoCHAIN\033[0m\n");
-    fflush(stderr);
-    usleep(1000000);
-    fprintf(stderr, "\033[36m    LOADING...\033[0m\n");
-    fflush(stderr);
-    usleep(1500000);
-    fprintf(stderr, "\033[36m    READY.\033[0m\n\n");
-    fflush(stderr);
-    usleep(500000);
+    usleep(300000);
 }
 
 // ---------- ncurses TUI ----------
@@ -168,6 +167,7 @@ static void draw_centered(int y, int w, const char* text, int cp) {
 
 void run_tui(std::atomic<bool>& stop_signal) {
     static std::string input;
+    static std::vector<std::string> command_output = {"Ready. Type help for commands."};
     auto start_time = std::chrono::steady_clock::now();
 	g_mining_active = false;
 	g_threads = 4;
@@ -300,7 +300,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
 
         char buf[256];
         auto print_stat = [&](int idx, const char* key, const char* val, int cp) {
-            snprintf(buf, sizeof(buf), "%2d  %-14s %s", idx, key, val);
+            snprintf(buf, sizeof(buf), "%-14s %s", key, val);
             attron(COLOR_PAIR(cp));
             mvaddnstr(y++, 3, buf, w - 6);
             attroff(COLOR_PAIR(cp));
@@ -370,25 +370,25 @@ void run_tui(std::atomic<bool>& stop_signal) {
 
 	y += 3;
 
-	// Command input line
+	// Command input / output lines
 	attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
-	mvprintw(18, 3, "COMMAND: %-100s", input.c_str());
+	mvprintw(h - 7, 3, "COMMAND: %-100s", input.c_str());
+	mvprintw(h - 6, 3, "OUTPUT :");
+	for (size_t oi = 0; oi < command_output.size() && oi < 5; ++oi) {
+	    mvprintw(h - 5 + oi, 5, "%-100s", command_output[oi].c_str());
+	}
 	attroff(COLOR_PAIR(CP_HEADER) | A_BOLD);
 
-	// Example mining command
-	attron(COLOR_PAIR(CP_HEADER));
-
-	mvprintw(h - 5, 3,
-    	    "EXAMPLE: start_mining YOUR_WALLET_ADDRESS 4");
-
-	mvprintw(h - 4, 3,
-    	    "EXAMPLE: stop_mining");
-
-	attroff(COLOR_PAIR(CP_HEADER));
+	// Help hint
+	attron(COLOR_PAIR(CP_NORMAL) | A_BOLD);
+	mvprintw(h - 1, 3, "TYPE: help  |  start_mining <wallet> <threads>  |  stop_mining");
+	attroff(COLOR_PAIR(CP_NORMAL) | A_BOLD);
 
         // Footer
-        draw_centered(h - 2, w,
-	    "CTRL+C TO QUIT  -  CryLo Chain (C) 2026",
+        move(h - 1, 0);
+	clrtoeol();
+	draw_centered(h - 1, w,
+	    "CryLo Chain (C) 2026",
 	    CP_HEADER);
 
         refresh();
@@ -480,7 +480,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
             			",\"do_background_mining\":false,"
             			"\"ignore_battery\":true}'";
 
-        		    system(cmd.c_str());
+        		    { int rc = system(cmd.c_str()); (void)rc; }
 
         		    g_mining_active = true;
         		    g_threads = threads;
@@ -488,14 +488,64 @@ void run_tui(std::atomic<bool>& stop_signal) {
 		    }
 
             	    if (input == "stop_mining") {
-                	system("curl -s http://127.0.0.1:22641/stop_mining -d '{}' -H 'Content-Type: application/json'");
+                	{ int rc = system("curl -s http://127.0.0.1:22641/stop_mining -d '{}' -H 'Content-Type: application/json'"); (void)rc; }
 
 			g_mining_active = false;
 			g_threads = 0;
             	    }
 
             	    if (input == "mining_status") {
-                	system("curl -s http://127.0.0.1:22641/mining_status");
+                	{ int rc = system("curl -s http://127.0.0.1:22641/mining_status"); (void)rc; }
+            	    }
+
+            	    if (input == "help") {
+                	command_output = {
+                    "Commands:",
+                    "help | status | sync | height | peers | version",
+                    "mining_status | start_mining <wallet> <threads>",
+                    "stop_mining | clear"
+                };
+            	    }
+
+            	    if (input == "status") {
+                	command_output = {
+                    "Height : " + std::to_string(stats.height.load()),
+                    "Peers  : " + std::to_string(stats.peers_out.load()) + " OUT / " +
+                               std::to_string(stats.peers_in.load()) + " IN",
+                    "Sync   : " + std::string(stats.synced.load() ? "SYNCED" : "SYNCING"),
+                    "Mining : " + std::string(g_mining_active ? "STARTED" : "PAUSED")
+                };
+            	    }
+
+            	    if (input == "sync") {
+                	stats.set_status("Sync: " + std::string(stats.synced.load() ? "SYNCED" : "SYNCING") + " | height " + std::to_string(stats.height.load()));
+            	    }
+
+            	    if (input == "height") {
+                	command_output = {
+                    "Height: " + std::to_string(stats.height.load())
+                };
+            	    }
+
+            	    if (input == "peers") {
+                	command_output = {
+                    	    "Peers OUT: " + std::to_string(stats.peers_out.load()),
+                    	    "Peers IN : " + std::to_string(stats.peers_in.load())
+                	};
+            	    }
+
+            	    if (input == "version") {
+                	command_output = {
+                    "CryLo Testnet v3",
+                    "P2P Port : 22640",
+                    "RPC Port : 22641",
+                    "Build    : Nexus-ready daemon"
+                };
+            	    }
+
+            	    if (input == "clear") {
+                	stats.log_lines.clear();
+                	command_output = {"Console cleared."};
             	    }
 
             	    input.clear();

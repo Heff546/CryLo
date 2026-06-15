@@ -515,11 +515,42 @@ bool t_rpc_command_executor::show_status() {
     }
   }
 
+  uint64_t blocks_remaining = net_height > ires.height ? net_height - ires.height : 0;
+
+  std::string block_estimate = "unknown";
+
+  if (has_mining_info && mres.active && mres.speed > 0)
+  {
+    uint64_t seconds = (uint64_t)(ires.difficulty / mres.speed);
+
+    uint64_t days = seconds / 86400;
+    seconds %= 86400;
+
+    uint64_t hours = seconds / 3600;
+    seconds %= 3600;
+
+    uint64_t minutes = seconds / 60;
+
+    std::stringstream est;
+
+    if (days > 0)
+      est << days << "d ";
+
+    if (hours > 0)
+      est << hours << "h ";
+
+    est << minutes << "m";
+
+    block_estimate = est.str();
+  }
+
   std::stringstream str;
-  str << boost::format("Height: %llu/%llu (%.1f%%) on %s%s, %s, net hash %s, v%u%s, %u(out)+%u(in) connections")
+  str << boost::format("Height: %llu/%llu (%.1f%%), %llu blocks remaining, est block: %s, on %s%s, %s, net hash %s, v%u%s, %u(out)+%u(in) connections")
     % (unsigned long long)ires.height
     % (unsigned long long)net_height
     % get_sync_percentage(ires)
+    % (unsigned long long)blocks_remaining
+    % block_estimate
     % (ires.testnet ? "testnet" : ires.stagenet ? "stagenet" : "mainnet")
     % bootstrap_msg
     % (!has_mining_info ? "mining info unavailable" : mining_busy ? "syncing" : mres.active ? ( ( mres.is_background_mining_enabled ? "smart " : "" ) + std::string("mining at ") + get_mining_speed(mres.speed)) : "not mining")

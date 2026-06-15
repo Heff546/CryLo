@@ -733,11 +733,8 @@ namespace nodetool
     std::set<std::string> full_addrs;
     if (m_nettype == cryptonote::TESTNET)
     {
-      full_addrs.insert("163.172.215.129:29640"); // CryLo Chain testnet seed1 (c64seed.ddns.net)
-      full_addrs.insert("51.158.152.121:29640"); // CryLo Chain testnet seed2 (c64seed2.ddns.net)
-      full_addrs.insert("54.38.240.117:29640"); // CryLo Chain testnet seed3 (c64seed3.ddns.net)
-      full_addrs.insert("172.245.238.97:29640"); // CryLo Chain testnet seed4 (c64seed4.ddns.net)
-      full_addrs.insert("217.216.34.11:29640"); // CryLo Chain testnet seed5 (c64seed5.ddns.net) Singapore
+      // CryLo Testnet v3 seed nodes
+      full_addrs.insert("192.168.40.114:22640"); // CryLo v3 local seed
     }
     else if (m_nettype == cryptonote::STAGENET)
     {
