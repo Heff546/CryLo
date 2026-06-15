@@ -329,11 +329,11 @@ async function updateSyncStatus() {
     } catch (_) {
       // fallback: difficulty / target
       if (info.difficulty) {
-        el('sb-nethr').textContent = fmtHashrate(info.difficulty / 300);
+        el('sb-nethr').textContent = fmtHashrate(info.difficulty / 210);
       }
     }
   } else if (info.difficulty) {
-    el('sb-nethr').textContent = fmtHashrate(info.difficulty / 300);
+    el('sb-nethr').textContent = fmtHashrate(info.difficulty / 210);
   }
 
     const height = info.height || 0;
@@ -372,6 +372,38 @@ function fmtDuration(seconds) {
   return `${Math.floor(seconds)}s`;
 }
 
+
+async function getMinedSplitBalances() {
+  const res = await window.c64.walletRpc('get_transfers', { in: true });
+  const r = res.result?.result || res.result || {};
+  const txs = r.in || [];
+
+  let instant = 0;
+  let vested = 0;
+
+  for (const tx of txs) {
+    if (tx.type !== 'block') continue;
+
+    const amounts = Array.isArray(tx.amounts) ? tx.amounts.map(Number) : [];
+    if (amounts.length >= 2) {
+      instant += amounts[0];
+      vested += amounts[1];
+    } else {
+      const amount = Number(tx.amount || 0);
+      const half = Math.floor(amount / 2);
+      instant += half;
+      vested += amount - half;
+    }
+  }
+
+  return {
+    found: (instant + vested) > 0,
+    total: instant + vested,
+    unlocked: instant,
+    locked: vested
+  };
+}
+
 // ─── Balance ──────────────────────────────────────────────────────────────────
 async function updateBalance() {
   const res = await window.c64.walletRpc('get_balance', { account_index: 0 });
@@ -382,9 +414,21 @@ async function updateBalance() {
 
   const r = res.result?.result || res.result || {};
 
-  const total = Number(r.balance || 0);
-  const unlocked = Number(r.unlocked_balance || 0);
-  const locked = total - unlocked;
+  let total = Number(r.balance || 0);
+  let unlocked = Number(r.unlocked_balance || 0);
+  let locked = total - unlocked;
+
+  // CryLo mined rewards use custom 50/50 instant/vested split.
+  // Wallet-RPC get_balance can disagree with the Vesting tab, so for mined
+  // balances we use the same transfer-derived calculation as the Vesting view.
+  try {
+    const mined = await getMinedSplitBalances();
+    if (mined.found) {
+      total = mined.total;
+      unlocked = mined.unlocked;
+      locked = mined.locked;
+    }
+  } catch (_) {}
 
   el('bal-total').innerHTML =
     `${fmt(total)}<span class="balance-unit"> CryLo</span>`;

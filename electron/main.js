@@ -391,7 +391,7 @@ ipcMain.handle('miner-get-status', async () => {
 ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
     const tokenAddress = '0xB34803Cc87833ccfB6BEEd4861cC19dB3860ab0C';
     const nftAddress = '0x2C4A328a533C699c318eD65df8C4F3E98D462a56';
@@ -462,7 +462,7 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
 ipcMain.handle('nexus-buyback-nft', async (_, tokenId) => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
     const nftAddress = '0x2C4A328a533C699c318eD65df8C4F3E98D462a56';
     const vaultAddress = '0xD1946c051c31722d1Dab8698897f0109225e38e1';
@@ -520,7 +520,7 @@ ipcMain.handle('nexus-buyback-nft', async (_, tokenId) => {
 ipcMain.handle('nexus-burn-nft', async (_, tokenId) => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
     const nftAddress = '0x2C4A328a533C699c318eD65df8C4F3E98D462a56';
 
@@ -569,7 +569,7 @@ ipcMain.handle('nexus-burn-nft', async (_, tokenId) => {
 ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
     const tokenAddress = '0xB34803Cc87833ccfB6BEEd4861cC19dB3860ab0C';
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
@@ -595,9 +595,9 @@ ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
 ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
-    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
+    const stakingAddress = '0xEf5BFBDa60f14e61B9d5f9dC89F472B9dFd00ca1';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -621,9 +621,9 @@ ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
 ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
-    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
+    const stakingAddress = '0xEf5BFBDa60f14e61B9d5f9dC89F472B9dFd00ca1';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -647,9 +647,9 @@ ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
 ipcMain.handle('nexus-claim-rewards', async () => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
-    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
+    const stakingAddress = '0xEf5BFBDa60f14e61B9d5f9dC89F472B9dFd00ca1';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -676,10 +676,10 @@ ipcMain.handle('nexus-claim-rewards', async () => {
 ipcMain.handle('nexus-stake-wcrylo', async (_, amountText) => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
     const tokenAddress = '0xB34803Cc87833ccfB6BEEd4861cC19dB3860ab0C';
-    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
+    const stakingAddress = '0xEf5BFBDa60f14e61B9d5f9dC89F472B9dFd00ca1';
 
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
@@ -716,9 +716,9 @@ ipcMain.handle('nexus-stake-wcrylo', async (_, amountText) => {
 ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText) => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
-    const stakingAddress = '0xAC359a30d421C92dC0CB1Bb549B908D543A3c8a2';
+    const stakingAddress = '0xEf5BFBDa60f14e61B9d5f9dC89F472B9dFd00ca1';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -748,7 +748,7 @@ ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText) => {
 ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
     const nodeStakingAddress = '0x16C46bDa463106B73bD2228bC285c9cD9CCB55c5';
     const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
@@ -782,7 +782,7 @@ ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
 ipcMain.handle('nexus-register-operator', async () => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
     const tokenAddress = '0xB34803Cc87833ccfB6BEEd4861cC19dB3860ab0C';
     const nodeStakingAddress = '0x16C46bDa463106B73bD2228bC285c9cD9CCB55c5';
@@ -822,7 +822,7 @@ ipcMain.handle('nexus-register-operator', async () => {
 ipcMain.handle('nexus-register-validator', async () => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
     const tokenAddress = '0xB34803Cc87833ccfB6BEEd4861cC19dB3860ab0C';
     const nodeStakingAddress = '0x16C46bDa463106B73bD2228bC285c9cD9CCB55c5';
@@ -855,7 +855,7 @@ ipcMain.handle('nexus-register-validator', async () => {
 ipcMain.handle('nexus-claim-node-rewards', async () => {
   try {
     const rpc =
-      'http://127.0.0.1:9654/ext/bc/gGYTz63DfSqVhJNfa4QkD6Za7LteYrsdMGUoToGN1X6kiPmKs/rpc';
+      'http://192.168.40.114:9654/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
     const nodeStakingAddress = '0x16C46bDa463106B73bD2228bC285c9cD9CCB55c5';
     const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
