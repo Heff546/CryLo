@@ -965,8 +965,9 @@ async function startMining() {
 	    document.getElementById('mining-stat-blocks-day').textContent =
   	      blocksPerDay.toFixed(4);
 
-	    if (s.blockReward) {
-  	      const dailyRewards = blocksPerDay * (Number(s.blockReward) / COIN);
+	    {
+  	      const displayBlockReward = 2.5;
+  	      const dailyRewards = blocksPerDay * displayBlockReward;
 
   	      document.getElementById('mining-stat-daily-rewards').textContent =
     		dailyRewards.toFixed(4) + ' CryLo';
@@ -989,9 +990,9 @@ async function startMining() {
 	    }
 	  }
 
-	  if (s.blockReward) {
+	  {
             document.getElementById('mining-stat-reward').textContent =
-              fmt(s.blockReward) + ' CryLo';
+              '2.5000 CryLo';
 	  }
 
           document.getElementById('mining-mode').style.display = 'block';

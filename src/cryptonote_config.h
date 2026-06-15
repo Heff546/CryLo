@@ -72,7 +72,7 @@
 
 // Legacy compatibility constants; custom CryLo reward curve overrides these after vesting HF
 #define EMISSION_SPEED_FACTOR_PER_MINUTE                (25)
-#define FINAL_SUBSIDY_PER_MINUTE                        ((uint64_t)4000000000ULL) // 0.04 CRY/min = 0.2 CRY per 5-min block
+#define FINAL_SUBSIDY_PER_MINUTE                        ((uint64_t)4000000000ULL) // 0.04 CRYLO/min = 0.2 CRYLO per 5-min block
 
 #define CRYPTONOTE_REWARD_BLOCKS_WINDOW                 100
 #define CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2    60000 //size of block (bytes) after which reward for block calculated using block size

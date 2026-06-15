@@ -89,12 +89,8 @@ namespace cryptonote {
     uint64_t money_supply;
     money_supply = MONEY_SUPPLY;
 
-    // Keep existing genesis transaction valid.
-    if (height == 0)
-    {
-      reward = UINT64_C(1873016357421);
-      return true;
-    }
+    // CryLo custom emission handles height 0+.
+    // Legacy genesis reward override removed for testnet recovery.
 
     // CryLo custom emission:
     // 2.5 CRYLO -> 0.2 CRYLO over 3,703,704 blocks,
