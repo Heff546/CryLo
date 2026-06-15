@@ -1356,6 +1356,114 @@ async function claimNexusRewards() {
   }
 }
 
+async function refreshNexusNodeStatus() {
+  const statusEl = document.getElementById('nexus-node-status');
+  if (!statusEl) return;
+
+  const linkedAddress =
+    localStorage.getItem('crylo_nexus_address') || '';
+
+  if (!linkedAddress) {
+    statusEl.textContent = 'No Nexus wallet linked.';
+    return;
+  }
+
+  try {
+    const result = await window.c64.nexusNodeStatus(linkedAddress);
+
+    if (!result.ok) {
+      statusEl.textContent = result.error || 'Unable to load node status.';
+      return;
+    }
+
+    const tierName =
+      result.tier === '2' ? 'Validator' :
+      result.tier === '1' ? 'Operator' :
+      'None';
+
+    statusEl.innerHTML =
+      `Tier: <strong>${tierName}</strong> · ` +
+      `Stake: <strong>${Number(result.stake).toFixed(4)} wCRYLO</strong> · ` +
+      `Pending: <strong>${Number(result.pending).toFixed(6)} wCRYLO</strong>`;
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Unable to load node status.';
+  }
+}
+
+async function registerNexusOperator() {
+  const statusEl = document.getElementById('nexus-node-action-status');
+  statusEl.textContent = 'Registering Operator node with 300 wCRYLO...';
+
+  try {
+    const result = await window.c64.nexusRegisterOperator();
+
+    if (!result.ok) {
+      statusEl.textContent = `Operator registration failed: ${result.error || 'Unknown error'}`;
+      return;
+    }
+
+    statusEl.textContent = 'Operator node registered successfully.';
+    await refreshNexusWcryloBalance();
+    await refreshNexusNodeStatus();
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Operator registration failed.';
+  }
+}
+
+async function registerNexusValidator() {
+  const statusEl = document.getElementById('nexus-node-action-status');
+  statusEl.textContent = 'Registering Validator node with 750 wCRYLO...';
+
+  try {
+    const result = await window.c64.nexusRegisterValidator();
+
+    if (!result.ok) {
+      statusEl.textContent = `Validator registration failed: ${result.error || 'Unknown error'}`;
+      return;
+    }
+
+    statusEl.textContent = 'Validator node registered successfully.';
+    await refreshNexusWcryloBalance();
+    await refreshNexusNodeStatus();
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Validator registration failed.';
+  }
+}
+
+async function claimNexusNodeRewards() {
+  const statusEl = document.getElementById('nexus-node-action-status');
+  statusEl.textContent = 'Claiming node rewards...';
+
+  try {
+    const result = await window.c64.nexusClaimNodeRewards();
+
+    if (!result.ok) {
+      const errorText = String(result.error || '').toLowerCase();
+
+      if (
+        errorText.includes('no rewards') ||
+        errorText.includes('execution reverted')
+      ) {
+        statusEl.textContent = 'No node rewards available to claim.';
+        return;
+      }
+
+      statusEl.textContent = `Node reward claim failed: ${result.error || 'Unknown error'}`;
+      return;
+    }
+
+    statusEl.textContent = 'Node rewards claimed successfully.';
+    await refreshNexusWcryloBalance();
+    await refreshNexusNodeStatus();
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Node reward claim failed.';
+  }
+}
+
 window.App = {
   sendMax,
   toggleAdvanced,
@@ -1379,6 +1487,10 @@ window.App = {
   claimNexusRewards,
   stakeNexusWcrylo,
   unstakeNexusWcrylo,
+  refreshNexusNodeStatus,
+  registerNexusOperator,
+  registerNexusValidator,
+  claimNexusNodeRewards,
   loadNexusBuyback,
   saveNexusLinkedAddress,
   buyBackNexusNFT,

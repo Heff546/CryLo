@@ -372,6 +372,26 @@
       </div>
     </div>
 
+    <div style="margin-bottom:16px">
+      <h4>🖥 Nexus Node Staking</h4>
+
+      <div style="margin-top:10px;font-size:13px;color:var(--text-dim)">
+        Node Status:
+        <span id="nexus-node-status">—</span>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn btn-secondary" onclick="App.refreshNexusNodeStatus()">Refresh Node Status</button>
+        <button class="btn btn-primary" onclick="App.registerNexusOperator()">Register Operator 300 wCRYLO</button>
+        <button class="btn btn-primary" onclick="App.registerNexusValidator()">Register Validator 750 wCRYLO</button>
+        <button class="btn btn-secondary" onclick="App.claimNexusNodeRewards()">Claim Node Rewards</button>
+      </div>
+
+      <div id="nexus-node-action-status" style="font-size:12px;color:var(--text-dim);margin-top:6px">
+        Register as an Operator or Validator to participate in Nexus node rewards.
+      </div>
+    </div>
+
     <button class="btn btn-primary" onclick="App.loadNexusBuyback()">🔍 Scan My Nexus NFTs</button>
 
     <div id="nexus-status" style="margin-top:12px;color:var(--text-dim);font-size:13px">

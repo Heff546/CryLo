@@ -43,6 +43,18 @@ contextBridge.exposeInMainWorld('c64', {
   nexusUnstakeWcrylo: (amountText) =>
     ipcRenderer.invoke('nexus-unstake-wcrylo', amountText),
 
+    nexusNodeStatus: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-node-status', linkedAddress),
+
+  nexusRegisterOperator: () =>
+    ipcRenderer.invoke('nexus-register-operator'),
+
+  nexusRegisterValidator: () =>
+    ipcRenderer.invoke('nexus-register-validator'),
+
+  nexusClaimNodeRewards: () =>
+    ipcRenderer.invoke('nexus-claim-node-rewards'),
+
   // ── Events (main → renderer) ──────────────────────────────────────────
   onStartupStatus: (cb)          => ipcRenderer.on('startup-status', (_, data) => cb(data)),
   onLog:           (cb)          => ipcRenderer.on('log',            (_, data) => cb(data)),
