@@ -3,3 +3,5 @@ electron/dist/
 electron/node_modules/
 electron/.env
 electron/.env
+backups/
+electron/bin/linux/*.log
