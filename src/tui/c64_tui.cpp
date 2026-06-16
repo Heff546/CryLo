@@ -225,7 +225,13 @@ void run_tui(std::atomic<bool>& stop_signal) {
                         return std::stoull(rd.substr(s));
                     };
                     try {
-                        stats.height.store(fv("\"height\""));
+                        uint64_t h = fv("\"height\"");
+                        uint64_t t = fv("\"target_height\"");
+
+                        stats.height.store(h);
+                        stats.target_height.store(t);
+                        stats.synced.store(t == 0 || h >= t);
+
     			stats.difficulty.store(fv("\"difficulty\""));
     			stats.peers_out.store(fv("\"outgoing_connections_count\""));
     			stats.peers_in.store(fv("\"incoming_connections_count\""));
@@ -255,10 +261,10 @@ void run_tui(std::atomic<bool>& stop_signal) {
 			stats.hashrate.store(mv("\"speed\""));
 
         		uint64_t reward_atomic = mv("\"block_reward\"");
-        		double reward = (double)reward_atomic / 1000000000000.0;
+        		double reward = (double)reward_atomic / 100000000000.0;
 
         		char reward_buf[64];
-        		snprintf(reward_buf, sizeof(reward_buf), "%.12f", reward);
+        		snprintf(reward_buf, sizeof(reward_buf), "%.11f", reward);
 
         		std::lock_guard<std::mutex> lock(stats.mtx);
         		stats.last_reward = reward_buf;
@@ -306,7 +312,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
             attroff(COLOR_PAIR(cp));
         };
 
-        char tmp[64];
+        char tmp[128];
 
         snprintf(tmp, sizeof(tmp), "%lu", stats.height.load());
         print_stat(1, "HEIGHT:", tmp, CP_NORMAL);
@@ -346,27 +352,64 @@ void run_tui(std::atomic<bool>& stop_signal) {
 	print_stat(5, "HASHRATE:", tmp,
            	stats.hashrate.load() > 0 ?
            	CP_SUCCESS : CP_WARNING);
+
+        {
+            uint64_t hr = stats.hashrate.load();
+            uint64_t diff = stats.difficulty.load();
+
+            if (hr > 0 && diff > 0) {
+                uint64_t eta = diff / hr;
+                uint64_t eta_days = eta / 86400;
+                uint64_t eta_hours = (eta % 86400) / 3600;
+                uint64_t eta_mins = (eta % 3600) / 60;
+                uint64_t eta_secs = eta % 60;
+
+                if (eta_days > 0) {
+                    snprintf(tmp, sizeof(tmp), "%lud %luh %lum",
+                             eta_days, eta_hours, eta_mins);
+                } else if (eta_hours > 0) {
+                    snprintf(tmp, sizeof(tmp), "%luh %lum %lus",
+                             eta_hours, eta_mins, eta_secs);
+                } else {
+                    snprintf(tmp, sizeof(tmp), "%lum %lus",
+                             eta_mins, eta_secs);
+                }
+
+                print_stat(6, "ETA BLOCK:", tmp, CP_NORMAL);
+            } else {
+                snprintf(tmp, sizeof(tmp), "—");
+                print_stat(6, "ETA BLOCK:", tmp, CP_WARNING);
+            }
+        }
+
         {
             uint64_t h = stats.height.load();
             uint64_t t = stats.target_height.load();
 
 	    if (stats.synced.load() || t == 0 || h >= t) {
                 snprintf(tmp, sizeof(tmp), "SYNCED");
-                print_stat(6, "SYNC:", tmp, CP_SUCCESS);
+                print_stat(7, "SYNC:", tmp, CP_SUCCESS);
             } else {
                 uint64_t pct = t > 0 ? (h * 100 / t) : 0;
-                snprintf(tmp, sizeof(tmp), "%lu / %lu (%lu%%)", h, t, pct);
-                print_stat(6, "SYNC:", tmp, CP_WARNING);
+                uint64_t remaining = t > h ? t - h : 0;
+                uint64_t eta_seconds = remaining * 210;
+
+                uint64_t eta_hours = eta_seconds / 3600;
+                uint64_t eta_mins = (eta_seconds % 3600) / 60;
+
+                snprintf(tmp, sizeof(tmp), "%lu / %lu (%lu%%) ETA %luh %lum",
+                         h, t, pct, eta_hours, eta_mins);
+                print_stat(7, "SYNC:", tmp, CP_WARNING);
             }
         }
         snprintf(tmp, sizeof(tmp), "%02d:%02d:%02d", hrs, mins, secs);
-        print_stat(7, "UPTIME:", tmp, CP_NORMAL);
+        print_stat(8, "UPTIME:", tmp, CP_NORMAL);
 
 	snprintf(tmp, sizeof(tmp), "%s", g_mining_active ? "STARTED" : "PAUSED");
-	print_stat(8, "MINING:", tmp, g_mining_active ? CP_SUCCESS : CP_WARNING);
+	print_stat(9, "MINING:", tmp, g_mining_active ? CP_SUCCESS : CP_WARNING);
 
 	snprintf(tmp, sizeof(tmp), "%d", g_threads);
-	print_stat(9, "THREADS:", tmp, CP_NORMAL);
+	print_stat(10, "THREADS:", tmp, CP_NORMAL);
 
 	y += 3;
 

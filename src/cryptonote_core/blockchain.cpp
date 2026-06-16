@@ -351,10 +351,6 @@ bool Blockchain::init(BlockchainDB* db, const network_type nettype, bool offline
     generate_genesis_block(bl, get_config(m_nettype).GENESIS_TX, get_config(m_nettype).GENESIS_NONCE);
     db_wtxn_guard wtxn_guard(m_db);
     add_new_block(bl, bvc);
-    MERROR("GENESIS DEBUG: failed=" << bvc.m_verifivation_failed
-      << " added=" << bvc.m_added_to_main_chain
-      << " orphan=" << bvc.m_marked_as_orphaned
-      << " already_exists=" << bvc.m_already_exists);
     CHECK_AND_ASSERT_MES(!bvc.m_verifivation_failed, false, "Failed to add genesis block to blockchain");
   }
   // TODO: if blockchain load successful, verify blockchain against both
@@ -887,7 +883,6 @@ difficulty_type Blockchain::get_difficulty_for_next_block(const network_type net
   //    then when the next block difficulty is queried, push the latest height data and
   //    pop the oldest one from the list. This only requires 1x read per height instead
   //    of doing 735 (DIFFICULTY_BLOCKS_COUNT).
-  bool check = false;
   uint8_t version = get_current_hard_fork_version();
   uint64_t difficulty_blocks_count = version >= 20 ? DIFFICULTY_BLOCKS_COUNT_V4 : version >= 11 ? DIFFICULTY_BLOCKS_COUNT_V3 : version <= 10 && version >= 8 ? DIFFICULTY_BLOCKS_COUNT_V2 : DIFFICULTY_BLOCKS_COUNT;
   if (m_reset_timestamps_and_difficulties_height)
@@ -2512,7 +2507,6 @@ void Blockchain::get_output_key_mask_unlocked(const uint64_t& amount, const uint
   const auto o_data = m_db->get_output_key(amount, index);
   key = o_data.pubkey;
   mask = o_data.commitment;
-  tx_out_index toi = m_db->get_output_tx_and_index(amount, index);
   const uint8_t hf_version = m_hardfork->get_current_version();
   unlocked = is_tx_spendtime_unlocked(o_data.unlock_time, hf_version);
 }
