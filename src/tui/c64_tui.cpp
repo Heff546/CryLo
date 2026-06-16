@@ -281,16 +281,8 @@ void run_tui(std::atomic<bool>& stop_signal) {
         int y = 2;
 
         // Header
-        draw_centered(y++, w, "**** CryLo Chain NODE V1.0 ****", CP_HEADER);
+        draw_centered(y++, w, "CryLo Network Daemon V3", CP_HEADER);
         draw_centered(y++, w, "64K RAM SYSTEM  38911 BASIC BYTES FREE", CP_NORMAL);
-        y++;
-
-        // READY. / LIST
-        attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
-        attroff(A_BOLD);
-        attron(COLOR_PAIR(CP_NORMAL));
-        mvaddstr(y++, 3, "LIST");
-        attroff(COLOR_PAIR(CP_NORMAL));
         y++;
 
         // Stats
