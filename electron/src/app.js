@@ -62,6 +62,7 @@ function toast(message, type = 'info', ms = 4000) {
 
 // ─── Startup ──────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
+  setupPasswordEnterSubmit();
   // Listen for startup status from main process
   window.c64.onStartupStatus(({ state, message }) => {
     el('splash-msg').textContent = message;
@@ -157,6 +158,48 @@ async function loadWalletList() {
   });
 }
 
+
+
+// ─── Password field UX helpers ───────────────────────────────────────────────
+function markPasswordInvalid(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+
+  input.style.border = '2px solid #ff4d4d';
+  input.style.boxShadow = '0 0 0 2px rgba(255, 77, 77, 0.25)';
+  input.focus();
+}
+
+function clearPasswordInvalid(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+
+  input.style.border = '';
+  input.style.boxShadow = '';
+}
+
+function setupPasswordEnterSubmit() {
+  ['create-pass', 'create-pass2', 'open-pass', 'restore-pass'].forEach((id) => {
+    const input = document.getElementById(id);
+    if (!input) return;
+
+    input.addEventListener('input', () => clearPasswordInvalid(id));
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+
+      if (id === 'create-pass' || id === 'create-pass2') {
+        createWallet();
+      } else if (id === 'open-pass') {
+        openWallet();
+      } else if (id === 'restore-pass') {
+        restoreWallet();
+      }
+    });
+  });
+}
+
 async function createWallet() {
   const name = el('create-name').value.trim();
   const pass  = el('create-pass').value;
@@ -177,7 +220,7 @@ async function createWallet() {
     filename: name,
     password: pass,
     language: 'English'
-  });
+  }, 60000);
 
   if (!res.ok) {
     el('create-btn').disabled = false;
@@ -196,12 +239,17 @@ async function createWallet() {
   el('create-continue-btn').classList.remove('hidden');
 
   State.walletName = name;
+  State.address = '';
+  State.nexusAddress = '';
+  clearNexusUiForWalletSwitch();
+  await refreshWalletList();
   toast('Wallet created! Save your seed phrase now.', 'success');
 }
 
 async function openWallet() {
   const name = el('open-select').value;
   const pass = el('open-pass').value;
+  if (!pass) { markPasswordInvalid('open-pass'); return; }
 
   if (!name) return toast('Please select a wallet.', 'error');
 
@@ -211,11 +259,15 @@ async function openWallet() {
   const res = await window.c64.walletRpc('open_wallet', {
     filename: name,
     password: pass
-  }, 120000);
+  }, 30000);
 
-  if (!res.ok) return toast(`Failed: ${res.error}`, 'error');
+  if (!res.ok) { markPasswordInvalid('open-pass'); return; }
 
   State.walletName = name;
+  State.address = '';
+  State.nexusAddress = '';
+  clearNexusUiForWalletSwitch();
+  State.address = '';
   openMainScreen();
 }
 
@@ -236,11 +288,15 @@ async function restoreWallet() {
     restore_height: height,
     language: 'English',
     autosave_current: true
-  });
+  }, 60000);
 
   if (!res.ok) return toast(`Failed: ${res.error}`, 'error');
 
   State.walletName = name;
+  State.address = '';
+  State.nexusAddress = '';
+  clearNexusUiForWalletSwitch();
+  await refreshWalletList();
   toast('Wallet restored successfully!', 'success');
   openMainScreen();
 }
@@ -471,14 +527,24 @@ async function updateBalance() {
 
 // ─── Address ──────────────────────────────────────────────────────────────────
 async function loadAddress() {
-  if (State.address) {
-    el('receive-address').textContent = State.address;
-    return;
-  }
   const res = await window.c64.walletRpc('get_address', { account_index: 0 });
-  if (!res.ok) return;
-  State.address = res.result.address;
+  if (!res.ok || !res.result || !res.result.address) return;
+
+  const newAddress = res.result.address;
+  const changed = State.address !== newAddress;
+
+  State.address = newAddress;
   el('receive-address').textContent = State.address;
+
+  if (changed) {
+    clearNexusUiForWalletSwitch();
+  }
+
+  await loadSavedNexusLinkedAddress();
+  await refreshNexusWcryloBalance();
+  await refreshNexusStakedBalance();
+  await refreshNexusPendingRewards();
+  await refreshNexusNodeStatus();
 }
 
 function copyAddress() {
@@ -851,7 +917,7 @@ function switchTab(tab) {
   if (tab === 'vesting')      loadVesting();
   if (tab === 'receive')      loadAddress();
   if (tab === 'mining')       initMiningTab();
-  if (tab === 'nexus')        loadSavedNexusLinkedAddress();
+  if (tab === 'nexus') { clearNexusUiForWalletSwitch(); loadSavedNexusLinkedAddress(); }
 }
 
 async function switchWallet() {
@@ -1134,26 +1200,113 @@ async function loadNexusBuyback() {
   }
 }
 
-function saveNexusLinkedAddress() {
-  const addr = document.getElementById('nexus-linked-address').value.trim();
+async function ensureCryLoAddressLoaded() {
+  if (State.address) return true;
 
-  localStorage.setItem('crylo_nexus_address', addr);
+  const addrRes = await window.c64.walletRpc('get_address', { account_index: 0 });
+  if (addrRes.ok && addrRes.result && addrRes.result.address) {
+    State.address = addrRes.result.address;
+    const receiveEl = document.getElementById('receive-address');
+    if (receiveEl) receiveEl.textContent = State.address;
+    return true;
+  }
 
-  const status = document.getElementById('nexus-linked-status');
-  status.textContent = `Linked Nexus wallet: ${addr}`;
+  return false;
 }
 
-function loadSavedNexusLinkedAddress() {
-  const addr = localStorage.getItem('crylo_nexus_address') || '';
+function setNexusUiAddress(addr) {
+  State.nexusAddress = addr || '';
+
+  const label = document.getElementById('nexus-wallet-label');
+  if (label) {
+    label.textContent = State.nexusAddress
+      ? 'Bound Nexus Wallet'
+      : 'Create / Bind Nexus Wallet';
+  }
 
   const input = document.getElementById('nexus-linked-address');
   const status = document.getElementById('nexus-linked-status');
 
-  if (input) input.value = addr;
-
-  if (addr) {
-    status.textContent = `Linked Nexus wallet: ${addr}`;
+  if (input) {
+    input.value = State.nexusAddress;
+    input.setAttribute('value', State.nexusAddress);
   }
+
+  if (status) {
+    status.textContent = State.nexusAddress
+      ? `Bound Nexus wallet: ${State.nexusAddress}`
+      : 'No Nexus wallet created for this CryLo wallet yet.';
+  }
+}
+
+async function createBoundNexusWallet() {
+  const status = document.getElementById('nexus-linked-status');
+
+  if (!(await ensureCryLoAddressLoaded())) {
+    if (status) status.textContent = 'Open a CryLo wallet before creating a Nexus wallet.';
+    return;
+  }
+
+  const result = await window.c64.nexusWalletCreate(State.walletName, State.address);
+
+  if (!result.ok) {
+    if (status) status.textContent = `Failed to create Nexus wallet: ${result.error}`;
+    return;
+  }
+
+  setNexusUiAddress(result.nexusAddress);
+
+  await refreshNexusWcryloBalance();
+  await refreshNexusStakedBalance();
+  await refreshNexusPendingRewards();
+  await refreshNexusNodeStatus();
+}
+
+async function loadSavedNexusLinkedAddress() {
+  if (!(await ensureCryLoAddressLoaded())) {
+    setNexusUiAddress('');
+    return;
+  }
+
+  const result = await window.c64.nexusWalletLoad(State.walletName, State.address);
+
+  if (result.ok && result.nexusAddress) {
+    setNexusUiAddress(result.nexusAddress);
+  } else {
+    setNexusUiAddress('');
+  }
+}
+
+function clearNexusUiForWalletSwitch() {
+  State.nexusAddress = '';
+
+  const input = document.getElementById('nexus-linked-address');
+  if (input) {
+    input.value = '';
+    input.setAttribute('value', '');
+  }
+
+  const linkedStatus = document.getElementById('nexus-linked-status');
+  if (linkedStatus) linkedStatus.textContent = 'No Nexus wallet loaded for this CryLo wallet yet.';
+
+  const nftList = document.getElementById('nexus-nft-list');
+  if (nftList) nftList.innerHTML = '';
+
+  const nexusStatus = document.getElementById('nexus-status');
+  if (nexusStatus) nexusStatus.textContent = 'Create a Nexus wallet to access staking, NFTs, buybacks, and node features.';
+
+  const w = document.getElementById('nexus-wcrylo-balance');
+  if (w) w.textContent = '0.0000 wCRYLO';
+
+  const staked = document.getElementById('nexus-staked-balance');
+  if (staked) staked.textContent = '0.0000 wCRYLO';
+
+  const pending = document.getElementById('nexus-pending-rewards');
+  if (pending) pending.textContent = '0.0000 wCRYLO';
+}
+
+function getLinkedNexusAddress() {
+  return State.nexusAddress || '';
 }
 
 async function buyBackNexusNFT(tokenId) {
@@ -1162,7 +1315,7 @@ async function buyBackNexusNFT(tokenId) {
   statusEl.textContent = `Processing buyback for NFT #${tokenId}...`;
 
   try {
-    const result = await window.c64.nexusBuyBackNft(tokenId);
+    const result = await window.c64.nexusBuyBackNft(tokenId, State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent =
@@ -1188,7 +1341,7 @@ async function burnNexusNFT(tokenId) {
   statusEl.textContent = `Burning NFT #${tokenId}...`;
 
   try {
-    const result = await window.c64.nexusBurnNft(tokenId);
+    const result = await window.c64.nexusBurnNft(tokenId, State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent =
@@ -1216,7 +1369,7 @@ async function refreshNexusWcryloBalance() {
   const el = document.getElementById('bal-wcrylo');
   if (!el) return;
 
-  const linkedAddress = localStorage.getItem('crylo_nexus_address') || '';
+  const linkedAddress = getLinkedNexusAddress();
 
   if (!linkedAddress) {
     el.innerHTML = `—<span class="balance-unit"> wCRYLO</span>`;
@@ -1243,7 +1396,7 @@ async function refreshNexusStakedBalance() {
   if (!el) return;
 
   const linkedAddress =
-    localStorage.getItem('crylo_nexus_address') || '';
+    getLinkedNexusAddress();
 
   if (!linkedAddress) {
     el.innerHTML =
@@ -1278,7 +1431,7 @@ async function refreshNexusPendingRewards() {
   if (!el) return;
 
   const linkedAddress =
-    localStorage.getItem('crylo_nexus_address') || '';
+    getLinkedNexusAddress();
 
   if (!linkedAddress) {
     el.textContent = '—';
@@ -1314,7 +1467,7 @@ async function stakeNexusWcrylo() {
   statusEl.textContent = `Staking ${amount} wCRYLO...`;
 
   try {
-    const result = await window.c64.nexusStakeWcrylo(amount);
+    const result = await window.c64.nexusStakeWcrylo(amount, State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent = `Stake failed: ${result.error || 'Unknown error'}`;
@@ -1346,7 +1499,7 @@ async function unstakeNexusWcrylo() {
   statusEl.textContent = `Unstaking ${amount} wCRYLO...`;
 
   try {
-    const result = await window.c64.nexusUnstakeWcrylo(amount);
+    const result = await window.c64.nexusUnstakeWcrylo(amount, State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent = `Unstake failed: ${result.error || 'Unknown error'}`;
@@ -1371,7 +1524,7 @@ async function claimNexusRewards() {
   statusEl.textContent = 'Claiming staking rewards...';
 
   try {
-    const result = await window.c64.nexusClaimRewards();
+    const result = await window.c64.nexusClaimRewards(State.walletName, State.address);
 
     if (!result.ok) {
       const errorText = String(result.error || '').toLowerCase();
@@ -1406,7 +1559,7 @@ async function refreshNexusNodeStatus() {
   if (!statusEl) return;
 
   const linkedAddress =
-    localStorage.getItem('crylo_nexus_address') || '';
+    getLinkedNexusAddress();
 
   if (!linkedAddress) {
     statusEl.textContent = 'No Nexus wallet linked.';
@@ -1441,7 +1594,7 @@ async function registerNexusOperator() {
   statusEl.textContent = 'Registering Operator node with 300 wCRYLO...';
 
   try {
-    const result = await window.c64.nexusRegisterOperator();
+    const result = await window.c64.nexusRegisterOperator(State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent = `Operator registration failed: ${result.error || 'Unknown error'}`;
@@ -1462,7 +1615,7 @@ async function registerNexusValidator() {
   statusEl.textContent = 'Registering Validator node with 750 wCRYLO...';
 
   try {
-    const result = await window.c64.nexusRegisterValidator();
+    const result = await window.c64.nexusRegisterValidator(State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent = `Validator registration failed: ${result.error || 'Unknown error'}`;
@@ -1483,7 +1636,7 @@ async function claimNexusNodeRewards() {
   statusEl.textContent = 'Claiming node rewards...';
 
   try {
-    const result = await window.c64.nexusClaimNodeRewards();
+    const result = await window.c64.nexusClaimNodeRewards(State.walletName, State.address);
 
     if (!result.ok) {
       const errorText = String(result.error || '').toLowerCase();
@@ -1508,6 +1661,7 @@ async function claimNexusNodeRewards() {
     statusEl.textContent = 'Node reward claim failed.';
   }
 }
+
 
 window.App = {
   sendMax,
@@ -1536,8 +1690,8 @@ window.App = {
   registerNexusOperator,
   registerNexusValidator,
   claimNexusNodeRewards,
+  createBoundNexusWallet,
   loadNexusBuyback,
-  saveNexusLinkedAddress,
   buyBackNexusNFT,
   burnNexusNFT,
   initMiningTab

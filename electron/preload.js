@@ -6,6 +6,10 @@ contextBridge.exposeInMainWorld('c64', {
   walletRpc:   (method, params, timeout)  => ipcRenderer.invoke('wallet-rpc', method, params, timeout),
   // ── Local helpers ─────────────────────────────────────────────────────
   listWallets: ()                => ipcRenderer.invoke('list-wallets'),
+  nexusWalletCreate: (walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-wallet-create', walletName, cryloAddress),
+  nexusWalletLoad: (walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-wallet-load', walletName, cryloAddress),
   openLogDir:  ()                => ipcRenderer.invoke('open-log-dir'),
   openDataDir: ()                => ipcRenderer.invoke('open-data-dir'),
   getVersion:  ()                => ipcRenderer.invoke('get-version'),
@@ -19,11 +23,11 @@ contextBridge.exposeInMainWorld('c64', {
   nexusScanNfts: (linkedAddress) =>
     ipcRenderer.invoke('nexus-scan-nfts', linkedAddress),
 
-  nexusBuyBackNft: (tokenId) =>
-    ipcRenderer.invoke('nexus-buyback-nft', tokenId),
+  nexusBuyBackNft: (tokenId, walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-buyback-nft', tokenId, walletName, cryloAddress),
 
-  nexusBurnNft: (tokenId) =>
-    ipcRenderer.invoke('nexus-burn-nft', tokenId),
+  nexusBurnNft: (tokenId, walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-burn-nft', tokenId, walletName, cryloAddress),
 
   nexusWcryloBalance: (linkedAddress) =>
     ipcRenderer.invoke('nexus-wcrylo-balance', linkedAddress),
@@ -31,29 +35,29 @@ contextBridge.exposeInMainWorld('c64', {
   nexusStakedBalance: (linkedAddress) =>
     ipcRenderer.invoke('nexus-staked-balance', linkedAddress),
 
-  nexusStakeWcrylo: (amountText) =>
-    ipcRenderer.invoke('nexus-stake-wcrylo', amountText),
+  nexusStakeWcrylo: (amountText, walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-stake-wcrylo', amountText, walletName, cryloAddress),
 
     nexusPendingRewards: (linkedAddress) =>
     ipcRenderer.invoke('nexus-pending-rewards', linkedAddress),
 
-  nexusClaimRewards: () =>
-    ipcRenderer.invoke('nexus-claim-rewards'),
+  nexusClaimRewards: (walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-claim-rewards', walletName, cryloAddress),
 
-  nexusUnstakeWcrylo: (amountText) =>
-    ipcRenderer.invoke('nexus-unstake-wcrylo', amountText),
+  nexusUnstakeWcrylo: (amountText, walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-unstake-wcrylo', amountText, walletName, cryloAddress),
 
     nexusNodeStatus: (linkedAddress) =>
     ipcRenderer.invoke('nexus-node-status', linkedAddress),
 
-  nexusRegisterOperator: () =>
-    ipcRenderer.invoke('nexus-register-operator'),
+  nexusRegisterOperator: (walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-register-operator', walletName, cryloAddress),
 
-  nexusRegisterValidator: () =>
-    ipcRenderer.invoke('nexus-register-validator'),
+  nexusRegisterValidator: (walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-register-validator', walletName, cryloAddress),
 
-  nexusClaimNodeRewards: () =>
-    ipcRenderer.invoke('nexus-claim-node-rewards'),
+  nexusClaimNodeRewards: (walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-claim-node-rewards', walletName, cryloAddress),
 
   // ── Events (main → renderer) ──────────────────────────────────────────
   onStartupStatus: (cb)          => ipcRenderer.on('startup-status', (_, data) => cb(data)),

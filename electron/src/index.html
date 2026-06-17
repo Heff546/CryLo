@@ -60,6 +60,7 @@
       <div class="form-group">
         <label>Confirm Password</label>
         <input type="password" id="create-pass2" placeholder="Confirm password" />
+        <div id="create-pass-warning" style="display:none;color:#ff6b6b;font-size:12px;margin-top:6px"></div>
       </div>
       <!-- Seed display after creation -->
       <div id="create-seed-section" class="hidden">
@@ -88,6 +89,7 @@
       <div class="form-group">
         <label>Password</label>
         <input type="password" id="open-pass" placeholder="Enter password" />
+        <div id="open-pass-warning" style="display:none;color:#ff6b6b;font-size:12px;margin-top:6px"></div>
       </div>
       <div class="form-actions">
         <button class="btn btn-ghost" onclick="App.backToSetupCards()">← Back</button>
@@ -113,6 +115,7 @@
       <div class="form-group">
         <label>Password</label>
         <input type="password" id="restore-pass" placeholder="Enter password" />
+        <div id="restore-pass-warning" style="display:none;color:#ff6b6b;font-size:12px;margin-top:6px"></div>
       </div>
       <div class="form-actions">
         <button class="btn btn-ghost" onclick="App.backToSetupCards()">← Back</button>
@@ -334,17 +337,16 @@
 
   <div class="card">
     <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px">
-      Link your Nexus wallet, scan only your NFTs, check exact full mint-code eligibility, and buy back approved NFTs through the vault.
     </div>
 
     <div style="margin-bottom:12px">
-      <label>Linked Nexus Wallet Address</label>
+      <label><span id="nexus-wallet-label">Create / Bind Nexus Wallet</span></label>
       <div style="display:flex;gap:8px;margin-top:6px">
-        <input type="text" id="nexus-linked-address" placeholder="0x..." autocomplete="off" style="flex:1" />
-        <button class="btn btn-secondary" onclick="App.saveNexusLinkedAddress()">Save</button>
+        <input type="text" id="nexus-linked-address" placeholder="No Nexus wallet created yet" autocomplete="off" readonly style="flex:1" />
+        <button class="btn btn-secondary" onclick="App.createBoundNexusWallet()">Create Nexus Wallet</button>
       </div>
       <div id="nexus-linked-status" style="font-size:12px;color:var(--text-dim);margin-top:6px">
-        No Nexus wallet linked yet.
+        No Nexus wallet created for this CryLo wallet yet.
       </div>
     </div>
     
@@ -357,7 +359,11 @@
         <button class="btn btn-secondary" onclick="App.unstakeNexusWcrylo()">Unstake</button>
       </div>
 
-            <div style="margin-top:10px;font-size:13px;color:var(--text-dim)">
+            <div id="nexus-staking-status" style="font-size:12px;color:var(--text-dim);margin-top:6px">
+        Enter an amount to stake or unstake wCRYLO.
+      </div>
+
+      <div style="margin-top:10px;font-size:13px;color:var(--text-dim)">
         Pending Rewards:
         <strong id="nexus-pending-rewards">—</strong>
         <span>wCRYLO</span>
@@ -365,10 +371,6 @@
 
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-secondary" onclick="App.claimNexusRewards()">Claim Rewards</button>
-      </div>
-
-      <div id="nexus-staking-status" style="font-size:12px;color:var(--text-dim);margin-top:6px">
-        Enter an amount to stake or unstake wCRYLO.
       </div>
     </div>
 
