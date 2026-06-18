@@ -1,7 +1,7 @@
 'use strict';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const COIN = 100000000000; // 10^11 atomic units = 1  CryLo
+const COIN = 1000000000000; // 10^12 atomic units = 1 CryLo
 
 //  CryLo vesting tier unlock delays (in blocks, relative to coinbase height)
 const VESTING_TIERS = [
@@ -474,15 +474,14 @@ async function updateBalance() {
   let unlocked = Number(r.unlocked_balance || 0);
   let locked = total - unlocked;
 
-  // CryLo mined rewards use custom 50/50 instant/vested split.
-  // Wallet-RPC get_balance can disagree with the Vesting tab, so for mined
-  // balances we use the same transfer-derived calculation as the Vesting view.
+  // Keep spendable/available balance grounded in wallet-rpc unlocked_balance.
+  // The mined split estimate is useful for total/vesting display, but it can
+  // overstate what wallet-rpc can actually spend.
   try {
     const mined = await getMinedSplitBalances();
     if (mined.found) {
       total = mined.total;
-      unlocked = mined.unlocked;
-      locked = mined.locked;
+      locked = Math.max(0, total - unlocked);
     }
   } catch (_) {}
 
@@ -843,10 +842,24 @@ async function loadVesting() {
       });
     });
 
-  // Update summary
-  VESTING_TIERS.forEach((t, i) => {
-    el(`vest-t${t.tier}`).textContent = fmt(tierTotals[i]) + '  CryLo';
-  });
+  // Update summary.
+  // Show real spendable balance for Instant Miner because spent/bridged CRYLO
+  // reduces wallet-rpc unlocked_balance even though original mined outputs still
+  // appear in historical coinbase rows.
+  try {
+    const balRes = await window.c64.walletRpc('get_balance', { account_index: 0 });
+    const bal = balRes.result?.result || balRes.result || {};
+    const realUnlocked = Number(bal.unlocked_balance || 0);
+    const minedTotal = tierTotals[0] + tierTotals[1];
+    const realLocked = Math.max(0, minedTotal - realUnlocked);
+
+    el('vest-t1').textContent = fmt(realUnlocked) + '  CryLo';
+    el('vest-t2').textContent = fmt(realLocked) + '  CryLo';
+  } catch (_) {
+    VESTING_TIERS.forEach((t, i) => {
+      el(`vest-t${t.tier}`).textContent = fmt(tierTotals[i]) + '  CryLo';
+    });
+  }
 
   // Build table
   const wrap = document.createElement('div');
@@ -1309,6 +1322,157 @@ function getLinkedNexusAddress() {
   return State.nexusAddress || '';
 }
 
+function setBridgeStatus(msg) {
+  const el = document.getElementById('bridge-status');
+  if (el) el.textContent = `Bridge status: ${msg}`;
+}
+
+function setBridgeField(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value || '—';
+}
+
+function refreshBridgeAddressFields() {
+  setBridgeField('bridge-crylo-address', State.address || '—');
+  setBridgeField('bridge-nexus-address', getLinkedNexusAddress() || '—');
+}
+
+function cryloToAtomic(amountText) {
+  const raw = String(amountText || '').trim();
+  if (!raw || Number(raw) <= 0) throw new Error('Enter a valid CRYLO amount.');
+
+  const [wholeRaw, fracRaw = ''] = raw.split('.');
+  const whole = wholeRaw || '0';
+  const frac = (fracRaw + '000000000000').slice(0, 12);
+
+  if (!/^\d+$/.test(whole) || !/^\d{12}$/.test(frac)) {
+    throw new Error('Invalid CRYLO amount.');
+  }
+
+  return (BigInt(whole) * 1000000000000n + BigInt(frac)).toString();
+}
+
+async function startCryLoBridgeIn() {
+  try {
+    setBridgeStatus('checking wallet');
+
+    if (!(await ensureCryLoAddressLoaded())) {
+      throw new Error('Open a CryLo wallet first.');
+    }
+
+    const nexusAddress = getLinkedNexusAddress();
+    if (!nexusAddress) {
+      throw new Error('Create/load the bound Nexus wallet first.');
+    }
+
+    refreshBridgeAddressFields();
+
+    const amountText = document.getElementById('bridge-amount')?.value || '';
+    const amountAtomic = cryloToAtomic(amountText);
+
+    setBridgeStatus('creating deposit request');
+
+    const req = await window.c64.bridgeRequest({
+      nexusAddress,
+      cryloAddress: State.address,
+      amountAtomic
+    });
+
+    if (!req.ok) throw new Error(req.error || 'Bridge request failed.');
+
+    setBridgeField('bridge-payment-id', req.paymentId);
+    setBridgeField('bridge-integrated-address', req.integratedAddress);
+    setBridgeField('bridge-nexus-tx', '—');
+
+    setBridgeStatus('sending CryLo deposit');
+
+    const tx = await window.c64.walletRpc('transfer', {
+      destinations: [{
+        address: req.integratedAddress,
+        amount: amountAtomic
+      }],
+      account_index: 0,
+      subaddr_indices: [0],
+      priority: 0,
+      unlock_time: 0,
+      get_tx_key: true
+    }, 60000);
+
+    if (!tx.ok) throw new Error(
+      (tx.error || '').includes('not enough money')
+        ? 'Not enough unlocked CRYLO. Try a smaller amount.'
+        : (tx.error || 'CryLo transfer failed.')
+    );
+
+    const txHash =
+      tx.result?.tx_hash ||
+      tx.result?.tx_hash_list?.[0] ||
+      tx.result?.txid ||
+      '';
+
+    setBridgeField('bridge-crylo-tx', txHash || 'sent');
+
+    localStorage.setItem('cryloBridgePending', JSON.stringify({
+      paymentId: req.paymentId,
+      cryloTx: txHash,
+      createdAt: Date.now()
+    }));
+
+    setBridgeStatus('waiting for CryLo confirmations');
+    pollCryLoBridgeStatus(req.paymentId);
+  } catch (e) {
+    console.error(e);
+    setBridgeStatus(e.message || 'bridge failed');
+  }
+}
+
+let cryloBridgePollTimer = null;
+
+function pollCryLoBridgeStatus(paymentId) {
+  if (cryloBridgePollTimer) clearInterval(cryloBridgePollTimer);
+
+  cryloBridgePollTimer = setInterval(async () => {
+    try {
+      const res = await window.c64.bridgeStatus(paymentId);
+
+      if (!res.ok) {
+        setBridgeStatus(res.error || 'status check failed');
+        return;
+      }
+
+      if (res.processed) {
+        clearInterval(cryloBridgePollTimer);
+        cryloBridgePollTimer = null;
+
+        const mintTx =
+          res.processed.nexus_tx_hash ||
+          res.processed.nexusTxHash ||
+          res.processed.txHash ||
+          res.processed.mintTxHash ||
+          'processed';
+
+        setBridgeField('bridge-nexus-tx', mintTx);
+        setBridgeStatus('minted');
+
+        localStorage.removeItem('cryloBridgePending');
+
+        await refreshNexusWcryloBalance();
+        setTimeout(() => refreshNexusWcryloBalance(), 5000);
+        setTimeout(() => refreshNexusWcryloBalance(), 15000);
+
+        if (typeof updateBalance === 'function') await updateBalance();
+        return;
+      }
+
+      setBridgeStatus('waiting for CryLo confirmations');
+    } catch (e) {
+      console.error(e);
+      setBridgeStatus(e.message || 'status error');
+    }
+  }, 10000);
+}
+
+
 async function buyBackNexusNFT(tokenId) {
   const statusEl = document.getElementById('nexus-status');
 
@@ -1690,6 +1854,7 @@ window.App = {
   registerNexusOperator,
   registerNexusValidator,
   claimNexusNodeRewards,
+  startCryLoBridgeIn,
   createBoundNexusWallet,
   loadNexusBuyback,
   buyBackNexusNFT,

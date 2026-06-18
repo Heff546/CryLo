@@ -21,6 +21,8 @@ const NEXUS_RPC_URL =
   process.env.NEXUS_RPC_URL ||
   'http://34.118.158.133/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
+const BRIDGE_API_URL = 'http://192.168.40.43:8088';
+
 // Detect OS
 const IS_WIN   = process.platform === 'win32';
 const IS_MAC   = process.platform === 'darwin';
@@ -677,6 +679,47 @@ ipcMain.handle('nexus-burn-nft', async (_, tokenId, walletName, cryloAddress) =>
   }
 });
 
+
+ipcMain.handle('bridge-request', async (_, payload) => {
+  try {
+    const res = await fetch(`${BRIDGE_API_URL}/bridge/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
+
+    if (!res.ok) {
+      return { ok: false, error: data.error || text || `HTTP ${res.status}` };
+    }
+
+    return { ok: true, ...data };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('bridge-status', async (_, paymentId) => {
+  try {
+    const res = await fetch(`${BRIDGE_API_URL}/bridge/status/${encodeURIComponent(paymentId)}`);
+
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
+
+    if (!res.ok) {
+      return { ok: false, error: data.error || text || `HTTP ${res.status}` };
+    }
+
+    return { ok: true, ...data };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
   try {
     const rpc = NEXUS_RPC_URL;
@@ -695,7 +738,7 @@ ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
 
     return {
       ok: true,
-      balance: ethers.formatEther(balance)
+      balance: ethers.formatUnits(balance, 12)
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -720,7 +763,7 @@ ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
 
     return {
       ok: true,
-      balance: ethers.formatEther(balance)
+      balance: ethers.formatUnits(balance, 12)
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -745,7 +788,7 @@ ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
 
     return {
       ok: true,
-      rewards: ethers.formatEther(rewards)
+      rewards: ethers.formatUnits(rewards, 12)
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -796,7 +839,7 @@ ipcMain.handle('nexus-stake-wcrylo', async (_, amountText, walletName, cryloAddr
     const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
     const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
 
-    const amount = ethers.parseEther(String(amountText));
+    const amount = ethers.parseUnits(String(amountText), 12);
     let nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
     let tx = await token.approve(stakingAddress, amount, { nonce });
@@ -831,7 +874,7 @@ ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText, walletName, cryloAd
 
     const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
 
-    const amount = ethers.parseEther(String(amountText));
+    const amount = ethers.parseUnits(String(amountText), 12);
     const nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
     const tx = await staking.unstake(amount, { nonce });
@@ -873,10 +916,10 @@ ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
     return {
       ok: true,
       tier: tier.toString(),
-      stake: ethers.formatEther(stake),
-      pending: ethers.formatEther(pending),
-      operatorStake: ethers.formatEther(operatorStake),
-      validatorStake: ethers.formatEther(validatorStake)
+      stake: ethers.formatUnits(stake, 12),
+      pending: ethers.formatUnits(pending, 12),
+      operatorStake: ethers.formatUnits(operatorStake, 12),
+      validatorStake: ethers.formatUnits(validatorStake, 12)
     };
   } catch (e) {
     return { ok: false, error: e.shortMessage || e.reason || e.message };

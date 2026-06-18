@@ -59,6 +59,13 @@ contextBridge.exposeInMainWorld('c64', {
   nexusClaimNodeRewards: (walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-claim-node-rewards', walletName, cryloAddress),
 
+  // ── CryLo Bridge ──────────────────────────────────────────────────────
+  bridgeRequest: (payload) =>
+    ipcRenderer.invoke('bridge-request', payload),
+
+  bridgeStatus: (paymentId) =>
+    ipcRenderer.invoke('bridge-status', paymentId),
+
   // ── Events (main → renderer) ──────────────────────────────────────────
   onStartupStatus: (cb)          => ipcRenderer.on('startup-status', (_, data) => cb(data)),
   onLog:           (cb)          => ipcRenderer.on('log',            (_, data) => cb(data)),
