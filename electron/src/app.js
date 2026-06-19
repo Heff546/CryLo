@@ -1871,6 +1871,103 @@ async function claimNexusNodeRewards() {
 }
 
 
+
+function fmtUnix(ts) {
+  if (!ts) return 'Never';
+  return new Date(Number(ts) * 1000).toLocaleString();
+}
+
+async function refreshNexusGasStatus() {
+  const statusEl = document.getElementById('nexus-gas-status');
+  const nativeEl = document.getElementById('nexus-gas-native');
+  const dailyEl = document.getElementById('nexus-gas-daily');
+  const activityEl = document.getElementById('nexus-gas-activity');
+
+  const linkedAddress = getLinkedNexusAddress();
+
+  if (!linkedAddress) {
+    if (statusEl) statusEl.textContent = 'Gas status: Create/bind a Nexus wallet first.';
+    return;
+  }
+
+  try {
+    const result = await window.c64.nexusGasStatus(linkedAddress);
+
+    if (!result.ok) {
+      if (statusEl) statusEl.textContent = `Gas status: ${result.error || 'Unavailable'}`;
+      return;
+    }
+
+    const now = Date.now() / 1000;
+    const active = result.lastActivityAt && (now - result.lastActivityAt) <= (3 * 24 * 60 * 60);
+
+    if (statusEl) {
+      statusEl.textContent = result.canClaim
+        ? 'Gas status: Daily gas available'
+        : `Gas status: ${active ? 'Active / cooldown' : 'Inactive until Nexus activity'}`;
+    }
+
+    if (nativeEl) nativeEl.textContent = `Native Gas: ${Number(result.nativeGas).toFixed(6)} CryLo`;
+    if (dailyEl) dailyEl.textContent = `Daily Gas: ${result.dailyGasAmount} CryLo · Vault: ${Number(result.vaultBalance).toFixed(4)} CryLo`;
+    if (activityEl) activityEl.textContent = `Last Activity: ${fmtUnix(result.lastActivityAt)} · Last Claim: ${fmtUnix(result.lastGasClaimAt)}`;
+  } catch (err) {
+    console.error(err);
+    if (statusEl) statusEl.textContent = 'Gas status: error';
+  }
+}
+
+async function claimNexusDailyGas() {
+  const statusEl = document.getElementById('nexus-gas-action-status');
+  if (statusEl) statusEl.textContent = 'Claiming daily gas...';
+
+  try {
+    const result = await window.c64.nexusClaimDailyGas(State.walletName, State.address);
+
+    if (!result.ok) {
+      if (statusEl) statusEl.textContent = `Claim failed: ${result.error || 'Unknown error'}`;
+      return;
+    }
+
+    if (statusEl) statusEl.textContent = `Daily gas claimed: ${result.txHash}`;
+    await refreshNexusGasStatus();
+  } catch (err) {
+    console.error(err);
+    if (statusEl) statusEl.textContent = 'Claim failed.';
+  }
+}
+
+async function buyNexusGasWithWcrylo() {
+  const statusEl = document.getElementById('nexus-gas-action-status');
+  const input = document.getElementById('nexus-buy-gas-amount');
+  const amount = input ? input.value.trim() : '';
+
+  if (!amount || Number(amount) <= 0) {
+    if (statusEl) statusEl.textContent = 'Enter a valid wCRYLO amount.';
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = `Buying gas with ${amount} wCRYLO...`;
+
+  try {
+    const result = await window.c64.nexusBuyGasWithWcrylo(amount, State.walletName, State.address);
+
+    if (!result.ok) {
+      if (statusEl) statusEl.textContent = `Buy gas failed: ${result.error || 'Unknown error'}`;
+      return;
+    }
+
+    if (input) input.value = '';
+    if (statusEl) statusEl.textContent = `Gas purchased: ${result.txHash}`;
+
+    await refreshNexusGasStatus();
+    await refreshNexusWcryloBalance();
+  } catch (err) {
+    console.error(err);
+    if (statusEl) statusEl.textContent = 'Buy gas failed.';
+  }
+}
+
+
 window.App = {
   sendMax,
   toggleAdvanced,
@@ -1890,6 +1987,9 @@ window.App = {
   toggleMining,
   refreshNexusWcryloBalance,
   refreshNexusStakedBalance,
+  buyNexusGasWithWcrylo,
+  claimNexusDailyGas,
+  refreshNexusGasStatus,
   refreshNexusPendingRewards,
   claimNexusRewards,
   stakeNexusWcrylo,

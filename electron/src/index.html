@@ -381,6 +381,29 @@
     </div>
 
     <div style="margin-bottom:16px">
+      
+  <div class="card nexus-card" style="margin-top:16px">
+    <h4>⛽ Nexus Gas</h4>
+
+    <div class="muted" id="nexus-gas-status">Gas status: —</div>
+    <div class="muted" id="nexus-gas-native">Native Gas: —</div>
+    <div class="muted" id="nexus-gas-daily">Daily Gas: —</div>
+    <div class="muted" id="nexus-gas-activity">Activity: —</div>
+
+    <div class="row" style="margin-top:10px">
+      <button class="btn btn-secondary" onclick="App.refreshNexusGasStatus()">Refresh Gas</button>
+      <button class="btn btn-primary" onclick="App.claimNexusDailyGas()">Claim Daily Gas</button>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="nexus-buy-gas-amount" placeholder="wCRYLO amount for gas" autocomplete="off" />
+      <button class="btn btn-primary" onclick="App.buyNexusGasWithWcrylo()">Buy Gas</button>
+    </div>
+
+    <div class="muted" id="nexus-gas-action-status" style="margin-top:8px">—</div>
+  </div>
+
+
       <h4>💰 Nexus Staking</h4>
 
       <div style="display:flex;gap:8px;margin-top:8px">

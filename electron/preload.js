@@ -29,6 +29,15 @@ contextBridge.exposeInMainWorld('c64', {
   nexusBurnNft: (tokenId, walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-burn-nft', tokenId, walletName, cryloAddress),
 
+  nexusGasStatus: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-gas-status', linkedAddress),
+
+  nexusClaimDailyGas: (walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-claim-daily-gas', walletName, cryloAddress),
+
+  nexusBuyGasWithWcrylo: (amountText, walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-buy-gas-wcrylo', amountText, walletName, cryloAddress),
+
   nexusWcryloBalance: (linkedAddress) =>
     ipcRenderer.invoke('nexus-wcrylo-balance', linkedAddress),
 

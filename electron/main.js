@@ -1111,3 +1111,100 @@ app.on('web-contents-created', (_, contents) => {
     return { action: 'deny' };
   });
 });
+
+const GAS_MANAGER_ADDRESS = '0xCA8D1C52fC1B762334D8f43f30Fa7Ab42d230533';
+const GAS_MANAGER_ABI = [
+  'function dailyGasAmount() view returns (uint256)',
+  'function starterGasAmount() view returns (uint256)',
+  'function lowGasThreshold() view returns (uint256)',
+  'function lastGasClaimAt(address) view returns (uint256)',
+  'function lastActivityAt(address) view returns (uint256)',
+  'function canClaimDailyGas(address) view returns (bool)',
+  'function vaultBalance() view returns (uint256)',
+  'function claimDailyGas()',
+  'function buyGasWithWcrylo(uint256)'
+];
+
+ipcMain.handle('nexus-gas-status', async (_, linkedAddress) => {
+  try {
+    const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
+    if (!ethers.isAddress(linkedAddress)) return { ok: false, error: 'Invalid Nexus address' };
+
+    const gm = new ethers.Contract(GAS_MANAGER_ADDRESS, GAS_MANAGER_ABI, provider);
+    const nativeBalance = await provider.getBalance(linkedAddress);
+
+    const [
+      dailyGasAmount,
+      starterGasAmount,
+      lowGasThreshold,
+      lastGasClaimAt,
+      lastActivityAt,
+      canClaim,
+      vaultBalance
+    ] = await Promise.all([
+      gm.dailyGasAmount(),
+      gm.starterGasAmount(),
+      gm.lowGasThreshold(),
+      gm.lastGasClaimAt(linkedAddress),
+      gm.lastActivityAt(linkedAddress),
+      gm.canClaimDailyGas(linkedAddress),
+      gm.vaultBalance()
+    ]);
+
+    return {
+      ok: true,
+      nativeGas: ethers.formatEther(nativeBalance),
+      dailyGasAmount: ethers.formatEther(dailyGasAmount),
+      starterGasAmount: ethers.formatEther(starterGasAmount),
+      lowGasThreshold: ethers.formatEther(lowGasThreshold),
+      lastGasClaimAt: Number(lastGasClaimAt),
+      lastActivityAt: Number(lastActivityAt),
+      canClaim,
+      vaultBalance: ethers.formatEther(vaultBalance)
+    };
+  } catch (e) {
+    return { ok: false, error: e.shortMessage || e.reason || e.message };
+  }
+});
+
+ipcMain.handle('nexus-claim-daily-gas', async (_, walletName, cryloAddress) => {
+  try {
+    const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
+    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
+    const gm = new ethers.Contract(GAS_MANAGER_ADDRESS, GAS_MANAGER_ABI, wallet.connect(provider));
+
+    const tx = await gm.claimDailyGas();
+    const receipt = await tx.wait();
+
+    return { ok: true, txHash: tx.hash, blockNumber: receipt.blockNumber };
+  } catch (e) {
+    return { ok: false, error: e.shortMessage || e.reason || e.message };
+  }
+});
+
+ipcMain.handle('nexus-buy-gas-wcrylo', async (_, amountText, walletName, cryloAddress) => {
+  try {
+    const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
+    const wallet = loadBoundNexusWallet(walletName, cryloAddress).connect(provider);
+
+    const tokenAddress = '0xB34803Cc87833ccfB6BEEd4861cC19dB3860ab0C';
+    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
+    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
+    const gm = new ethers.Contract(GAS_MANAGER_ADDRESS, GAS_MANAGER_ABI, wallet);
+
+    const amount = ethers.parseUnits(String(amountText), 12);
+
+    let nonce = await provider.getTransactionCount(wallet.address, 'pending');
+
+    let tx = await token.approve(GAS_MANAGER_ADDRESS, amount, { nonce });
+    await tx.wait();
+    nonce++;
+
+    tx = await gm.buyGasWithWcrylo(amount, { nonce });
+    const receipt = await tx.wait();
+
+    return { ok: true, txHash: tx.hash, blockNumber: receipt.blockNumber };
+  } catch (e) {
+    return { ok: false, error: e.shortMessage || e.reason || e.message };
+  }
+});
