@@ -930,7 +930,7 @@ function switchTab(tab) {
   if (tab === 'vesting')      loadVesting();
   if (tab === 'receive')      loadAddress();
   if (tab === 'mining')       initMiningTab();
-  if (tab === 'nexus') { clearNexusUiForWalletSwitch(); loadSavedNexusLinkedAddress(); }
+  if (tab === 'nexus') { clearNexusUiForWalletSwitch(); loadSavedNexusLinkedAddress().then(() => refreshBridgeAddressFields()); }
 }
 
 async function switchWallet() {
@@ -1628,13 +1628,21 @@ async function stakeNexusWcrylo() {
     return;
   }
 
+  const availableText = document.getElementById('bal-wcrylo')?.textContent || '0';
+  const available = Number(availableText.replace(/[^0-9.]/g, '') || 0);
+
+  if (Number(amount) > available) {
+    statusEl.textContent = `Stake failed: only ${available.toFixed(4)} wCRYLO available.`;
+    return;
+  }
+
   statusEl.textContent = `Staking ${amount} wCRYLO...`;
 
   try {
     const result = await window.c64.nexusStakeWcrylo(amount, State.walletName, State.address);
 
     if (!result.ok) {
-      statusEl.textContent = `Stake failed: ${result.error || 'Unknown error'}`;
+      statusEl.textContent = `Stake failed: ${(result.error || '').includes('insufficient funds') ? 'Bound Nexus wallet needs gas for staking transactions.' : (result.error || 'Unknown error')}`;
       return;
     }
 
@@ -1644,6 +1652,18 @@ async function stakeNexusWcrylo() {
     await refreshNexusWcryloBalance();
     await refreshNexusStakedBalance();
     await refreshNexusPendingRewards();
+    setTimeout(() => refreshNexusWcryloBalance(), 5000);
+    setTimeout(() => refreshNexusStakedBalance(), 5000);
+    setTimeout(() => refreshNexusPendingRewards(), 5000);
+    setTimeout(() => refreshNexusWcryloBalance(), 15000);
+    setTimeout(() => refreshNexusStakedBalance(), 15000);
+    setTimeout(() => refreshNexusPendingRewards(), 15000);
+    setTimeout(() => refreshNexusWcryloBalance(), 5000);
+    setTimeout(() => refreshNexusStakedBalance(), 5000);
+    setTimeout(() => refreshNexusPendingRewards(), 5000);
+    setTimeout(() => refreshNexusWcryloBalance(), 15000);
+    setTimeout(() => refreshNexusStakedBalance(), 15000);
+    setTimeout(() => refreshNexusPendingRewards(), 15000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Stake failed.';
@@ -1666,7 +1686,7 @@ async function unstakeNexusWcrylo() {
     const result = await window.c64.nexusUnstakeWcrylo(amount, State.walletName, State.address);
 
     if (!result.ok) {
-      statusEl.textContent = `Unstake failed: ${result.error || 'Unknown error'}`;
+      statusEl.textContent = `Unstake failed: ${(result.error || '').includes('insufficient funds') ? 'Bound Nexus wallet needs gas for unstaking transactions.' : (result.error || 'Unknown error')}`;
       return;
     }
 
@@ -1676,6 +1696,18 @@ async function unstakeNexusWcrylo() {
     await refreshNexusWcryloBalance();
     await refreshNexusStakedBalance();
     await refreshNexusPendingRewards();
+    setTimeout(() => refreshNexusWcryloBalance(), 5000);
+    setTimeout(() => refreshNexusStakedBalance(), 5000);
+    setTimeout(() => refreshNexusPendingRewards(), 5000);
+    setTimeout(() => refreshNexusWcryloBalance(), 15000);
+    setTimeout(() => refreshNexusStakedBalance(), 15000);
+    setTimeout(() => refreshNexusPendingRewards(), 15000);
+    setTimeout(() => refreshNexusWcryloBalance(), 5000);
+    setTimeout(() => refreshNexusStakedBalance(), 5000);
+    setTimeout(() => refreshNexusPendingRewards(), 5000);
+    setTimeout(() => refreshNexusWcryloBalance(), 15000);
+    setTimeout(() => refreshNexusStakedBalance(), 15000);
+    setTimeout(() => refreshNexusPendingRewards(), 15000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Unstake failed.';
@@ -1712,6 +1744,18 @@ async function claimNexusRewards() {
     await refreshNexusWcryloBalance();
     await refreshNexusStakedBalance();
     await refreshNexusPendingRewards();
+    setTimeout(() => refreshNexusWcryloBalance(), 5000);
+    setTimeout(() => refreshNexusStakedBalance(), 5000);
+    setTimeout(() => refreshNexusPendingRewards(), 5000);
+    setTimeout(() => refreshNexusWcryloBalance(), 15000);
+    setTimeout(() => refreshNexusStakedBalance(), 15000);
+    setTimeout(() => refreshNexusPendingRewards(), 15000);
+    setTimeout(() => refreshNexusWcryloBalance(), 5000);
+    setTimeout(() => refreshNexusStakedBalance(), 5000);
+    setTimeout(() => refreshNexusPendingRewards(), 5000);
+    setTimeout(() => refreshNexusWcryloBalance(), 15000);
+    setTimeout(() => refreshNexusStakedBalance(), 15000);
+    setTimeout(() => refreshNexusPendingRewards(), 15000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Claim failed.';
