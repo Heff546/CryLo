@@ -5,3 +5,10 @@ electron/.env
 electron/.env
 backups/
 electron/bin/linux/*.log
+
+# Local CryLo wallet files / secrets
+*.keys
+crylo-gas-treasury-wallet
+crylo-gas-treasury-wallet.address.txt
+crylo-gas-treasury-wallet.*.locked.*
+*.locked.*
