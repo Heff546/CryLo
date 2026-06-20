@@ -1322,6 +1322,19 @@ function getLinkedNexusAddress() {
   return State.nexusAddress || '';
 }
 
+
+function resetBridgeFormAfterMint() {
+  const amount = document.getElementById('bridge-amount');
+  const btn = document.getElementById('bridge-submit-btn');
+
+  if (amount) amount.value = '';
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = 'Generate & Send Bridge Deposit';
+  }
+}
+
+
 function setBridgeStatus(msg) {
   const el = document.getElementById('bridge-status');
   if (el) el.textContent = `Bridge status: ${msg}`;
@@ -1453,6 +1466,12 @@ function pollCryLoBridgeStatus(paymentId) {
 
         setBridgeField('bridge-nexus-tx', mintTx);
         setBridgeStatus('minted');
+        resetBridgeFormAfterMint();
+        await refreshNexusWcryloBalance();
+        await refreshNexusGasStatus();
+        resetBridgeFormAfterMint();
+        await refreshNexusWcryloBalance();
+        await refreshNexusGasStatus();
 
         localStorage.removeItem('cryloBridgePending');
 
@@ -1477,6 +1496,12 @@ async function buyBackNexusNFT(tokenId) {
   const statusEl = document.getElementById('nexus-status');
 
   statusEl.textContent = `Processing buyback for NFT #${tokenId}...`;
+
+  const gasCheck = await ensureNexusGasForAction('NFT buyback', 0.06);
+  if (!gasCheck.ok) {
+    statusEl.textContent = gasCheck.cancelled ? 'Buyback cancelled.' : `Buyback failed: ${gasCheck.error}`;
+    return;
+  }
 
   try {
     const result = await window.c64.nexusBuyBackNft(tokenId, State.walletName, State.address);
@@ -1503,6 +1528,12 @@ async function burnNexusNFT(tokenId) {
   const statusEl = document.getElementById('nexus-status');
 
   statusEl.textContent = `Burning NFT #${tokenId}...`;
+
+  const gasCheck = await ensureNexusGasForAction('NFT burn', 0.05);
+  if (!gasCheck.ok) {
+    statusEl.textContent = gasCheck.cancelled ? 'Burn cancelled.' : `Burn failed: ${gasCheck.error}`;
+    return;
+  }
 
   try {
     const result = await window.c64.nexusBurnNft(tokenId, State.walletName, State.address);
@@ -1618,6 +1649,67 @@ async function refreshNexusPendingRewards() {
   }
 }
 
+
+async function ensureNexusGasForAction(actionLabel, estimatedGasCryLo = 0.03) {
+  const linkedAddress = getLinkedNexusAddress();
+
+  if (!linkedAddress) {
+    return { ok: false, error: 'No bound Nexus wallet.' };
+  }
+
+  const status = await window.c64.nexusGasStatus(linkedAddress);
+
+  if (!status.ok) {
+    return { ok: false, error: status.error || 'Unable to check Nexus gas.' };
+  }
+
+  const currentGas = Number(status.nativeGas || 0);
+  const neededGas = Number(estimatedGasCryLo || 0.03);
+
+  if (currentGas >= neededGas) {
+    return { ok: true, toppedUp: false };
+  }
+
+  const shortfall = Math.max(0, neededGas - currentGas);
+
+  // GasManager rate is currently 1 wCRYLO => 0.01 native CryLo gas.
+  // Add buffer so transaction + follow-up action has room.
+  const wcryloNeeded = Math.ceil(((shortfall / 0.01) + 0.5) * 1000) / 1000;
+
+  const yes = confirm(
+    `Not enough Nexus gas for ${actionLabel}.\n\n` +
+    `Current gas: ${currentGas.toFixed(6)} CryLo\n` +
+    `Estimated needed: ${neededGas.toFixed(6)} CryLo\n\n` +
+    `Add about ${wcryloNeeded} wCRYLO for gas and continue?\n\n` +
+    `For reliability, make sure you have at least double this suggested amount available in wCRYLO.`
+  );
+
+  if (!yes) {
+    return { ok: false, cancelled: true, error: 'User cancelled gas top-up.' };
+  }
+
+  const buy = await window.c64.nexusBuyGasWithWcrylo(
+    String(wcryloNeeded),
+    State.walletName,
+    State.address
+  );
+
+  if (!buy.ok) {
+    return { ok: false, error: buy.error || 'Gas top-up failed.' };
+  }
+
+  await refreshNexusGasStatus();
+  await refreshNexusWcryloBalance();
+
+  return {
+    ok: true,
+    toppedUp: true,
+    txHash: buy.txHash,
+    wcryloUsed: wcryloNeeded
+  };
+}
+
+
 async function stakeNexusWcrylo() {
   const statusEl = document.getElementById('nexus-staking-status');
   const input = document.getElementById('nexus-stake-amount');
@@ -1633,6 +1725,17 @@ async function stakeNexusWcrylo() {
 
   if (Number(amount) > available) {
     statusEl.textContent = `Stake failed: only ${available.toFixed(4)} wCRYLO available.`;
+    return;
+  }
+
+  statusEl.textContent = `Checking Nexus gas for staking...`;
+
+  const gasCheck = await ensureNexusGasForAction('staking', 0.04);
+
+  if (!gasCheck.ok) {
+    statusEl.textContent = gasCheck.cancelled
+      ? 'Stake cancelled.'
+      : `Stake failed: ${gasCheck.error}`;
     return;
   }
 
@@ -1680,6 +1783,14 @@ async function unstakeNexusWcrylo() {
     return;
   }
 
+  statusEl.textContent = 'Checking Nexus gas for unstaking...';
+
+  const gasCheck = await ensureNexusGasForAction('unstaking', 0.04);
+  if (!gasCheck.ok) {
+    statusEl.textContent = gasCheck.cancelled ? 'Unstake cancelled.' : `Unstake failed: ${gasCheck.error}`;
+    return;
+  }
+
   statusEl.textContent = `Unstaking ${amount} wCRYLO...`;
 
   try {
@@ -1717,6 +1828,14 @@ async function unstakeNexusWcrylo() {
 async function claimNexusRewards() {
   const statusEl = document.getElementById('nexus-staking-status');
 
+  statusEl.textContent = 'Checking Nexus gas for staking reward claim...';
+
+  const gasCheck = await ensureNexusGasForAction('claiming staking rewards', 0.03);
+  if (!gasCheck.ok) {
+    statusEl.textContent = gasCheck.cancelled ? 'Claim cancelled.' : `Claim failed: ${gasCheck.error}`;
+    return;
+  }
+
   statusEl.textContent = 'Claiming staking rewards...';
 
   try {
@@ -1725,10 +1844,7 @@ async function claimNexusRewards() {
     if (!result.ok) {
       const errorText = String(result.error || '').toLowerCase();
 
-      if (
-        errorText.includes('no rewards') ||
-        errorText.includes('execution reverted')
-      ) {
+      if (errorText.includes('no rewards')) {
         statusEl.textContent = 'No rewards available to claim.';
         return;
       }
@@ -1841,6 +1957,14 @@ async function registerNexusValidator() {
 
 async function claimNexusNodeRewards() {
   const statusEl = document.getElementById('nexus-node-action-status');
+  statusEl.textContent = 'Checking Nexus gas for node reward claim...';
+
+  const gasCheck = await ensureNexusGasForAction('claiming node rewards', 0.03);
+  if (!gasCheck.ok) {
+    statusEl.textContent = gasCheck.cancelled ? 'Node reward claim cancelled.' : `Node reward claim failed: ${gasCheck.error}`;
+    return;
+  }
+
   statusEl.textContent = 'Claiming node rewards...';
 
   try {
@@ -1924,7 +2048,12 @@ async function claimNexusDailyGas() {
     const result = await window.c64.nexusClaimDailyGas(State.walletName, State.address);
 
     if (!result.ok) {
-      if (statusEl) statusEl.textContent = `Claim failed: ${result.error || 'Unknown error'}`;
+      const err = String(result.error || '').toLowerCase();
+      if (statusEl) {
+        statusEl.textContent = err.includes('daily gas unavailable') || err.includes('execution reverted')
+          ? 'Daily gas is not available yet. Wait for the 24-hour cooldown or perform a Nexus activity if inactive.'
+          : `Claim failed: ${result.error || 'Unknown error'}`;
+      }
       return;
     }
 
