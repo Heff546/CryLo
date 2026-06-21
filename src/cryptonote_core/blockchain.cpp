@@ -1349,7 +1349,8 @@ bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, 
   if (hf_version >= HF_VERSION_BLOCK_HEADER_MINER_SIG)
   {
       // sanity checks
-      if (b.miner_tx.vout.size() != 1 && !(hf_version >= HF_VERSION_VESTING && b.miner_tx.vout.size() == 5))
+      const bool is_genesis_block = (m_db->height() == 0);
+      if (!is_genesis_block && b.miner_tx.vout.size() != 1 && !(hf_version >= HF_VERSION_VESTING && b.miner_tx.vout.size() == 5))
       {
           MWARNING("Only 1 output in miner transaction allowed");
           return false;
