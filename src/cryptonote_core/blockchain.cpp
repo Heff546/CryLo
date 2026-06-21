@@ -1484,7 +1484,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     base_reward = money_in_use - fee;
   }
   // CryLo Chain: HF19+ validate 50/50 miner split + dev + liquidity
-  if (version >= HF_VERSION_VESTING && b.miner_tx.vout.size() > 0)
+  if (version >= HF_VERSION_VESTING && b.miner_tx.vout.size() > 0 && m_db->height() > 0)
   {
     if (b.miner_tx.vout.size() != 5)
     {
