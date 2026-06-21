@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld('c64', {
   nexusGasStatus: (linkedAddress) =>
     ipcRenderer.invoke('nexus-gas-status', linkedAddress),
 
+  nexusTransactions: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-transactions', linkedAddress),
+
   nexusClaimDailyGas: (walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-claim-daily-gas', walletName, cryloAddress),
 
@@ -65,7 +68,8 @@ contextBridge.exposeInMainWorld('c64', {
   nexusRegisterValidator: (walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-register-validator', walletName, cryloAddress),
 
-  nexusClaimNodeRewards: (walletName, cryloAddress) =>
+  nexusUnregisterNode: (walletName, cryloAddress) => ipcRenderer.invoke('nexus-unregister-node', walletName, cryloAddress),
+    nexusClaimNodeRewards: (walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-claim-node-rewards', walletName, cryloAddress),
 
   // ── CryLo Bridge ──────────────────────────────────────────────────────
@@ -74,6 +78,9 @@ contextBridge.exposeInMainWorld('c64', {
 
   bridgeStatus: (paymentId) =>
     ipcRenderer.invoke('bridge-status', paymentId),
+
+  nexusBurnForCryLo: (amountText, walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-burn-for-crylo', amountText, walletName, cryloAddress),
 
   // ── Events (main → renderer) ──────────────────────────────────────────
   onStartupStatus: (cb)          => ipcRenderer.on('startup-status', (_, data) => cb(data)),

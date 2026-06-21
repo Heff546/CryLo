@@ -93,7 +93,10 @@
       </div>
       <div class="form-actions">
         <button class="btn btn-ghost" onclick="App.backToSetupCards()">← Back</button>
-        <button class="btn btn-primary" onclick="App.openWallet()">Open Wallet</button>
+        <button class="btn btn-primary" id="open-wallet-btn" onclick="App.openWallet()">Open Wallet</button>
+        <div class="loading-row hidden" id="open-wallet-loading">
+          <div class="spinner"></div> Opening wallet...
+        </div>
       </div>
     </div>
 
@@ -167,12 +170,14 @@
 
     <!-- Tab nav -->
     <div class="tab-nav">
-      <button class="tab-btn active" data-tab="transactions" onclick="App.switchTab('transactions')">📋 Transactions</button>
-      <button class="tab-btn" data-tab="send"         onclick="App.switchTab('send')">↑ Send</button>
-      <button class="tab-btn" data-tab="receive"      onclick="App.switchTab('receive')">↓ Receive</button>
-      <button class="tab-btn" data-tab="vesting"      onclick="App.switchTab('vesting')">🔒 Vesting</button>
-      <button class="tab-btn" data-tab="mining"      onclick="App.switchTab('mining')">⛏ Mining</button>
+      <button class="tab-btn active" data-tab="transactions" onclick="App.switchTab('transactions')">📋 CryLo Transactions</button>
+      <button class="tab-btn" data-tab="send"         onclick="App.switchTab('send')">↑ Send CryLo</button>
+      <button class="tab-btn" data-tab="receive"      onclick="App.switchTab('receive')">↓ Receive CryLo</button>
+      <button class="tab-btn" data-tab="vesting"      onclick="App.switchTab('vesting')">🔒 CryLo Vesting</button>
+      <button class="tab-btn" data-tab="mining"      onclick="App.switchTab('mining')">⛏ CryLo Mining</button>
       <button class="tab-btn" data-tab="nexus" onclick="App.switchTab('nexus')">🌉 Nexus</button>
+      <button class="tab-btn" data-tab="nexusNfts" onclick="App.switchTab('nexusNfts')">🖼 Nexus NFTs</button>
+      <button class="tab-btn" data-tab="nexusTx" onclick="App.switchTab('nexusTx')">🔗 Nexus Transactions</button>
     </div>
 
     <!-- Tab content -->
@@ -197,7 +202,7 @@
             </div>
           </div>
           <div class="form-group">
-            <label style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">Amount (CryLo) — <span id="send-max-label" style="color:var(--success);font-size:11px">Available: — CryLo</span></label>
+            <label style="font-size:12px;color:var(--text);text-transform:uppercase;letter-spacing:0.5px">Amount (CryLo) — <span id="send-max-label" style="color:var(--success);font-size:11px">Available: — CryLo</span></label>
             <div style="display:flex;gap:8px;align-items:center">
               <input type="number" id="send-amount" placeholder="0.000000000000" min="0" step="0.000000001" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:14px;padding:9px 12px;outline:none" />
               <button class="btn btn-ghost btn-sm" type="button" onclick="App.sendMax()">Max</button>
@@ -322,7 +327,7 @@
   <div>Block Reward: <span id="mining-stat-reward">—</span></div>
 
 </div>
-      <div id="mining-mode" style="text-align:center;font-size:12px;color:var(--text-dim);display:none">
+      <div id="mining-mode" style="text-align:center;font-size:12px;color:var(--text);display:none">
         ⛏  Solo Daemon Mining
       </div>
       <button class="btn btn-primary" id="mining-btn" onclick="App.toggleMining()">⛏ Start Mining</button>
@@ -332,8 +337,27 @@
 	</div>
         </div>
 	</div>
+    <div class="tab-panel" id="tab-nexusTx">
+      <h3>🔗 Nexus Transactions</h3>
+
+      <div class="card">
+        <button class="btn btn-secondary" onclick="App.loadNexusTransactions()">⟳ Refresh</button>
+
+        <div id="nexus-tx-status" style="margin-top:10px;color:var(--text-dim)">
+          Open a wallet with a bound Nexus address to view Nexus transactions.
+        </div>
+
+        <div id="nexus-tx-list" style="margin-top:15px">
+          <div class="empty-state">
+            <div class="empty-icon">🔗</div>
+            Nexus transactions will appear here.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="tab-panel" id="tab-nexus">
-  <h3>🌉 CryLo Nexus Buyback</h3>
+  <h3>🌉 Nexus</h3>
 
   <div class="card">
     <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px">
@@ -345,7 +369,7 @@
         <input type="text" id="nexus-linked-address" placeholder="No Nexus wallet created yet" autocomplete="off" readonly style="flex:1" />
         <button class="btn btn-secondary" onclick="App.createBoundNexusWallet()">Create Nexus Wallet</button>
       </div>
-      <div id="nexus-linked-status" style="font-size:12px;color:var(--text-dim);margin-top:6px">
+      <div id="nexus-linked-status" style="font-size:12px;color:var(--text);margin-top:6px">
         No Nexus wallet created for this CryLo wallet yet.
       </div>
     </div>
@@ -358,48 +382,48 @@
         <button class="btn btn-primary" onclick="App.startCryLoBridgeIn()">Generate & Send Bridge Deposit</button>
       </div>
 
-      <div style="margin-top:10px;font-size:12px;color:var(--text-dim)">
+      <div id="bridge-split-warning" style="margin-top:8px;font-size:12px;color:var(--text)">
+        Amounts over 100 CRYLO may be split into multiple transactions and require additional confirmations before wCRYLO is minted.
+      </div>
+
+      <div style="margin-top:10px;font-size:12px;color:var(--text)">
         From CryLo Wallet:
         <span id="bridge-crylo-address">—</span>
       </div>
 
-      <div style="margin-top:6px;font-size:12px;color:var(--text-dim)">
+      <div style="margin-top:6px;font-size:12px;color:var(--text)">
         Mint To Nexus Wallet:
         <span id="bridge-nexus-address">—</span>
       </div>
 
-      <div id="bridge-status" style="font-size:12px;color:var(--text-dim);margin-top:10px">
+      <div id="bridge-status" style="font-size:12px;color:var(--text);margin-top:10px">
         Bridge status: idle
       </div>
 
-      <div style="margin-top:8px;font-size:12px;color:var(--text-dim);line-height:1.5">
-        <div>Payment ID: <span id="bridge-payment-id">—</span></div>
-        <div>Bridge Deposit Address: <span id="bridge-integrated-address">—</span></div>
-        <div>CryLo TX: <span id="bridge-crylo-tx">—</span></div>
-        <div>Nexus Mint TX: <span id="bridge-nexus-tx">—</span></div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text);line-height:1.5">
       </div>
+
+      <div style="margin-top:18px">
+        <h4>🌉 Bridge wCRYLO → CRYLO</h4>
+
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <input type="number" id="bridge-out-amount" placeholder="Amount wCRYLO" step="0.00000000001" min="0" style="flex:1;min-width:180px" />
+          <button class="btn btn-secondary" onclick="App.startCryLoBridgeOut()">Burn & Release CRYLO</button>
+        </div>
+
+        <div style="margin-top:8px;font-size:12px;color:var(--text)">
+          wCRYLO will be burned on Nexus first. The bridge reserve wallet will then release matching CRYLO back to your CryLo wallet.
+        </div>
+
+        <div id="bridge-out-status" style="font-size:12px;color:var(--text);margin-top:10px">
+          Release status: idle
+        </div>
+      </div>
+
     </div>
 
     <div style="margin-bottom:16px">
-      
-  <div class="card nexus-card" style="margin-top:16px">
-    <h4>⛽ Nexus Gas</h4>
-
-    <div class="muted" id="nexus-gas-status">Gas status: —</div>
-    <div class="muted" id="nexus-gas-native">Native Gas: —</div>
-    <div class="muted" id="nexus-gas-daily">Daily Gas: —</div>
-    <div class="muted" id="nexus-gas-activity">Activity: —</div>
-
-    <div class="row" style="margin-top:10px">
-      <button class="btn btn-secondary" onclick="App.refreshNexusGasStatus()">Refresh Gas</button>
-      <button class="btn btn-primary" onclick="App.claimNexusDailyGas()">Claim Daily Gas</button>
-    </div>
-
-    <div class="muted" id="nexus-gas-action-status" style="margin-top:8px">—</div>
-  </div>
-
-
-      <h4>💰 Nexus Staking</h4>
+<h4>💰 Nexus Staking</h4>
 
       <div style="display:flex;gap:8px;margin-top:8px">
         <input type="number" id="nexus-stake-amount" placeholder="Amount wCRYLO" step="0.0001" min="0" style="flex:1" />
@@ -407,7 +431,7 @@
         <button class="btn btn-secondary" onclick="App.unstakeNexusWcrylo()">Unstake</button>
       </div>
 
-            <div id="nexus-staking-status" style="font-size:12px;color:var(--text-dim);margin-top:6px">
+            <div id="nexus-staking-status" style="font-size:12px;color:var(--text);margin-top:6px">
         Enter an amount to stake or unstake wCRYLO.
       </div>
 
@@ -435,22 +459,45 @@
         <button class="btn btn-primary" onclick="App.registerNexusOperator()">Register Operator 300 wCRYLO</button>
         <button class="btn btn-primary" onclick="App.registerNexusValidator()">Register Validator 750 wCRYLO</button>
         <button class="btn btn-secondary" onclick="App.claimNexusNodeRewards()">Claim Node Rewards</button>
+      <button class="btn btn-danger" onclick="App.unregisterNexusNode()">Deregister Node</button>
       </div>
 
-      <div id="nexus-node-action-status" style="font-size:12px;color:var(--text-dim);margin-top:6px">
+      <div id="nexus-node-action-status" style="font-size:12px;color:var(--text);margin-top:6px">
         Register as an Operator or Validator to participate in Nexus node rewards.
       </div>
     </div>
+</div>
 
-    <button class="btn btn-primary" onclick="App.loadNexusBuyback()">🔍 Scan My Nexus NFTs</button>
+<div class="card nexus-card" style="margin-top:16px">
+    <h4>⛽ Nexus Gas</h4>
+
+    <div class="muted" id="nexus-gas-status">Gas status: —</div>
+    <div class="muted" id="nexus-gas-native">Native Gas: —</div>
+    <div class="muted" id="nexus-gas-daily">Daily Gas: —</div>
+    <div class="muted" id="nexus-gas-activity">Activity: —</div>
+
+    <div class="row" style="margin-top:10px">
+      <button class="btn btn-secondary" onclick="App.refreshNexusGasStatus()">Refresh Gas</button>
+      <button class="btn btn-primary" onclick="App.claimNexusDailyGas()">Claim Daily Gas</button>
+    </div>
+
+    <div class="muted" id="nexus-gas-action-status" style="margin-top:8px">—</div>
+  </div>
+</div>
+
+    <div class="tab-panel" id="tab-nexusNfts">
+      <h3>🖼 Nexus NFTs</h3>
+      <div class="card">
+        <button class="btn btn-primary" onclick="App.loadNexusBuyback()">🔍 Scan My Nexus NFTs</button>
 
     <div id="nexus-status" style="margin-top:12px;color:var(--text-dim);font-size:13px">
       Not scanned yet.
     </div>
 
     <div id="nexus-nft-list" style="margin-top:16px"></div>
-  </div>
-</div>
+      </div>
+    </div>
+
     </div><!-- /tab-content -->
 
     <!-- Status bar -->
