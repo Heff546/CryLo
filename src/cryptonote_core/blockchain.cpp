@@ -1468,7 +1468,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
   // From hard fork 2 till 12, we allow a miner to claim less block reward than is allowed, in case a miner wants less dust
   if (version < 2 || version >= HF_VERSION_EXACT_COINBASE)
   {
-    if(base_reward + fee != money_in_use)
+    if(base_reward + fee != money_in_use && m_db->height() > 0)
     {
       MDEBUG("coinbase transaction doesn't use full amount of block reward:  spent: " << money_in_use << ",  block reward " << base_reward + fee << "(" << base_reward << "+" << fee << ")");
       return false;
