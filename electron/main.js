@@ -332,6 +332,25 @@ function safeNexusFileName(cryloAddress) {
   return String(cryloAddress || '').replace(/[^a-zA-Z0-9]/g, '_');
 }
 
+
+async function registerBoundNexusWallet(nexusAddress) {
+  const url = 'http://192.168.40.43:8088/nexus/register-bound-wallet';
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nexusAddress })
+  });
+
+  const json = await res.json();
+
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error || 'Failed to register Nexus wallet for gas support');
+  }
+
+  return json;
+}
+
 ipcMain.handle('nexus-wallet-create', async (_, walletName, cryloAddress) => {
   try {
     if (!walletName || !cryloAddress) {
@@ -342,10 +361,16 @@ ipcMain.handle('nexus-wallet-create', async (_, walletName, cryloAddress) => {
 
     if (fs.existsSync(file)) {
       const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
+      let registration = null;
+      if (existing.nexusAddress) {
+        registration = await registerBoundNexusWallet(existing.nexusAddress);
+      }
+
       return {
         ok: true,
         alreadyExists: true,
-        nexusAddress: existing.nexusAddress || ''
+        nexusAddress: existing.nexusAddress || '',
+        gasRegistered: !!registration?.ok
       };
     }
 
@@ -359,10 +384,13 @@ ipcMain.handle('nexus-wallet-create', async (_, walletName, cryloAddress) => {
       createdAt: new Date().toISOString()
     }, null, 2), { mode: 0o600 });
 
+    const registration = await registerBoundNexusWallet(wallet.address);
+
     return {
       ok: true,
       alreadyExists: false,
-      nexusAddress: wallet.address
+      nexusAddress: wallet.address,
+      gasRegistered: !!registration.ok
     };
   } catch (e) {
     return { ok: false, error: e.message };
