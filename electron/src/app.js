@@ -1,7 +1,9 @@
 'use strict';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const COIN = 100000000000; // 10^12 atomic units = 1 CryLo
+const CRYLO_DECIMALS = 11;
+const WCRYLO_DECIMALS = 11;
+const COIN = 100000000000; // 10^11 atomic units = 1 CryLo/wCRYLO
 
 //  CryLo vesting tier unlock delays (in blocks, relative to coinbase height)
 const VESTING_TIERS = [
@@ -26,6 +28,27 @@ const State = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtDecimalAmount(value, places = 4) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return (0).toFixed(places);
+  return n.toFixed(places);
+}
+
+function decimalToAtomic(amountText, decimals, unitName) {
+  const raw = String(amountText || '').trim();
+  if (!raw || Number(raw) <= 0) throw new Error(`Enter a valid ${unitName} amount.`);
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) throw new Error(`Invalid ${unitName} amount.`);
+
+  const [whole, fracRaw = ''] = raw.split('.');
+  if (fracRaw.length > decimals) {
+    throw new Error(`${unitName} supports at most ${decimals} decimal places.`);
+  }
+
+  const frac = fracRaw.padEnd(decimals, '0');
+  return (BigInt(whole) * (10n ** BigInt(decimals)) + BigInt(frac || '0')).toString();
+}
+
 function fmt(atomic) {
   // Format atomic units →  CryLo string with 4 decimal places
   if (atomic == null || isNaN(atomic)) return '0.0000';
@@ -64,7 +87,7 @@ function toast(message, type = 'info', ms = 4000) {
 window.addEventListener('DOMContentLoaded', () => {
   setupPasswordEnterSubmit();
   // Listen for startup status from main process
-  window.c64.onStartupStatus(({ state, message }) => {
+  window.crylo.onStartupStatus(({ state, message }) => {
     el('splash-msg').textContent = message;
 
     if (state === 'ready') {
@@ -81,13 +104,13 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // Daemon/wallet-rpc crash notifications
-  window.c64.onDaemonExit((code) => {
+  window.crylo.onDaemonExit((code) => {
     if (code !== 0 && code !== null) {
       toast(`Daemon process exited (code ${code}). Please restart the app.`, 'error', 0);
     }
   });
 
-  window.c64.onWalletRpcExit((code) => {
+  window.crylo.onWalletRpcExit((code) => {
     if (code !== 0 && code !== null) {
       toast(`Wallet RPC exited (code ${code}). Please restart the app.`, 'error', 0);
     }
@@ -96,7 +119,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
 async function showSetupOrMain() {
   // Check if any wallets already exist
-  const res = await window.c64.listWallets();
+  const res = await window.crylo.listWallets();
   const wallets = res.ok ? res.wallets : [];
 
   hideSplash();
@@ -143,7 +166,7 @@ function showSetupForm(type) {
 }
 
 async function loadWalletList() {
-  const res = await window.c64.listWallets();
+  const res = await window.crylo.listWallets();
   const sel = el('open-select');
   sel.innerHTML = '';
   if (!res.ok || res.wallets.length === 0) {
@@ -216,9 +239,9 @@ async function createWallet() {
   el('create-btn').textContent = 'Creating...';
 
   // Close any currently open wallet first (ignore error if none open)
-  await window.c64.walletRpc('close_wallet', { autosave_current: false }).catch(() => {});
+  await window.crylo.walletRpc('close_wallet', { autosave_current: false }).catch(() => {});
 
-  const res = await window.c64.walletRpc('create_wallet', {
+  const res = await window.crylo.walletRpc('create_wallet', {
     filename: name,
     password: pass,
     language: 'English'
@@ -232,7 +255,7 @@ async function createWallet() {
   // create_wallet already opens the wallet internally - no need to call open_wallet
 
   // Get mnemonic seed
-  const seedRes = await window.c64.walletRpc('query_key', { key_type: 'mnemonic' });
+  const seedRes = await window.crylo.walletRpc('query_key', { key_type: 'mnemonic' });
   const seed = seedRes.ok ? seedRes.result.key : '(could not retrieve seed – open the wallet and use "query_key mnemonic" in CLI)';
 
   el('create-seed-display').textContent = seed;
@@ -269,9 +292,9 @@ async function openWallet() {
   if (!name) { setOpenWalletLoading(false); return toast('Please select a wallet.', 'error'); }
 
   // Close any currently open wallet first (ignore error if none open)
-  await window.c64.walletRpc('close_wallet', { autosave_current: false }).catch(() => {});
+  await window.crylo.walletRpc('close_wallet', { autosave_current: false }).catch(() => {});
 
-  const res = await window.c64.walletRpc('open_wallet', {
+  const res = await window.crylo.walletRpc('open_wallet', {
     filename: name,
     password: pass
   }, 30000);
@@ -296,7 +319,7 @@ async function restoreWallet() {
   if (!seed) return toast('Please enter your seed phrase.', 'error');
   if (seed.split(/\s+/).length !== 25) return toast('Seed must be exactly 25 words.', 'error');
 
-  const res = await window.c64.walletRpc('restore_deterministic_wallet', {
+  const res = await window.crylo.walletRpc('restore_deterministic_wallet', {
     filename: name,
     seed: seed,
     password: pass,
@@ -339,7 +362,7 @@ function openMainScreen() {
   // Refresh on new block - poll daemon height every 10s
   if (State.blockPoller) clearInterval(State.blockPoller);
   State.blockPoller = setInterval(async () => {
-    const res = await window.c64.daemonRpc('get_info');
+    const res = await window.crylo.daemonRpc('get_info');
     if (!res.ok) return;
     const newHeight = res.result.height || 0;
     if (newHeight > State.currentHeight) {
@@ -368,7 +391,7 @@ async function refreshActiveTab() {
 
 // ─── Sync status ──────────────────────────────────────────────────────────────
 async function updateSyncStatus() {
-  const res = await window.c64.daemonRpc('get_info');
+  const res = await window.crylo.daemonRpc('get_info');
   if (!res.ok) {
     el('sync-dot').className = 'sync-dot offline';
     el('sync-label').textContent = 'Daemon offline';
@@ -383,7 +406,7 @@ async function updateSyncStatus() {
   // NetHR based on the last 10 blocks
   if (info.height > 10) {
     try {
-      const rangeRes = await window.c64.daemonRpc('get_block_headers_range', {
+      const rangeRes = await window.crylo.daemonRpc('get_block_headers_range', {
         start_height: info.height - 11,
         end_height:   info.height - 1
       });
@@ -445,7 +468,7 @@ function fmtDuration(seconds) {
 
 
 async function getMinedSplitBalances() {
-  const res = await window.c64.walletRpc('get_transfers', { in: true });
+  const res = await window.crylo.walletRpc('get_transfers', { in: true });
   const r = res.result?.result || res.result || {};
   const txs = r.in || [];
 
@@ -477,7 +500,7 @@ async function getMinedSplitBalances() {
 
 // ─── Balance ──────────────────────────────────────────────────────────────────
 async function updateBalance() {
-  const res = await window.c64.walletRpc('get_balance', { account_index: 0 });
+  const res = await window.crylo.walletRpc('get_balance', { account_index: 0 });
 
   console.log("get_balance response:", res);
 
@@ -530,7 +553,7 @@ async function updateBalance() {
 
 // ─── Address ──────────────────────────────────────────────────────────────────
 async function loadAddress() {
-  const res = await window.c64.walletRpc('get_address', { account_index: 0 });
+  const res = await window.crylo.walletRpc('get_address', { account_index: 0 });
   if (!res.ok || !res.result || !res.result.address) return;
 
   const newAddress = res.result.address;
@@ -573,7 +596,7 @@ async function loadTransactions() {
   const container = el('tx-list-container');
   container.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading transactions...</div>';
 
-  const res = await window.c64.walletRpc('get_transfers', {
+  const res = await window.crylo.walletRpc('get_transfers', {
     in: true,
     out: true,
     pending: true,
@@ -668,17 +691,23 @@ async function loadTransactions() {
 
 // ─── Send ─────────────────────────────────────────────────────────────────────
 async function sendTx() {
-  const addr   = el('send-addr').value.trim();
-  const amount = parseFloat(el('send-amount').value);
-  const pid    = el('send-pid').value.trim();
-  const note   = el('send-note').value.trim();
+  const addr       = el('send-addr').value.trim();
+  const amountText = el('send-amount').value.trim();
+  const pid        = el('send-pid').value.trim();
+  const note       = el('send-note').value.trim();
+  let amountAtomic;
 
-  if (!addr)         return toast('Please enter a recipient address.', 'error');
-  if (!amount || amount <= 0) return toast('Please enter a valid amount.', 'error');
+  if (!addr) return toast('Please enter a recipient address.', 'error');
 
-  const confirmed = await window.c64.confirm({
+  try {
+    amountAtomic = cryloToAtomic(amountText);
+  } catch (err) {
+    return toast(err.message || 'Please enter a valid amount.', 'error');
+  }
+
+  const confirmed = await window.crylo.confirm({
     title: 'Confirm Send',
-    message: `Send ${amount}  CryLo to:\n${addr}\n\nThis cannot be undone.`,
+    message: `Send ${amountText}  CryLo to:\n${addr}\n\nThis cannot be undone.`,
     buttons: ['Send', 'Cancel']
   });
   if (!confirmed) return;
@@ -686,12 +715,12 @@ async function sendTx() {
   el('send-btn').disabled = true;
   el('send-btn').textContent = 'Sending...';
 
-  const destinations = [{ amount: Math.round(amount * COIN), address: addr }];
+  const destinations = [{ amount: Number(amountAtomic), address: addr }];
   const params = { destinations, account_index: 0 };
   if (pid) params.payment_id = pid;
   if (note) params.tx_extra = note;
 
-  const res = await window.c64.walletRpc('transfer', params);
+  const res = await window.crylo.walletRpc('transfer', params);
 
   el('send-btn').disabled = false;
   el('send-btn').textContent = 'Send →';
@@ -712,11 +741,11 @@ async function sendTx() {
 // ─── Consolidate UTXOs ───────────────────────────────────────────────────────
 async function consolidateUtxos() {
   // Get own address
-  const addrRes = await window.c64.walletRpc('get_address', { account_index: 0 });
+  const addrRes = await window.crylo.walletRpc('get_address', { account_index: 0 });
   if (!addrRes.ok) return toast('Failed to get wallet address: ' + addrRes.error, 'error');
   const myAddress = addrRes.result.address;
 
-  const confirmed = await window.c64.confirm({
+  const confirmed = await window.crylo.confirm({
     type: 'question',
     title: 'Consolidate UTXOs',
     message: 'This will merge all your small inputs (UTXOs) into one large output by sending your entire balance to yourself.\n\nThis is needed when you have many small mining rewards and want to send large amounts.\n\nA small network fee will be deducted.\n\nProceed?',
@@ -730,7 +759,7 @@ async function consolidateUtxos() {
   el('consolidate-info').textContent = 'Sweeping all outputs to your address...';
 
   try {
-    const res = await window.c64.walletRpc('sweep_all', {
+    const res = await window.crylo.walletRpc('sweep_all', {
       address: myAddress,
       account_index: 0
     }, 300000);  // 5 min timeout for large UTXO sets
@@ -750,7 +779,7 @@ async function consolidateUtxos() {
         const txid = txList[0];
         const confirmInterval = setInterval(async () => {
           try {
-            const txRes = await window.c64.walletRpc('get_transfer_by_txid', { txid: txid });
+            const txRes = await window.crylo.walletRpc('get_transfer_by_txid', { txid: txid });
             if (txRes.ok && txRes.result && txRes.result.transfer) {
               const conf = txRes.result.transfer.confirmations || 0;
               if (conf >= 4) {
@@ -782,7 +811,7 @@ async function loadVesting() {
   container.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading vesting data...</div>';
 
   // Fetch all incoming coinbase transfers
-  const res = await window.c64.walletRpc('get_transfers', {
+  const res = await window.crylo.walletRpc('get_transfers', {
     in: true,
     out: false,
     pending: false,
@@ -851,7 +880,7 @@ async function loadVesting() {
   // reduces wallet-rpc unlocked_balance even though original mined outputs still
   // appear in historical coinbase rows.
   try {
-    const balRes = await window.c64.walletRpc('get_balance', { account_index: 0 });
+    const balRes = await window.crylo.walletRpc('get_balance', { account_index: 0 });
     const bal = balRes.result?.result || balRes.result || {};
     const realUnlocked = Number(bal.unlocked_balance || 0);
     const minedTotal = tierTotals[0] + tierTotals[1];
@@ -940,7 +969,7 @@ function switchTab(tab) {
 }
 
 async function switchWallet() {
-  const confirmed = await window.c64.confirm({
+  const confirmed = await window.crylo.confirm({
     title: 'Switch Wallet',
     message: 'Close current wallet and go back to wallet selection?',
     buttons: ['Yes', 'Cancel']
@@ -948,7 +977,7 @@ async function switchWallet() {
   if (!confirmed) return;
 
   // Close current wallet
-  await window.c64.walletRpc('close_wallet', { autosave_current: true });
+  await window.crylo.walletRpc('close_wallet', { autosave_current: true });
 
   // Reset state
   State.walletName = '';
@@ -999,7 +1028,7 @@ async function initMiningTab() {
   }
 
   try {
-    const s = await window.c64.minerGetInfo();
+    const s = await window.crylo.minerGetInfo();
     const totalMB   = s.totalMemMB || 0;
     const cpus      = s.cpuCount   || 4;
     const maxByMem  = Math.max(1, Math.floor(totalMB / 300));
@@ -1045,7 +1074,7 @@ async function startMining() {
     return;
   }
   try {
-    const r = await window.c64.minerStart({ walletAddress: address, workerName: worker, poolUrl: pool, threads });
+    const r = await window.crylo.minerStart({ walletAddress: address, workerName: worker, poolUrl: pool, threads });
     if (!r.ok) throw new Error(r.error);
     State.miningActive = true;
     document.getElementById('mining-btn').textContent = '⏹ Stop Mining';
@@ -1057,12 +1086,12 @@ async function startMining() {
     document.getElementById('mining-stat-threads').textContent = threads;
     State.miningStatusTimer = setInterval(async () => {
       try {
-        const s = await window.c64.minerGetStatus();
+        const s = await window.crylo.minerGetStatus();
         if (s.running) {
           document.getElementById('mining-status').textContent = 'Mining active';
           document.getElementById('mining-status').style.color = 'var(--success)';
           document.getElementById('mining-hashrate').textContent = s.hashrate + ' H/s';
-	  const info = await window.c64.daemonRpc('get_info');
+	  const info = await window.crylo.daemonRpc('get_info');
 
 	  if (info.ok) {
  	    const height = info.result.height || 0;
@@ -1095,7 +1124,8 @@ async function startMining() {
   	      blocksPerDay.toFixed(4);
 
 	    {
-  	      const displayBlockReward = 2.5;
+	      const rewardAtomic = Number(s.blockReward || info.result.block_reward || 0);
+	      const displayBlockReward = rewardAtomic / COIN;
   	      const dailyRewards = blocksPerDay * displayBlockReward;
 
   	      document.getElementById('mining-stat-daily-rewards').textContent =
@@ -1120,8 +1150,9 @@ async function startMining() {
 	  }
 
 	  {
-            document.getElementById('mining-stat-reward').textContent =
-              '2.5000 CryLo';
+	    const rewardAtomic = Number(s.blockReward || info.result.block_reward || 0);
+	    document.getElementById('mining-stat-reward').textContent =
+              fmt(rewardAtomic) + ' CryLo';
 	  }
 
           document.getElementById('mining-mode').style.display = 'block';
@@ -1137,7 +1168,7 @@ async function startMining() {
 
 async function stopMining() {
   if (State.miningStatusTimer) { clearInterval(State.miningStatusTimer); State.miningStatusTimer = null; }
-  try { await window.c64.minerStop(); } catch(_) {}
+  try { await window.crylo.minerStop(); } catch(_) {}
   State.miningActive = false;
   State.miningStartHeight = null;
 
@@ -1171,7 +1202,7 @@ async function loadNexusBuyback() {
   listEl.innerHTML = '';
 
   try {
-    const result = await window.c64.nexusScanNfts(linkedAddress);
+    const result = await window.crylo.nexusScanNfts(linkedAddress);
 
     if (!result.ok) {
       statusEl.textContent = result.error || 'Scan failed.';
@@ -1224,7 +1255,7 @@ async function loadNexusBuyback() {
 async function ensureCryLoAddressLoaded() {
   if (State.address) return true;
 
-  const addrRes = await window.c64.walletRpc('get_address', { account_index: 0 });
+  const addrRes = await window.crylo.walletRpc('get_address', { account_index: 0 });
   if (addrRes.ok && addrRes.result && addrRes.result.address) {
     State.address = addrRes.result.address;
     const receiveEl = document.getElementById('receive-address');
@@ -1268,7 +1299,7 @@ async function createBoundNexusWallet() {
     return;
   }
 
-  const result = await window.c64.nexusWalletCreate(State.walletName, State.address);
+  const result = await window.crylo.nexusWalletCreate(State.walletName, State.address);
 
   if (!result.ok) {
     if (status) status.textContent = `Failed to create Nexus wallet: ${result.error}`;
@@ -1289,7 +1320,7 @@ async function loadSavedNexusLinkedAddress() {
     return;
   }
 
-  const result = await window.c64.nexusWalletLoad(State.walletName, State.address);
+  const result = await window.crylo.nexusWalletLoad(State.walletName, State.address);
 
   if (result.ok && result.nexusAddress) {
     setNexusUiAddress(result.nexusAddress);
@@ -1387,7 +1418,7 @@ async function startCryLoBridgeOut() {
 
     setBridgeOutStatus('Burning wCRYLO on Nexus...');
 
-    const result = await window.c64.nexusBurnForCryLo(amountText, State.walletName, State.address);
+    const result = await window.crylo.nexusBurnForCryLo(amountText, State.walletName, State.address);
 
     if (!result.ok) {
       throw new Error(result.error || 'Burn failed.');
@@ -1429,19 +1460,9 @@ function refreshBridgeAddressFields() {
 }
 
 function cryloToAtomic(amountText) {
-  const raw = String(amountText || '').trim();
-  if (!raw || Number(raw) <= 0) throw new Error('Enter a valid CRYLO amount.');
-
-  const [wholeRaw, fracRaw = ''] = raw.split('.');
-  const whole = wholeRaw || '0';
-  const frac = (fracRaw + '000000000000').slice(0, 11);
-
-  if (!/^\d+$/.test(whole) || !/^\d{11}$/.test(frac)) {
-    throw new Error('Invalid CRYLO amount.');
-  }
-
-  return (BigInt(whole) * 100000000000n + BigInt(frac)).toString();
+  return decimalToAtomic(amountText, CRYLO_DECIMALS, 'CRYLO');
 }
+
 
 async function startCryLoBridgeIn() {
   try {
@@ -1463,7 +1484,7 @@ async function startCryLoBridgeIn() {
 
     setBridgeStatus('creating deposit request');
 
-    const req = await window.c64.bridgeRequest({
+    const req = await window.crylo.bridgeRequest({
       nexusAddress,
       cryloAddress: State.address,
       amountAtomic
@@ -1489,7 +1510,7 @@ async function startCryLoBridgeIn() {
       get_tx_key: true
     };
 
-    let tx = await window.c64.walletRpc('transfer', transferParams, 60000);
+    let tx = await window.crylo.walletRpc('transfer', transferParams, 60000);
 
     if (!tx.ok) {
       const errText = String(tx.error || '').toLowerCase();
@@ -1499,7 +1520,7 @@ async function startCryLoBridgeIn() {
         errText.includes('transfer_split')
       ) {
         setBridgeStatus('Transaction large — retrying with transfer_split...');
-        tx = await window.c64.walletRpc('transfer_split', transferParams, 120000);
+        tx = await window.crylo.walletRpc('transfer_split', transferParams, 120000);
       }
     }
 
@@ -1540,7 +1561,7 @@ function pollCryLoBridgeStatus(paymentId) {
 
   cryloBridgePollTimer = setInterval(async () => {
     try {
-      const res = await window.c64.bridgeStatus(paymentId);
+      const res = await window.crylo.bridgeStatus(paymentId);
 
       if (!res.ok) {
         setBridgeStatus(res.error || 'status check failed');
@@ -1598,7 +1619,7 @@ async function buyBackNexusNFT(tokenId) {
   }
 
   try {
-    const result = await window.c64.nexusBuyBackNft(tokenId, State.walletName, State.address);
+    const result = await window.crylo.nexusBuyBackNft(tokenId, State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent =
@@ -1630,7 +1651,7 @@ async function burnNexusNFT(tokenId) {
   }
 
   try {
-    const result = await window.c64.nexusBurnNft(tokenId, State.walletName, State.address);
+    const result = await window.crylo.nexusBurnNft(tokenId, State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent =
@@ -1666,14 +1687,14 @@ async function refreshNexusWcryloBalance() {
   }
 
   try {
-    const result = await window.c64.nexusWcryloBalance(linkedAddress);
+    const result = await window.crylo.nexusWcryloBalance(linkedAddress);
 
     if (!result.ok) {
       el.innerHTML = `—<span class="balance-unit"> wCRYLO</span>`;
       return;
     }
 
-    el.innerHTML = `${Number(result.balance).toFixed(4)}<span class="balance-unit"> wCRYLO</span>`;
+    el.innerHTML = `${fmtDecimalAmount(result.balance, 4)}<span class="balance-unit"> wCRYLO</span>`;
   } catch (err) {
     console.error(err);
     el.innerHTML = `—<span class="balance-unit"> wCRYLO</span>`;
@@ -1695,7 +1716,7 @@ async function refreshNexusStakedBalance() {
 
   try {
     const result =
-      await window.c64.nexusStakedBalance(linkedAddress);
+      await window.crylo.nexusStakedBalance(linkedAddress);
 
     console.log('STAKED RESULT:', result);
 
@@ -1706,7 +1727,7 @@ async function refreshNexusStakedBalance() {
     }
 
     el.innerHTML =
-      `${Number(result.balance).toFixed(4)}<span class="balance-unit"> wCRYLO</span>`;
+      `${fmtDecimalAmount(result.balance, 4)}<span class="balance-unit"> wCRYLO</span>`;
   } catch (err) {
     console.error(err);
 
@@ -1729,14 +1750,14 @@ async function refreshNexusPendingRewards() {
 
   try {
     const result =
-      await window.c64.nexusPendingRewards(linkedAddress);
+      await window.crylo.nexusPendingRewards(linkedAddress);
 
     if (!result.ok) {
       el.textContent = '0.0000';
       return;
     }
 
-    el.textContent = Number(result.rewards).toFixed(6);
+    el.textContent = fmtDecimalAmount(result.rewards, 6);
   } catch (err) {
     console.error(err);
     el.textContent = '0.0000';
@@ -1751,7 +1772,7 @@ async function ensureNexusGasForAction(actionLabel, estimatedGasCryLo = 0.03) {
     return { ok: false, error: 'No bound Nexus wallet.' };
   }
 
-  const status = await window.c64.nexusGasStatus(linkedAddress);
+  const status = await window.crylo.nexusGasStatus(linkedAddress);
 
   if (!status.ok) {
     return { ok: false, error: status.error || 'Unable to check Nexus gas.' };
@@ -1766,14 +1787,14 @@ async function ensureNexusGasForAction(actionLabel, estimatedGasCryLo = 0.03) {
 
   const shortfall = Math.max(0, neededGas - currentGas);
 
-  // GasManager uses 1:1 value: 1 wCRYLO buys 1 native CryLo gas.
+  // GasManager uses 1:1 value: 1 wCRYLO buys 1 native CRYLO (GAS).
   // Add a small buffer so transaction + follow-up action has room.
   const wcryloNeeded = Math.ceil((shortfall + 0.005) * 100000) / 100000;
 
   const yes = confirm(
     `Not enough Nexus gas for ${actionLabel}.\n\n` +
-    `Current gas: ${currentGas.toFixed(6)} CryLo\n` +
-    `Estimated needed: ${neededGas.toFixed(6)} CryLo\n\n` +
+    `Current gas: ${currentGas.toFixed(6)} CRYLO (GAS)\n` +
+    `Estimated needed: ${neededGas.toFixed(6)} CRYLO (GAS)\n\n` +
     `Add about ${wcryloNeeded} wCRYLO for gas and continue?\n\n` +
     `For reliability, make sure you have at least double this suggested amount available in wCRYLO.`
   );
@@ -1782,7 +1803,7 @@ async function ensureNexusGasForAction(actionLabel, estimatedGasCryLo = 0.03) {
     return { ok: false, cancelled: true, error: 'User cancelled gas top-up.' };
   }
 
-  const buy = await window.c64.nexusBuyGasWithWcrylo(
+  const buy = await window.crylo.nexusBuyGasWithWcrylo(
     String(wcryloNeeded),
     State.walletName,
     State.address
@@ -1836,7 +1857,7 @@ async function stakeNexusWcrylo() {
   statusEl.textContent = `Staking ${amount} wCRYLO...`;
 
   try {
-    const result = await window.c64.nexusStakeWcrylo(amount, State.walletName, State.address);
+    const result = await window.crylo.nexusStakeWcrylo(amount, State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent = `Stake failed: ${(result.error || '').includes('insufficient funds') ? 'Bound Nexus wallet needs gas for staking transactions.' : (result.error || 'Unknown error')}`;
@@ -1888,7 +1909,7 @@ async function unstakeNexusWcrylo() {
   statusEl.textContent = `Unstaking ${amount} wCRYLO...`;
 
   try {
-    const result = await window.c64.nexusUnstakeWcrylo(amount, State.walletName, State.address);
+    const result = await window.crylo.nexusUnstakeWcrylo(amount, State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent = `Unstake failed: ${(result.error || '').includes('insufficient funds') ? 'Bound Nexus wallet needs gas for unstaking transactions.' : (result.error || 'Unknown error')}`;
@@ -1933,7 +1954,7 @@ async function claimNexusRewards() {
   statusEl.textContent = 'Claiming staking rewards...';
 
   try {
-    const result = await window.c64.nexusClaimRewards(State.walletName, State.address);
+    const result = await window.crylo.nexusClaimRewards(State.walletName, State.address);
 
     if (!result.ok) {
       const errorText = String(result.error || '').toLowerCase();
@@ -1985,7 +2006,7 @@ async function refreshNexusNodeStatus() {
   }
 
   try {
-    const result = await window.c64.nexusNodeStatus(linkedAddress);
+    const result = await window.crylo.nexusNodeStatus(linkedAddress);
 
     if (!result.ok) {
       statusEl.textContent = result.error || 'Unable to load node status.';
@@ -2012,7 +2033,7 @@ async function registerNexusOperator() {
   statusEl.textContent = 'Registering Operator node with 300 wCRYLO...';
 
   try {
-    const result = await window.c64.nexusRegisterOperator(State.walletName, State.address);
+    const result = await window.crylo.nexusRegisterOperator(State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent = `Operator registration failed: ${result.error || 'Unknown error'}`;
@@ -2033,7 +2054,7 @@ async function registerNexusValidator() {
   statusEl.textContent = 'Registering Validator node with 750 wCRYLO...';
 
   try {
-    const result = await window.c64.nexusRegisterValidator(State.walletName, State.address);
+    const result = await window.crylo.nexusRegisterValidator(State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent = `Validator registration failed: ${result.error || 'Unknown error'}`;
@@ -2070,7 +2091,7 @@ async function unregisterNexusNode() {
   statusEl.textContent = 'Deregistering node...';
 
   try {
-    const result = await window.c64.nexusUnregisterNode(State.walletName, State.address);
+    const result = await window.crylo.nexusUnregisterNode(State.walletName, State.address);
 
     if (!result.ok) {
       statusEl.textContent = `Node deregistration failed: ${result.error || 'Unknown error'}`;
@@ -2100,7 +2121,7 @@ async function claimNexusNodeRewards() {
   statusEl.textContent = 'Claiming node rewards...';
 
   try {
-    const result = await window.c64.nexusClaimNodeRewards(State.walletName, State.address);
+    const result = await window.crylo.nexusClaimNodeRewards(State.walletName, State.address);
 
     if (!result.ok) {
       const errorText = String(result.error || '').toLowerCase();
@@ -2147,7 +2168,7 @@ async function refreshNexusGasStatus() {
   }
 
   try {
-    const result = await window.c64.nexusGasStatus(linkedAddress);
+    const result = await window.crylo.nexusGasStatus(linkedAddress);
 
     if (!result.ok) {
       if (statusEl) statusEl.textContent = `Gas status: ${result.error || 'Unavailable'}`;
@@ -2163,8 +2184,8 @@ async function refreshNexusGasStatus() {
         : `Gas status: ${active ? 'Active / cooldown' : 'Inactive until Nexus activity'}`;
     }
 
-    if (nativeEl) nativeEl.textContent = `Native Gas: ${Number(result.nativeGas).toFixed(6)} CryLo`;
-    if (dailyEl) dailyEl.textContent = `Daily Gas: ${result.dailyGasAmount} CryLo · Vault: ${Number(result.vaultBalance).toFixed(4)} CryLo`;
+    if (nativeEl) nativeEl.textContent = `Native Gas: ${fmtDecimalAmount(result.nativeGas, 6)} CRYLO (GAS)`;
+    if (dailyEl) dailyEl.textContent = `Daily Gas: ${fmtDecimalAmount(result.dailyGasAmount, 6)} CRYLO (GAS) · Vault: ${fmtDecimalAmount(result.vaultBalance, 4)} CRYLO (GAS)`;
     if (activityEl) activityEl.textContent = `Last Activity: ${fmtUnix(result.lastActivityAt)} · Last Claim: ${fmtUnix(result.lastGasClaimAt)}`;
   } catch (err) {
     console.error(err);
@@ -2177,7 +2198,7 @@ async function claimNexusDailyGas() {
   if (statusEl) statusEl.textContent = 'Claiming daily gas...';
 
   try {
-    const result = await window.c64.nexusClaimDailyGas(State.walletName, State.address);
+    const result = await window.crylo.nexusClaimDailyGas(State.walletName, State.address);
 
     if (!result.ok) {
       const err = String(result.error || '').toLowerCase();
@@ -2210,7 +2231,7 @@ async function buyNexusGasWithWcrylo() {
   if (statusEl) statusEl.textContent = `Buying gas with ${amount} wCRYLO...`;
 
   try {
-    const result = await window.c64.nexusBuyGasWithWcrylo(amount, State.walletName, State.address);
+    const result = await window.crylo.nexusBuyGasWithWcrylo(amount, State.walletName, State.address);
 
     if (!result.ok) {
       if (statusEl) statusEl.textContent = `Buy gas failed: ${result.error || 'Unknown error'}`;
@@ -2243,7 +2264,7 @@ async function loadNexusTransactions() {
   if (statusEl) statusEl.textContent = 'Loading Nexus transactions...';
 
   try {
-    const result = await window.c64.nexusTransactions(linkedAddress);
+    const result = await window.crylo.nexusTransactions(linkedAddress);
 
     if (!result.ok) {
       if (statusEl) statusEl.textContent = `Failed to load Nexus transactions: ${result.error || 'Unknown error'}`;

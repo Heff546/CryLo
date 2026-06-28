@@ -542,6 +542,13 @@ namespace cryptonote
         res.cumulative_difficulty, res.wide_cumulative_difficulty, res.cumulative_difficulty_top64);
     res.block_size_limit = res.block_weight_limit = m_core.get_blockchain_storage().get_current_cumulative_block_weight_limit();
     res.block_size_median = res.block_weight_median = m_core.get_blockchain_storage().get_current_cumulative_block_weight_median();
+    res.block_reward = 0;
+    {
+      const uint64_t already_generated_coins = res.height ? m_core.get_blockchain_storage().get_db().get_block_already_generated_coins(res.height - 1) : 0;
+      const uint8_t hf_version = m_core.get_blockchain_storage().get_current_hard_fork_version();
+      if (!cryptonote::get_block_reward(res.height, res.block_weight_median, 1, already_generated_coins, res.block_reward, hf_version))
+        res.block_reward = 0;
+    }
     res.adjusted_time = m_core.get_blockchain_storage().get_adjusted_time(res.height);
 
     res.start_time = restricted ? 0 : (uint64_t)m_core.get_start_time();
@@ -1479,10 +1486,21 @@ namespace cryptonote
     store_difficulty(m_core.get_blockchain_storage().get_difficulty_for_next_block(m_core.get_nettype()), res.difficulty, res.wide_difficulty, res.difficulty_top64);
     
     res.block_target = m_core.get_blockchain_storage().get_current_hard_fork_version() < 2 ? DIFFICULTY_TARGET_V1 : DIFFICULTY_TARGET_V2;
+    res.block_reward = 0;
+    {
+      uint64_t height = 0;
+      crypto::hash top_hash;
+      m_core.get_blockchain_top(height, top_hash);
+      ++height;
+      const uint64_t already_generated_coins = height ? m_core.get_blockchain_storage().get_db().get_block_already_generated_coins(height - 1) : 0;
+      const uint8_t hf_version = m_core.get_blockchain_storage().get_current_hard_fork_version();
+      const uint64_t median_weight = m_core.get_blockchain_storage().get_current_cumulative_block_weight_median();
+      if (!cryptonote::get_block_reward(height, median_weight, 1, already_generated_coins, res.block_reward, hf_version))
+        res.block_reward = 0;
+    }
     if ( lMiner.is_mining() ) {
       res.speed = lMiner.get_speed();
       res.threads_count = lMiner.get_threads_count();
-      res.block_reward = lMiner.get_block_reward();
     }
     const account_public_address& lMiningAdr = lMiner.get_mining_address();
     if (lMiner.is_mining() || lMiner.get_is_background_mining_enabled())
@@ -1495,8 +1513,8 @@ namespace cryptonote
       case 1: res.pow_algorithm = "CNv1 (Cryptonight variant 1)"; break;
       case 2: case 3: res.pow_algorithm = "CNv2 (Cryptonight variant 2)"; break;
       case 4: case 5: res.pow_algorithm = "CN/WOW"; break;
-      case 6: case 7: case 8: case 9: res.pow_algorithm = "RandomWOW"; break;
-      default: res.pow_algorithm = "RandomWOW"; break; // assumed
+      case 6: case 7: case 8: case 9: res.pow_algorithm = "rx/crylo"; break;
+      default: res.pow_algorithm = "rx/crylo"; break; // assumed
     }
     if (res.is_background_mining_enabled)
     {

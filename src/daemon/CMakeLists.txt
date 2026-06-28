@@ -27,7 +27,8 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(daemon_sources
-  ../tui/c64_tui.cpp
+  ../tui/crylo_loading.cpp
+  ../tui/crylo_tui.cpp
   command_parser_executor.cpp
   command_server.cpp
   daemon.cpp

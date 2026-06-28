@@ -50,7 +50,7 @@
 #include "daemon/command_line_args.h"
 #include "net/net_ssl.h"
 #include "version.h"
-#include "tui/c64_tui.h"
+#include "tui/crylo_tui.h"
 
 using namespace epee;
 
@@ -194,11 +194,11 @@ bool t_daemon::run(bool interactive)
   try
   {
     // CryLo Chain: Play Datasette animation (uses raw ANSI on stderr)
-    c64tui::play_datasette_animation();
+    crylotui::play_datasette_animation();
 
     // Start TUI in background thread (uses /dev/tty directly)
     std::thread tui_thread([&stop]() {
-      c64tui::run_tui(stop);
+      crylotui::run_tui(stop);
     });
 
     // Let ncurses initialize on /dev/tty

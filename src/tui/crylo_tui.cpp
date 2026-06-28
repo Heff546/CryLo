@@ -1,4 +1,5 @@
-#include "c64_tui.h"
+#include "crylo_tui.h"
+#include "crylo_loading.h"
 #include <cstdlib>
 #include <ctime>
 #include <cstdio>
@@ -27,8 +28,18 @@ static std::string run_cmd(const char* cmd) {
     return result;
 }
 
+static std::string format_atomic_crylo(uint64_t atomic) {
+    const uint64_t coin = 100000000000ULL;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%llu.%011llu",
+             static_cast<unsigned long long>(atomic / coin),
+             static_cast<unsigned long long>(atomic % coin));
+    return std::string(buf);
+}
 
-namespace c64tui {
+
+
+namespace crylotui {
 
 // ---------- NodeStats ----------
 
@@ -61,53 +72,7 @@ void NodeStats::set_block_info(const std::string& id, const std::string& pow, co
 // ---------- Datasette Animation ----------
 
 void play_datasette_animation() {
-    fprintf(stderr, "\033[2J\033[H"); // clear screen
-    fflush(stderr);
-    usleep(150000);
-
-    fprintf(stderr, "\033[36m\n");
-    fprintf(stderr, "      ██████╗██████╗ ██╗   ██╗██╗      ██████╗\n");
-    fprintf(stderr, "     ██╔════╝██╔══██╗╚██╗ ██╔╝██║     ██╔═══██╗\n");
-    fprintf(stderr, "     ██║     ██████╔╝ ╚████╔╝ ██║     ██║   ██║\n");
-    fprintf(stderr, "     ██║     ██╔══██╗  ╚██╔╝  ██║     ██║   ██║\n");
-    fprintf(stderr, "     ╚██████╗██║  ██║   ██║   ███████╗╚██████╔╝\n");
-    fprintf(stderr, "      ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝ ╚═════╝\n\n");
-    fprintf(stderr, "                CryLo Network Daemon\n");
-    fprintf(stderr, "              FAST. PRIVATE. SECURE.\n\n");
-    fprintf(stderr, "    ┌──────────────────────────────────────────────────────────────┐\n");
-    fprintf(stderr, "    │  ◌  Connecting to CryLo Testnet v3        ............       │\n");
-    fprintf(stderr, "    │  ⛓  Initializing P2P Network              ............       │\n");
-    fprintf(stderr, "    │  ◈  Verifying Blockchain Integrity        ............       │\n");
-    fprintf(stderr, "    │  ▣  Preparing for Synchronization         ............       │\n");
-    fprintf(stderr, "    │  ≋  Sync in Progress                      [----------]       │\n");
-    fprintf(stderr, "    └──────────────────────────────────────────────────────────────┘\n\n");
-    fprintf(stderr, "\033[0m");
-
-    const char* steps[] = {
-        "Connecting to CryLo Testnet v3",
-        "Initializing P2P Network",
-        "Verifying Blockchain Integrity",
-        "Preparing for Synchronization"
-    };
-
-    for (const char* step : steps) {
-        fprintf(stderr, "\033[36m    [*] %s\033[0m", step);
-        fflush(stderr);
-
-        for (int i = 0; i < 12; ++i) {
-            fprintf(stderr, "\033[36m.\033[0m");
-            fflush(stderr);
-            usleep(40000);
-        }
-
-        fprintf(stderr, " \033[32mOK\033[0m\n");
-        fflush(stderr);
-        usleep(100000);
-    }
-
-    fprintf(stderr, "\n    \033[32mREADY.\033[0m\n\n");
-    fflush(stderr);
-    usleep(300000);
+    play_crylo_loading_screen();
 }
 
 // ---------- ncurses TUI ----------
@@ -235,6 +200,12 @@ void run_tui(std::atomic<bool>& stop_signal) {
     			stats.difficulty.store(fv("\"difficulty\""));
     			stats.peers_out.store(fv("\"outgoing_connections_count\""));
     			stats.peers_in.store(fv("\"incoming_connections_count\""));
+
+                        const uint64_t reward_atomic = fv("\"block_reward\"");
+                        if (reward_atomic > 0) {
+                            std::lock_guard<std::mutex> lock(stats.mtx);
+                            stats.last_reward = format_atomic_crylo(reward_atomic);
+                        }
                     } catch (...) {}
                 }
 		FILE* ms = popen("curl -s http://127.0.0.1:22641/mining_status 2>/dev/null", "r");
@@ -261,13 +232,10 @@ void run_tui(std::atomic<bool>& stop_signal) {
 			stats.hashrate.store(mv("\"speed\""));
 
         		uint64_t reward_atomic = mv("\"block_reward\"");
-        		double reward = (double)reward_atomic / 100000000000.0;
-
-        		char reward_buf[64];
-        		snprintf(reward_buf, sizeof(reward_buf), "%.11f", reward);
-
-        		std::lock_guard<std::mutex> lock(stats.mtx);
-        		stats.last_reward = reward_buf;
+                        if (reward_atomic > 0) {
+                            std::lock_guard<std::mutex> lock(stats.mtx);
+                            stats.last_reward = format_atomic_crylo(reward_atomic);
+                        }
     	    	    } catch (...) {}
 		}
 	    }
@@ -281,7 +249,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
         int y = 2;
 
         // Header
-        draw_centered(y++, w, "CryLo Network Daemon V3", CP_HEADER);
+        draw_centered(y++, w, "CryLo Network Daemon Testnet V4", CP_HEADER);
         draw_centered(y++, w, "64K RAM SYSTEM  38911 BASIC BYTES FREE", CP_NORMAL);
         y++;
 
@@ -571,7 +539,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
 
             	    if (input == "version") {
                 	command_output = {
-                    "CryLo Testnet v3",
+                    "CryLo Testnet V4",
                     "P2P Port : 22640",
                     "RPC Port : 22641",
                     "Build    : Nexus-ready daemon"
@@ -841,4 +809,4 @@ void install_tui_log_callback() {
     el::Helpers::installLogDispatchCallback<CryLoTuiLogCallback>("CryLoTuiCallback");
 }
 
-} // namespace c64tui
+} // namespace crylotui

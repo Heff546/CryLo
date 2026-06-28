@@ -12,7 +12,7 @@
 #include <cstdint>
 #include "misc_log_ex.h"
 
-namespace c64tui {
+namespace crylotui {
 
 // Shared state between daemon and TUI
 struct NodeStats {
@@ -71,4 +71,4 @@ protected:
 // Install the log callback (call after mlog_configure)
 void install_tui_log_callback();
 
-} // namespace c64tui
+} // namespace crylotui

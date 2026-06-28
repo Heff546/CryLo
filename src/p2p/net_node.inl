@@ -733,8 +733,8 @@ namespace nodetool
     std::set<std::string> full_addrs;
     if (m_nettype == cryptonote::TESTNET)
     {
-      // CryLo Testnet v3 seed nodes
-      full_addrs.insert("192.168.40.114:22640"); // CryLo v3 local seed
+      // CryLo Testnet V4 seed nodes
+      full_addrs.insert("192.168.40.114:22640"); // CryLo V4 local seed
     }
     else if (m_nettype == cryptonote::STAGENET)
     {
@@ -744,11 +744,11 @@ namespace nodetool
     }
     else
     {
-      full_addrs.insert("163.172.215.129:19640"); // CryLo Chain mainnet seed1 (c64seed.ddns.net)
-      full_addrs.insert("51.158.152.121:19640"); // CryLo Chain mainnet seed2 (c64seed2.ddns.net)
-      full_addrs.insert("54.38.240.117:19640"); // CryLo Chain mainnet seed3 (c64seed3.ddns.net)
-      full_addrs.insert("172.245.238.97:19640"); // CryLo Chain mainnet seed4 (c64seed4.ddns.net)
-      full_addrs.insert("217.216.34.11:19640"); // CryLo Chain mainnet seed5 (c64seed5.ddns.net) Singapore
+      full_addrs.insert("163.172.215.129:19640"); // CryLo Chain mainnet seed1 (cryloseed.ddns.net)
+      full_addrs.insert("51.158.152.121:19640"); // CryLo Chain mainnet seed2 (cryloseed2.ddns.net)
+      full_addrs.insert("54.38.240.117:19640"); // CryLo Chain mainnet seed3 (cryloseed3.ddns.net)
+      full_addrs.insert("172.245.238.97:19640"); // CryLo Chain mainnet seed4 (cryloseed4.ddns.net)
+      full_addrs.insert("217.216.34.11:19640"); // CryLo Chain mainnet seed5 (cryloseed5.ddns.net) Singapore
     }
     return full_addrs;
   }

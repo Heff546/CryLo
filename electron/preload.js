@@ -1,6 +1,6 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
-contextBridge.exposeInMainWorld('c64', {
+contextBridge.exposeInMainWorld('crylo', {
   // ── RPC ──────────────────────────────────────────────────────────────
   daemonRpc:   (method, params)  => ipcRenderer.invoke('daemon-rpc',   method, params),
   walletRpc:   (method, params, timeout)  => ipcRenderer.invoke('wallet-rpc', method, params, timeout),

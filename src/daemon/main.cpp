@@ -45,7 +45,7 @@
 #include "rpc/rpc_args.h"
 #include "daemon/command_line_args.h"
 #include "version.h"
-#include "tui/c64_tui.h"
+#include "tui/crylo_tui.h"
 
 #ifdef STACK_TRACE
 #include "common/stack_trace.h"
@@ -297,7 +297,7 @@ int main(int argc, char const * argv[])
 
     // Install CryLo TUI log callback
 #ifndef _WIN32
-    c64tui::install_tui_log_callback();
+    crylotui::install_tui_log_callback();
 #endif
     }
 

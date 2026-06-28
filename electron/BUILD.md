@@ -1,8 +1,8 @@
-# C64 Chain Wallet — Electron Build Guide
+# CryLo Wallet — Electron Build Guide
 
 ## Overview
 
-This Electron app bundles `c64chaind` and `c64chain-wallet-rpc` into a single
+This Electron app bundles `crylod` and `crylo-wallet-rpc` into a single
 desktop wallet for Windows (and Linux).  
 It is built on Linux using `electron-builder` with Wine for the Windows installer.
 
@@ -39,24 +39,24 @@ Before building, copy the compiled Windows `.exe` files into `bin/win/`:
 
 | File | Source |
 |------|--------|
-| `bin/win/c64chaind.exe` | Cross-compiled with MinGW or Docker |
-| `bin/win/c64chain-wallet-rpc.exe` | Same build |
+| `bin/win/crylod.exe` | Cross-compiled with MinGW or Docker |
+| `bin/win/crylo-wallet-rpc.exe` | Same build |
 
 ```bash
 cd electron/
 ls bin/win/
-# c64chaind.exe  c64chain-wallet-rpc.exe  README.txt
+# crylod.exe  crylo-wallet-rpc.exe  README.txt
 ```
 
 For Linux builds, place binaries in `bin/linux/`:
 ```bash
 ls bin/linux/
-# c64chaind  c64chain-wallet-rpc  README.txt
+# crylod  crylo-wallet-rpc  README.txt
 ```
 
 Make Linux binaries executable:
 ```bash
-chmod +x bin/linux/c64chaind bin/linux/c64chain-wallet-rpc
+chmod +x bin/linux/crylod bin/linux/crylo-wallet-rpc
 ```
 
 ---
@@ -75,7 +75,7 @@ If you don't have icons yet, create a placeholder to allow the build to run:
 # Quick placeholder (requires ImageMagick)
 convert -size 256x256 xc:#0d0d1a -fill '#ffd700' \
   -font DejaVu-Sans-Bold -pointsize 72 -gravity center \
-  -annotate 0 "C64" assets/icon.png
+  -annotate 0 "CryLo" assets/icon.png
 
 # Convert to .ico
 convert assets/icon.png assets/icon.ico
@@ -102,8 +102,8 @@ npm run build-win
 ```
 
 Output in `dist/`:
-- `C64 Chain Wallet Setup 1.0.0.exe`  — installer
-- `C64 Chain Wallet 1.0.0.exe`         — portable (no install needed)
+- `CryLo Wallet Setup 1.0.0.exe`  — installer
+- `CryLo Wallet 1.0.0.exe`         — portable (no install needed)
 
 ### Linux AppImage + .deb
 ```bash
@@ -136,14 +136,14 @@ and display the wallet UI.
 ```
 electron/
 ├── main.js              ← Electron main process
-│                           - Spawns c64chaind (port 19641)
-│                           - Spawns c64chain-wallet-rpc (port 19740)
+│                           - Spawns crylod (port 19641)
+│                           - Spawns crylo-wallet-rpc (port 19740)
 │                           - Manages IPC between UI and daemons
 ├── preload.js           ← Secure bridge (contextIsolation=true)
 ├── src/
 │   ├── index.html       ← App shell
 │   ├── app.js           ← UI logic (vanilla JS)
-│   └── styles.css       ← Dark C64-themed stylesheet
+│   └── styles.css       ← Dark CryLo-themed stylesheet
 ├── bin/
 │   ├── win/             ← Windows .exe binaries (bundled at build time)
 │   └── linux/           ← Linux binaries (for dev/Linux release)
@@ -156,13 +156,13 @@ electron/
 ### Ports used
 | Service | Port |
 |---------|------|
-| c64chaind RPC | 19641 |
-| c64chain-wallet-rpc | 19740 |
+| crylod RPC | 19641 |
+| crylo-wallet-rpc | 19740 |
 
 ### Data directories (Windows)
-- **Daemon blockchain**: `%APPDATA%\c64chain-wallet\c64chain\`
-- **Wallet files**: `%APPDATA%\c64chain-wallet\wallets\`
-- **Logs**: `%APPDATA%\c64chain-wallet\logs\`
+- **Daemon blockchain**: `%APPDATA%\crylo-wallet\crylo\`
+- **Wallet files**: `%APPDATA%\crylo-wallet\wallets\`
+- **Logs**: `%APPDATA%\crylo-wallet\logs\`
 
 ### Vesting display
 The vesting tab reconstructs per-tier unlock data from coinbase transfers:
@@ -182,12 +182,12 @@ The vesting tab reconstructs per-tier unlock data from coinbase transfers:
 **`Error: ENOENT assets/icon.ico`**  
 → Add icon files to the `assets/` directory (see Step 2)
 
-**`bin/win/c64chaind.exe not found`**  
-→ Cross-compile the C64 Chain node for Windows first (see MinGW guide)
+**`bin/win/crylod.exe not found`**  
+→ Cross-compile the CryLo node for Windows first (see MinGW guide)
 
 **App starts but daemon fails to launch**  
-→ Check `%APPDATA%\c64chain-wallet\logs\daemon.log` on Windows  
-→ Or `~/.config/c64chain-wallet/logs/daemon.log` on Linux
+→ Check `%APPDATA%\crylo-wallet\logs\daemon.log` on Windows  
+→ Or `~/.config/crylo-wallet/logs/daemon.log` on Linux
 
 **Wallet-RPC fails to start**  
 → Check `logs/wallet-rpc.log`  
@@ -197,7 +197,7 @@ The vesting tab reconstructs per-tier unlock data from coinbase transfers:
 
 ## Cross-compiling the .exe binaries (MinGW)
 
-From the `c64chain-mainnet-main/` root:
+From the `crylo-mainnet-main/` root:
 
 ```bash
 # Install MinGW toolchain
@@ -219,6 +219,6 @@ cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/64-bit-toolchain.cmake \
 make -j$(nproc) daemon simplewallet wallet_rpc_server
 
 # Copy to electron/bin/win/
-cp bin/c64chaind.exe          ../electron/bin/win/
-cp bin/c64chain-wallet-rpc.exe ../electron/bin/win/
+cp bin/crylod.exe          ../electron/bin/win/
+cp bin/crylo-wallet-rpc.exe ../electron/bin/win/
 ```

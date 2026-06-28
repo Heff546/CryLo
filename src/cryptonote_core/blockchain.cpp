@@ -1561,7 +1561,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
 
     uint64_t dev_fund_actual = b.miner_tx.vout[2].amount;
 
-    LOG_PRINT_L2("Dev fund validation passed: " << print_money(dev_fund_actual) << " C64 - address cryptographically verified");
+    LOG_PRINT_L2("Dev fund validation passed: " << print_money(dev_fund_actual) << " CryLo - address cryptographically verified");
   }
 
   return true;

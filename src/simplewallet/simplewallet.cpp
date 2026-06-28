@@ -37,6 +37,7 @@
 // use boost bind placeholders for now
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS 1
 #include <boost/bind.hpp>
+#include "tui/crylo_loading.h"
 
 #include <locale.h>
 #include <thread>
@@ -5596,7 +5597,7 @@ bool simple_wallet::start_mining(const std::vector<std::string>& args)
   message_writer() << "";
   message_writer() << "  Mining from wallet is disabled in CryLo Chain.";
   message_writer() << "  Use the official CryLominer for the authentic";
-  message_writer() << "  Commodore 64 mining experience!";
+  message_writer() << "  CryLo mining experience!";
   message_writer() << "";
   message_writer() << "  Download: https://github.com/CryLochain/CryLominer";
   message_writer() << "  Usage:    ./CryLominer.py --daemon-host 127.0.0.1";
@@ -11018,62 +11019,8 @@ int main(int argc, char* argv[])
   positional_options.add(arg_command.name, -1);
 
 
-  // === CryLo CHAIN: Datasette Animation + Banner ===
-  {
-    const char* colors[] = {
-      "\033[41m", "\033[42m", "\033[43m", "\033[44m",
-      "\033[45m", "\033[46m", "\033[47m", "\033[44m",
-      "\033[41m", "\033[43m", "\033[42m", "\033[45m",
-      "\033[46m", "\033[41m", "\033[44m", "\033[47m"
-    };
-    const char* reset = "\033[0m";
-    fprintf(stderr, "\033[2J\033[H");
-    fprintf(stderr, "\n\033[36m    PRESS PLAY ON TAPE\033[0m\n\n");
-    fflush(stderr);
-    usleep(1500000);
-    fprintf(stderr, "\033[36m    OK\033[0m\n\n");
-    fflush(stderr);
-    usleep(500000);
-    srand(time(NULL));
-    for (int f = 0; f < 60; f++) {
-      std::string ln = "    ";
-      for (int x = 0; x < 76; x++) {
-        int ci = (x + f * 3 + (rand() % 3)) % 16;
-        ln += colors[ci];
-        ln += " ";
-      }
-      ln += reset;
-      fprintf(stderr, "%s\n", ln.c_str());
-      fflush(stderr);
-      usleep(50000);
-    }
-    fprintf(stderr, "\n");
-    fflush(stderr);
-    usleep(300000);
-    fprintf(stderr, "\033[36m    FOUND CryLoWALLET\033[0m\n");
-    fflush(stderr);
-    usleep(800000);
-    fprintf(stderr, "\033[36m    LOADING...\033[0m\n");
-    fflush(stderr);
-    usleep(1000000);
-    fprintf(stderr, "\033[36m    READY.\033[0m\n\n");
-    fflush(stderr);
-    usleep(300000);
+  crylotui::play_crylo_loading_screen("CryLo CLI Wallet Testnet V4");
 
-    // CryLo Banner
-    fprintf(stderr, "\033[2J\033[H");
-    fprintf(stderr, "\033[44m\033[97m");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "    **** CryLo CHAIN WALLET V1.0 ****\n");
-    fprintf(stderr, "    64K RAM SYSTEM  38911 BASIC BYTES FREE\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "    READY.\n");
-    fprintf(stderr, "    RUN CryLoWALLET\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "\033[0m\n");
-    fflush(stderr);
-  }
-  // === END CryLo CHAIN ===
 
   boost::optional<po::variables_map> vm;
   bool should_terminate = false;

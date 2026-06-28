@@ -4308,7 +4308,7 @@ std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> BlockchainLMDB::get
       uint64_t amount = i->first;
       uint64_t num_elems = std::get<0>(i->second);
       while (num_elems > 0) {
-        // C64 FIX: Use the real unlock_time stored in output_data_t.
+        // CryLo fix: Use the real unlock_time stored in output_data_t.
         // Coinbase outputs have long vesting locks — height+4 is wrong for CryLo Chain.
         const output_data_t od = get_output_key(amount, num_elems - 1, false);
         if (od.unlock_time <= blockchain_height)

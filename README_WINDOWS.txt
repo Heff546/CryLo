@@ -1,5 +1,5 @@
 ================================================================================
-C64 CHAIN — MINING ON WINDOWS (WSL Ubuntu 24) — STEP BY STEP
+CryLo — MINING ON WINDOWS (WSL Ubuntu 24) — STEP BY STEP
 ================================================================================
 From zero to mining in ~20 minutes
 Tested on Windows 10/11 with WSL2
@@ -11,7 +11,7 @@ WHAT IS WSL?
 
 WSL (Windows Subsystem for Linux) lets you run a full Linux environment
 directly inside Windows, no dual boot or virtual machine needed. It's built
-into Windows 10/11 and is the easiest way to mine C64 Chain from a Windows PC.
+into Windows 10/11 and is the easiest way to mine CryLo from a Windows PC.
 
 
 STEP 1 — INSTALL WSL2 + UBUNTU 24.04
@@ -51,8 +51,8 @@ STEP 4 — BUILD THE NODE
 ================================================================================
 
 cd ~
-git clone https://github.com/oxynaz/c64chain-mainnet.git
-cd c64chain-mainnet
+git clone https://github.com/oxynaz/crylo-mainnet.git
+cd crylo-mainnet
 mkdir build && cd build
 cmake ..
 make -j$(nproc)
@@ -60,17 +60,17 @@ make -j$(nproc)
 This will take 10-20 minutes depending on your CPU.
 When done, verify:
 
-./bin/c64chaind-mainnet --version
+./bin/crylod-mainnet --version
 
-You should see: C64 Chain 'Mainnet' (v1.0.0-...)
+You should see: CryLo 'Mainnet' (v1.0.0-...)
 
 
 STEP 5 — START THE NODE
 ================================================================================
 
-screen -dmS node bash -c "cd ~/c64chain-mainnet/build/bin && ./c64chaind-mainnet --non-interactive --log-level=1 --out-peers 64 --in-peers 128"
+screen -dmS node bash -c "cd ~/crylo-mainnet/build/bin && ./crylod-mainnet --non-interactive --log-level=1 --out-peers 64 --in-peers 128"
 
-To view the node (Commodore 64 boot screen!):
+To view the node (CryLo boot screen!):
 
 screen -r node
 
@@ -80,15 +80,15 @@ Wait about 2 minutes for the node to sync, then verify with this command:
 
 curl -s http://127.0.0.1:19641/json_rpc -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' -H 'Content-Type: application/json' | python3 -c 'import sys,json;d=json.load(sys.stdin)["result"];print("Height:",d["height"],"Synced:",d["synchronized"])'
 
-You should see a block height matching the explorer (https://c64chain.com)
+You should see a block height matching the explorer (https://crylo.com)
 and "Synced: True". If not, wait a bit more and try again.
 
 
 STEP 6 — CREATE A WALLET
 ================================================================================
 
-cd ~/c64chain-mainnet/build/bin
-./c64wallet-mainnet --daemon-address=127.0.0.1:19641 --generate-new-wallet=$HOME/c64wallet
+cd ~/crylo-mainnet/build/bin
+./crylo-wallet-mainnet --daemon-address=127.0.0.1:19641 --generate-new-wallet=$HOME/crylo-wallet
 
 It will ask you to:
 1. Set a password (remember it!)
@@ -107,8 +107,8 @@ STEP 7 — BUILD THE MINER
 ================================================================================
 
 cd ~
-git clone https://github.com/oxynaz/c64miner.git
-cd c64miner
+git clone https://github.com/oxynaz/crylo-miner.git
+cd crylo-miner
 mkdir build && cd build
 cmake .. -DWITH_OPENCL=OFF -DWITH_CUDA=OFF -DWITH_HWLOC=OFF
 make -j$(nproc)
@@ -119,7 +119,7 @@ STEP 8 — CONFIGURE POOL MINING (Suprnova)
 
 Replace YOUR_WALLET_ADDRESS with your actual Wo... address:
 
-cd ~/c64miner/build
+cd ~/crylo-miner/build
 cat > config.json << 'EOF'
 {
     "autosave": false,
@@ -128,11 +128,11 @@ cat > config.json << 'EOF'
     "opencl": false,
     "cuda": false,
     "pools": [{
-        "url": "stratum+tcp://c64.suprnova.cc:6465",
+        "url": "stratum+tcp://crylo.suprnova.cc:6465",
         "user": "YOUR_WALLET_ADDRESS",
         "pass": "x",
-        "algo": "rx/c64",
-        "coin": "c64chain"
+        "algo": "rx/crylo",
+        "coin": "crylo"
     }],
     "print-time": 5
 }
@@ -144,14 +144,14 @@ EOF
 STEP 9 — START MINING!
 ================================================================================
 
-sudo ./c64miner -c config.json -t $(nproc)
+sudo ./crylo-miner -c config.json -t $(nproc)
 
 It will ask for your admin password (the one you set in Step 1).
 The miner is now sending shares to Suprnova pool!
 
-Check your stats at: https://c64.suprnova.cc/index.html
+Check your stats at: https://crylo.suprnova.cc/index.html
 
-⚠️ Disclaimer: Suprnova is mentioned as an example only. The C64 Chain team
+⚠️ Disclaimer: Suprnova is mentioned as an example only. The CryLo team
 is not affiliated with this pool. You are free to use any compatible pool.
 See the #mining channel on Discord for other options.
 
@@ -163,7 +163,7 @@ USEFUL COMMANDS
 --- Node ---
 
 Start node:
-screen -dmS node bash -c "cd ~/c64chain-mainnet/build/bin && ./c64chaind-mainnet --non-interactive --log-level=1 --out-peers 64 --in-peers 128"
+screen -dmS node bash -c "cd ~/crylo-mainnet/build/bin && ./crylod-mainnet --non-interactive --log-level=1 --out-peers 64 --in-peers 128"
 
 Check node status:
 curl -s http://127.0.0.1:19641/json_rpc -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' -H 'Content-Type: application/json' | python3 -c 'import sys,json;d=json.load(sys.stdin)["result"];print("Height:",d["height"],"Synced:",d["synchronized"])'
@@ -171,22 +171,22 @@ curl -s http://127.0.0.1:19641/json_rpc -d '{"jsonrpc":"2.0","id":"0","method":"
 --- Wallet ---
 
 Open your wallet:
-cd ~/c64chain-mainnet/build/bin
-./c64wallet-mainnet --daemon-address=127.0.0.1:19641 --wallet-file=$HOME/c64wallet
+cd ~/crylo-mainnet/build/bin
+./crylo-wallet-mainnet --daemon-address=127.0.0.1:19641 --wallet-file=$HOME/crylo-wallet
 
 Inside wallet:
 balance — Check your balance (locked/unlocked)
 vesting — Show vesting unlock timeline
 address all — Show your wallet address
-transfer ADDR AMOUNT — Send C64 coins
+transfer ADDR AMOUNT — Send CryLo coins
 seed — Display recovery seed phrase
 exit — Quit wallet
 
 --- Miner ---
 
 Start mining:
-cd ~/c64miner/build
-sudo ./c64miner -c config.json -t $(nproc)
+cd ~/crylo-miner/build
+sudo ./crylo-miner -c config.json -t $(nproc)
 
 Stop mining:
 Ctrl+C
@@ -208,7 +208,7 @@ screen -X -S node quit
 --- Git (updating to a new version) ---
 
 Update the node:
-cd ~/c64chain-mainnet
+cd ~/crylo-mainnet
 git fetch --tags --force
 git pull
 rm -rf build
@@ -217,7 +217,7 @@ cmake ..
 make -j$(nproc)
 
 Update the miner:
-cd ~/c64miner
+cd ~/crylo-miner
 git fetch --tags --force
 git pull
 rm -rf build
@@ -242,7 +242,7 @@ TROUBLESHOOTING
 → Your node is not running or not synced yet. Check Step 5.
 
 "Miner shows 0 H/s"
-→ Try running with sudo: sudo ./c64miner -c config.json
+→ Try running with sudo: sudo ./crylo-miner -c config.json
 
 Build errors during cmake/make
 → Make sure you installed ALL dependencies from Step 2.
@@ -262,12 +262,12 @@ Control Panel → Programs → Turn Windows features on or off
 RESOURCES
 ================================================================================
 
-Block Explorer: https://c64chain.com
-Suprnova Pool: https://c64.suprnova.cc/index.html
+Block Explorer: https://crylo.com
+Suprnova Pool: https://crylo.suprnova.cc/index.html
 rplant Pool: https://pool.rplant.xyz
 Discord: https://discord.gg/MTRgHT8r45
-GitHub (Node): https://github.com/oxynaz/c64chain-mainnet
-GitHub (Miner): https://github.com/oxynaz/c64miner
+GitHub (Node): https://github.com/oxynaz/crylo-mainnet
+GitHub (Miner): https://github.com/oxynaz/crylo-miner
 
 ================================================================================
 Happy mining! 🕹️⛏️

@@ -711,6 +711,7 @@ namespace cryptonote
       std::string wide_difficulty;
       uint64_t difficulty_top64;
       uint64_t target;
+      uint64_t block_reward;
       uint64_t tx_count;
       uint64_t tx_pool_size;
       uint64_t alt_blocks_count;
@@ -753,6 +754,7 @@ namespace cryptonote
         KV_SERIALIZE(wide_difficulty)
         KV_SERIALIZE(difficulty_top64)
         KV_SERIALIZE(target)
+        KV_SERIALIZE(block_reward)
         KV_SERIALIZE(tx_count)
         KV_SERIALIZE(tx_pool_size)
         KV_SERIALIZE(alt_blocks_count)

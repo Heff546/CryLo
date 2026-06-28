@@ -27,6 +27,7 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(simplewallet_sources
+  ../tui/crylo_loading.cpp
   simplewallet.cpp)
 
 set(simplewallet_headers)

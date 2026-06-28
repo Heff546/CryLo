@@ -17,6 +17,23 @@ const WALLET_DIR_NAME   = 'wallets';
 const LOG_DIR_NAME      = 'logs';
 const DATA_DIR_NAME     = 'CryLo-testnet';
 
+// CryLo and wCRYLO use 11 decimal places. Nexus native CRYLO (GAS) uses 18.
+const CRYLO_DECIMALS = 11;
+const WCRYLO_DECIMALS = 11;
+const NEXUS_GAS_DECIMALS = 18;
+
+function parseWcryloUnits(amountText) {
+  return ethers.parseUnits(String(amountText), WCRYLO_DECIMALS);
+}
+
+function formatWcryloUnits(amount) {
+  return ethers.formatUnits(amount, WCRYLO_DECIMALS);
+}
+
+function formatNexusGasUnits(amount) {
+  return ethers.formatUnits(amount, NEXUS_GAS_DECIMALS);
+}
+
 const NEXUS_RPC_URL =
   process.env.NEXUS_RPC_URL ||
   'http://34.118.158.133/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
@@ -582,7 +599,7 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
           owner,
           code,
           eligible: !!approved,
-          codePool: ethers.formatEther(poolBalance),
+          codePool: formatWcryloUnits(poolBalance),
           redeemed: redeemedCount.toString()
         });
       } catch (_) {
@@ -594,7 +611,7 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
       ok: true,
       linkedAddress,
       nextTokenId,
-      vaultBalance: ethers.formatEther(vaultBalance),
+      vaultBalance: formatWcryloUnits(vaultBalance),
       nfts: owned
     };
   } catch (e) {
@@ -718,7 +735,7 @@ ipcMain.handle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloAd
     const bridgeArtifact = require('./src/abis/CryLoBridge.json');
 
     const bridge = new ethers.Contract(bridgeAddress, bridgeArtifact.abi, wallet);
-    const amount = ethers.parseUnits(String(amountText), 11);
+    const amount = parseWcryloUnits(amountText);
 
     const nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
@@ -794,7 +811,7 @@ ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
 
     return {
       ok: true,
-      balance: ethers.formatUnits(balance, 11)
+      balance: formatWcryloUnits(balance)
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -819,7 +836,7 @@ ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
 
     return {
       ok: true,
-      balance: ethers.formatUnits(balance, 11)
+      balance: formatWcryloUnits(balance)
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -844,7 +861,7 @@ ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
 
     return {
       ok: true,
-      rewards: ethers.formatUnits(rewards, 11)
+      rewards: formatWcryloUnits(rewards)
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -895,7 +912,7 @@ ipcMain.handle('nexus-stake-wcrylo', async (_, amountText, walletName, cryloAddr
     const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
     const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
 
-    const amount = ethers.parseUnits(String(amountText), 11);
+    const amount = parseWcryloUnits(amountText);
     let nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
     let tx = await token.approve(stakingAddress, amount, { nonce });
@@ -930,7 +947,7 @@ ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText, walletName, cryloAd
 
     const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
 
-    const amount = ethers.parseUnits(String(amountText), 11);
+    const amount = parseWcryloUnits(amountText);
     const nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
     const tx = await staking.unstake(amount, { nonce });
@@ -972,10 +989,10 @@ ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
     return {
       ok: true,
       tier: tier.toString(),
-      stake: ethers.formatUnits(stake, 11),
-      pending: ethers.formatUnits(pending, 11),
-      operatorStake: ethers.formatUnits(operatorStake, 11),
-      validatorStake: ethers.formatUnits(validatorStake, 11)
+      stake: formatWcryloUnits(stake),
+      pending: formatWcryloUnits(pending),
+      operatorStake: formatWcryloUnits(operatorStake),
+      validatorStake: formatWcryloUnits(validatorStake)
     };
   } catch (e) {
     return { ok: false, error: e.shortMessage || e.reason || e.message };
@@ -1232,14 +1249,14 @@ ipcMain.handle('nexus-gas-status', async (_, linkedAddress) => {
 
     return {
       ok: true,
-      nativeGas: ethers.formatEther(nativeBalance),
-      dailyGasAmount: ethers.formatEther(dailyGasAmount),
-      starterGasAmount: ethers.formatEther(starterGasAmount),
-      lowGasThreshold: ethers.formatEther(lowGasThreshold),
+      nativeGas: formatNexusGasUnits(nativeBalance),
+      dailyGasAmount: formatNexusGasUnits(dailyGasAmount),
+      starterGasAmount: formatNexusGasUnits(starterGasAmount),
+      lowGasThreshold: formatNexusGasUnits(lowGasThreshold),
       lastGasClaimAt: Number(lastGasClaimAt),
       lastActivityAt: Number(lastActivityAt),
       canClaim,
-      vaultBalance: ethers.formatEther(vaultBalance)
+      vaultBalance: formatNexusGasUnits(vaultBalance)
     };
   } catch (e) {
     return { ok: false, error: e.shortMessage || e.reason || e.message };
@@ -1271,7 +1288,7 @@ ipcMain.handle('nexus-buy-gas-wcrylo', async (_, amountText, walletName, cryloAd
     const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
     const gm = new ethers.Contract(GAS_MANAGER_ADDRESS, GAS_MANAGER_ABI, wallet);
 
-    const amount = ethers.parseUnits(String(amountText), 11);
+    const amount = parseWcryloUnits(amountText);
 
     let nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
@@ -1388,17 +1405,17 @@ ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
       let amount = '';
 
       if (p.name === 'Transfer') {
-        amount = ethers.formatUnits(p.args.value, 11) + ' wCRYLO';
+        amount = formatWcryloUnits(p.args.value) + ' wCRYLO';
       } else if (p.args.amount != null) {
-        amount = ethers.formatUnits(p.args.amount, 11);
-        if (p.name.includes('Gas') || p.name === 'StarterGasSent') amount += ' native CryLo';
+        amount = formatWcryloUnits(p.args.amount);
+        if (p.name.includes('Gas') || p.name === 'StarterGasSent') amount += ' CRYLO (GAS)';
         else amount += ' wCRYLO';
       } else if (p.args.wcryloAmount != null) {
         amount =
-          ethers.formatUnits(p.args.wcryloAmount, 11) +
+          formatWcryloUnits(p.args.wcryloAmount) +
           ' wCRYLO → ' +
-          ethers.formatEther(p.args.nativeGasAmount) +
-          ' native CryLo';
+          formatNexusGasUnits(p.args.nativeGasAmount) +
+          ' CRYLO (GAS)';
       }
 
       txs.push({

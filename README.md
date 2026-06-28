@@ -22,7 +22,7 @@ CryLo is a CPU-mined cryptocurrency designed around fair distribution, accessibl
 
 ### Fair CPU Mining
 
-* RandomX-based **rx/c64** mining algorithm
+* RandomX-based **rx/crylo** mining algorithm
 * CPU-only mining
 * Native solo mining support
 * Integrated daemon mining
@@ -351,7 +351,7 @@ Requirements:
 | P2P Port             | 22640            |
 | RPC Port             | 22641            |
 | ZMQ Port             | 22642            |
-| Mining Algorithm     | rx/c64           |
+| Mining Algorithm     | rx/crylo           |
 | Block Target         | 210 Seconds      |
 | Maximum Supply       | 5,000,000 CRYLO  |
 | Starting Reward      | 2.5 CRYLO        |
@@ -391,7 +391,7 @@ Key design goals include:
 | Feature                | CryLo                            |
 | ---------------------- | -------------------------------- |
 | Mining Model           | CPU-Only                         |
-| Algorithm              | rx/c64                           |
+| Algorithm              | rx/crylo                           |
 | Supply Model           | Fixed 5,000,000 Maximum Supply   |
 | Block Target           | 210 Seconds                      |
 | Miner Rewards          | 50% Instant / 50% 45-Day Vesting |
@@ -449,7 +449,7 @@ CryLo is a custom blockchain project derived from the CryptoNote codebase and bu
 
 Project lineage:
 
-**Monero → Wownero → C64 Chain → CryLo**
+**Monero → Wownero → CryLo**
 
 While CryLo inherits technology from these projects, it introduces its own network economics, mining infrastructure, wallet ecosystem, reward distribution model, and long-term development vision.
 
@@ -461,5 +461,5 @@ CryLo is released under the **GNU General Public License v3.0 (GPL-3.0)**.
 
 See the [LICENSE](LICENSE) file for complete licensing information.
 
-All applicable upstream copyrights, licenses, and attribution notices from Monero, Wownero, and C64 Chain remain preserved in accordance with their respective open-source licenses.
+All applicable upstream copyrights, licenses, and attribution notices from Monero, Wownero, and CryLo remain preserved in accordance with their respective open-source licenses.
 
