@@ -127,6 +127,16 @@ set(blockchain_stats_sources
   blockchain_stats.cpp
   )
 
+
+set(crylo_genesis_sources
+  crylo_genesis.cpp
+  )
+
+set(crylo_genesis_private_headers)
+
+monero_private_headers(crylo_genesis
+  ${crylo_genesis_private_headers})
+
 set(blockchain_stats_private_headers)
 
 monero_private_headers(blockchain_stats
@@ -287,6 +297,29 @@ set_property(TARGET blockchain_stats
 	PROPERTY
 	OUTPUT_NAME "CryLo-blockchain-stats")
 install(TARGETS blockchain_stats DESTINATION bin)
+
+
+monero_add_executable(crylo_genesis
+  ${crylo_genesis_sources}
+  ${crylo_genesis_private_headers})
+
+target_link_libraries(crylo_genesis
+  PRIVATE
+    cryptonote_core
+    blockchain_db
+    version
+    epee
+    cncrypto
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_THREAD_LIBRARY}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${EXTRA_LIBRARIES})
+
+set_property(TARGET crylo_genesis
+  PROPERTY
+  OUTPUT_NAME "CryLo-genesis")
+# Development-only tool. Do not install/package with user releases.
 
 monero_add_executable(blockchain_prune_known_spent_data
   ${blockchain_prune_known_spent_data_sources}

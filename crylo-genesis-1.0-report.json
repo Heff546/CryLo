@@ -1,0 +1,16 @@
+{
+  "network": "CryLo",
+  "release": "Genesis 1.0",
+  "nettype": "testnet",
+  "generated": "2026-07-09T22:39:27Z",
+  "git_commit": "454a3aa68d5ec4ac93419dee30b90b79b3a13eac",
+  "crylo_decimals": 11,
+  "wCryLo_decimals": 11,
+  "CRYLO_gas_decimals": 18,
+  "difficulty_target_seconds": 210,
+  "genesis_address": "9yX7ckWWoQn6xzmaEi8uxdLk8DKR3JeJrBiBDHjPcn7Qe8AXEFvAJABAfW9jBszXA61HDShNnK8jF7TVaRSG9xdoKjdk9Mc",
+  "genesis_tx": "02a00201ff00018088a5a9a3070230825c944db1504895416775e23e3db2e62a79c03c041da5d6be77c8936e23d62101f0694c37e3ece80fd84617d0199a87a32fa46423ff23de854acf8c827aa3b50200",
+  "genesis_nonce": 0,
+  "genesis_hash": "f99717f84f61e3a7f7229bbfe57333cfef7b290faaa7c2d0aaa74fe691c6d213",
+  "tx_hash": "ef80e200ab215f0e1c94ae3cea18c9f814fc907b68207c6677f9971d7bc5e87b"
+}
