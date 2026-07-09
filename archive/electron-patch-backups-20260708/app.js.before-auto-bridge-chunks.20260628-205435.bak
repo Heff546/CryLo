@@ -1375,53 +1375,9 @@ function resetBridgeFormAfterMint() {
 
 
 
-
-async function refreshBridgeRelatedViews() {
-  try { await refreshNexusWcryloBalance(); } catch (_) {}
-  try { await refreshNexusStakedBalance(); } catch (_) {}
-  try { await refreshNexusGasStatus(); } catch (_) {}
-  try { if (typeof loadNexusTransactions === 'function') await loadNexusTransactions(); } catch (_) {}
-  try { if (typeof updateBalance === 'function') await updateBalance(); } catch (_) {}
-}
-
 function setBridgeOutStatus(msg) {
   const el = document.getElementById('bridge-out-status');
   if (el) el.textContent = `Release status: ${msg}`;
-}
-
-
-let bridgeReleasePollTimer = null;
-
-function pollBridgeReleaseStatus(nexusTxHash) {
-  if (!nexusTxHash || nexusTxHash === 'sent') return;
-  if (bridgeReleasePollTimer) clearInterval(bridgeReleasePollTimer);
-
-  bridgeReleasePollTimer = setInterval(async () => {
-    try {
-      const res = await window.crylo.bridgeReleaseStatus(nexusTxHash);
-      if (!res.ok) {
-        setBridgeOutStatus(res.error || 'Release status check failed.');
-        return;
-      }
-
-      if (res.released && res.release) {
-        clearInterval(bridgeReleasePollTimer);
-        bridgeReleasePollTimer = null;
-
-        const l1Tx =
-          res.release.l1_tx_hash ||
-          res.release.crylo_tx_hash ||
-          'released';
-
-        setBridgeOutStatus(`✅ Release completed. CryLo TX: ${l1Tx}`);
-        await refreshBridgeRelatedViews();
-        setTimeout(refreshBridgeRelatedViews, 3000);
-        setTimeout(refreshBridgeRelatedViews, 10000);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }, 5000);
 }
 
 async function startCryLoBridgeOut() {
@@ -1524,108 +1480,77 @@ async function startCryLoBridgeIn() {
     refreshBridgeAddressFields();
 
     const amountText = document.getElementById('bridge-amount')?.value || '';
-    const totalAmount = Number(amountText);
-
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+    const amountAtomic = cryloToAtomic(amountText);
+    const amountNumber = Number(amountText);
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
       throw new Error('Enter a valid bridge amount.');
     }
-
-    if (totalAmount > 150) {
-      throw new Error('Bridge limit is currently 150 CRYLO per session.');
+    if (amountNumber > 150) {
+      throw new Error('Bridge limit is currently 150 CRYLO. Amounts over 50 CRYLO should be split into multiple 50 CRYLO bridge deposits.');
     }
 
-    const CHUNK_SIZE = 50;
-    const chunks = [];
-    let remaining = totalAmount;
+    setBridgeStatus('creating deposit request');
 
-    while (remaining > 0) {
-      const chunk = Math.min(CHUNK_SIZE, remaining);
-      chunks.push(Number(chunk.toFixed(11)));
-      remaining = Number((remaining - chunk).toFixed(11));
+    const req = await window.crylo.bridgeRequest({
+      nexusAddress,
+      cryloAddress: State.address,
+      amountAtomic
+    });
+
+    if (!req.ok) throw new Error(req.error || 'Bridge request failed.');
+
+    const bridgePaymentId = req.paymentId || req.payment_id;
+    const bridgeSendAddress = req.integratedAddress || req.integrated_address;
+
+    if (!bridgePaymentId || !bridgeSendAddress) {
+      throw new Error('Bridge API did not return payment ID and integrated address.');
     }
 
-    setBridgeStatus(`preparing ${chunks.length} bridge deposit${chunks.length === 1 ? '' : 's'}`);
+    setBridgeField('bridge-payment-id', bridgePaymentId);
+    setBridgeField('bridge-integrated-address', bridgeSendAddress);
+    setBridgeField('bridge-nexus-tx', '—');
 
-    const sent = [];
+    setBridgeStatus('sending CryLo deposit');
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkAmount = chunks[i];
-      const chunkText = String(chunkAmount);
-      const amountAtomic = cryloToAtomic(chunkText);
+    const transferParams = {
+      destinations: [{
+        address: bridgeSendAddress,
+        amount: Number(amountAtomic)
+      }],
+      account_index: 0,
+      subaddr_indices: [0],
+      priority: 0,
+      unlock_time: 0,
+      get_tx_key: true
+    };
 
-      setBridgeStatus(`creating deposit ${i + 1}/${chunks.length} for ${chunkText} CRYLO`);
+    setBridgeStatus('sending CryLo deposit with transfer_split');
+    let tx = await window.crylo.walletRpc('transfer_split', transferParams, 120000);
 
-      const req = await window.crylo.bridgeRequest({
-        nexusAddress,
-        cryloAddress: State.address,
-        amountAtomic
-      });
+    if (!tx.ok) throw new Error(
+      (tx.error || '').includes('not enough money')
+        ? 'Not enough unlocked CRYLO. Try a smaller amount.'
+        : (tx.error || 'CryLo transfer failed.')
+    );
 
-      if (!req.ok) throw new Error(req.error || `Bridge request ${i + 1} failed.`);
+    const txHash =
+      tx.result?.tx_hash ||
+      tx.result?.tx_hash_list?.[0] ||
+      tx.result?.result?.tx_hash ||
+      tx.result?.result?.tx_hash_list?.[0] ||
+      tx.result?.txid ||
+      '';
 
-      const bridgePaymentId = req.paymentId || req.payment_id;
-      const bridgeSendAddress = req.integratedAddress || req.integrated_address;
-
-      if (!bridgePaymentId || !bridgeSendAddress) {
-        throw new Error('Bridge API did not return payment ID and integrated address.');
-      }
-
-      if (i === 0) {
-        setBridgeField('bridge-payment-id', bridgePaymentId);
-        setBridgeField('bridge-integrated-address', bridgeSendAddress);
-        setBridgeField('bridge-nexus-tx', '—');
-      }
-
-      const transferParams = {
-        destinations: [{
-          address: bridgeSendAddress,
-          amount: Number(amountAtomic)
-        }],
-        account_index: 0,
-        subaddr_indices: [0],
-        priority: 0,
-        unlock_time: 0,
-        get_tx_key: true
-      };
-
-      setBridgeStatus(`sending deposit ${i + 1}/${chunks.length} for ${chunkText} CRYLO`);
-
-      let tx = await window.crylo.walletRpc('transfer_split', transferParams, 120000);
-
-      if (!tx.ok) {
-        throw new Error(
-          (tx.error || '').includes('not enough money')
-            ? 'Not enough unlocked CRYLO. Try a smaller amount.'
-            : (tx.error || `CryLo transfer ${i + 1} failed.`)
-        );
-      }
-
-      const txHash =
-        tx.result?.tx_hash ||
-        tx.result?.tx_hash_list?.[0] ||
-        tx.result?.result?.tx_hash ||
-        tx.result?.result?.tx_hash_list?.[0] ||
-        tx.result?.txid ||
-        '';
-
-      sent.push({
-        paymentId: bridgePaymentId,
-        cryloTx: txHash,
-        amount: chunkText
-      });
-
-      setBridgeField('bridge-crylo-tx', sent.map(x => x.cryloTx || 'sent').join(', '));
-    }
+    setBridgeField('bridge-crylo-tx', txHash || 'sent');
 
     localStorage.setItem('cryloBridgePending', JSON.stringify({
-      paymentId: sent[0]?.paymentId,
-      paymentIds: sent.map(x => x.paymentId),
-      deposits: sent,
+      paymentId: bridgePaymentId,
+      cryloTx: txHash,
       createdAt: Date.now()
     }));
 
-    setBridgeStatus(`waiting for CryLo confirmations on ${sent.length} deposit${sent.length === 1 ? '' : 's'}`);
-    pollCryLoBridgeStatus(sent[0]?.paymentId);
+    setBridgeStatus('waiting for CryLo confirmations');
+    pollCryLoBridgeStatus(bridgePaymentId);
   } catch (e) {
     console.error(e);
     setBridgeStatus(e.message || 'bridge failed');
@@ -1658,10 +1583,7 @@ function pollCryLoBridgeStatus(paymentId) {
           'processed';
 
         setBridgeField('bridge-nexus-tx', mintTx);
-        setBridgeStatus('✅ Mint completed — wCRYLO received.');
-        await refreshBridgeRelatedViews();
-        setTimeout(refreshBridgeRelatedViews, 3000);
-        setTimeout(refreshBridgeRelatedViews, 10000);
+        setBridgeStatus('minted');
         resetBridgeFormAfterMint();
         await refreshNexusWcryloBalance();
         await refreshNexusGasStatus();

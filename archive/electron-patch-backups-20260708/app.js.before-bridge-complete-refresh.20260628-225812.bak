@@ -1375,53 +1375,9 @@ function resetBridgeFormAfterMint() {
 
 
 
-
-async function refreshBridgeRelatedViews() {
-  try { await refreshNexusWcryloBalance(); } catch (_) {}
-  try { await refreshNexusStakedBalance(); } catch (_) {}
-  try { await refreshNexusGasStatus(); } catch (_) {}
-  try { if (typeof loadNexusTransactions === 'function') await loadNexusTransactions(); } catch (_) {}
-  try { if (typeof updateBalance === 'function') await updateBalance(); } catch (_) {}
-}
-
 function setBridgeOutStatus(msg) {
   const el = document.getElementById('bridge-out-status');
   if (el) el.textContent = `Release status: ${msg}`;
-}
-
-
-let bridgeReleasePollTimer = null;
-
-function pollBridgeReleaseStatus(nexusTxHash) {
-  if (!nexusTxHash || nexusTxHash === 'sent') return;
-  if (bridgeReleasePollTimer) clearInterval(bridgeReleasePollTimer);
-
-  bridgeReleasePollTimer = setInterval(async () => {
-    try {
-      const res = await window.crylo.bridgeReleaseStatus(nexusTxHash);
-      if (!res.ok) {
-        setBridgeOutStatus(res.error || 'Release status check failed.');
-        return;
-      }
-
-      if (res.released && res.release) {
-        clearInterval(bridgeReleasePollTimer);
-        bridgeReleasePollTimer = null;
-
-        const l1Tx =
-          res.release.l1_tx_hash ||
-          res.release.crylo_tx_hash ||
-          'released';
-
-        setBridgeOutStatus(`✅ Release completed. CryLo TX: ${l1Tx}`);
-        await refreshBridgeRelatedViews();
-        setTimeout(refreshBridgeRelatedViews, 3000);
-        setTimeout(refreshBridgeRelatedViews, 10000);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }, 5000);
 }
 
 async function startCryLoBridgeOut() {
@@ -1658,10 +1614,7 @@ function pollCryLoBridgeStatus(paymentId) {
           'processed';
 
         setBridgeField('bridge-nexus-tx', mintTx);
-        setBridgeStatus('✅ Mint completed — wCRYLO received.');
-        await refreshBridgeRelatedViews();
-        setTimeout(refreshBridgeRelatedViews, 3000);
-        setTimeout(refreshBridgeRelatedViews, 10000);
+        setBridgeStatus('minted');
         resetBridgeFormAfterMint();
         await refreshNexusWcryloBalance();
         await refreshNexusGasStatus();

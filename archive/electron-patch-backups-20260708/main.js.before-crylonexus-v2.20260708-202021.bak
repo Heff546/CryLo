@@ -36,9 +36,9 @@ function formatNexusGasUnits(amount) {
 
 const NEXUS_RPC_URL =
   process.env.NEXUS_RPC_URL ||
-  'http://34.118.158.133:9654/ext/bc/EPA2TKpkcmYRdaa4QKMYdFHkjzy5SWuGHEiBwznNspdTqexrQ/rpc';
+  'http://34.118.158.133/ext/bc/Vhsxxc8YGQ6rRWvrVVeCMr2VJ7nJwML8uh1gKubQEXLTy12c3/rpc';
 
-const BRIDGE_API_URL = 'http://34.118.158.133:8088';
+const BRIDGE_API_URL = 'http://192.168.40.43:8088';
 
 // Detect OS
 const IS_WIN   = process.platform === 'win32';
@@ -351,7 +351,7 @@ function safeNexusFileName(cryloAddress) {
 
 
 async function registerBoundNexusWallet(nexusAddress) {
-  const url = `${BRIDGE_API_URL}/nexus/register-bound-wallet`;
+  const url = 'http://192.168.40.43:8088/nexus/register-bound-wallet';
 
   const res = await fetch(url, {
     method: 'POST',
@@ -554,7 +554,7 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
+    const tokenAddress = '0x32a4d52d12Ac6c8af9Ad5749Fe5344dC68ea8Bb8';
     const nftAddress = '0x2C4A328a533C699c318eD65df8C4F3E98D462a56';
     const vaultAddress = '0xD1946c051c31722d1Dab8698897f0109225e38e1';
 
@@ -732,7 +732,7 @@ ipcMain.handle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloAd
     const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
     const wallet = loadBoundNexusWallet(walletName, cryloAddress).connect(provider);
 
-    const bridgeAddress = '0x5f59a0f0010468E8bc6bbF551ac839a8Ddc964a2';
+    const bridgeAddress = '0x1EA96575D2619F727E8492e9e79E01be46DAE0a9';
     const bridgeArtifact = require('./src/abis/CryLoBridge.json');
 
     const bridge = new ethers.Contract(bridgeAddress, bridgeArtifact.abi, wallet);
@@ -818,7 +818,7 @@ ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
+    const tokenAddress = '0x32a4d52d12Ac6c8af9Ad5749Fe5344dC68ea8Bb8';
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -843,7 +843,7 @@ ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
+    const stakingAddress = '0x88B22dF76655B7e150AA1682ec956b087f564B92';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -868,7 +868,7 @@ ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
+    const stakingAddress = '0x88B22dF76655B7e150AA1682ec956b087f564B92';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -893,7 +893,7 @@ ipcMain.handle('nexus-claim-rewards', async (_, walletName, cryloAddress) => {
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
+    const stakingAddress = '0x88B22dF76655B7e150AA1682ec956b087f564B92';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -922,8 +922,8 @@ ipcMain.handle('nexus-stake-wcrylo', async (_, amountText, walletName, cryloAddr
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
+    const tokenAddress = '0x32a4d52d12Ac6c8af9Ad5749Fe5344dC68ea8Bb8';
+    const stakingAddress = '0x88B22dF76655B7e150AA1682ec956b087f564B92';
 
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
@@ -962,7 +962,7 @@ ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText, walletName, cryloAd
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
+    const stakingAddress = '0x88B22dF76655B7e150AA1682ec956b087f564B92';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -994,7 +994,7 @@ ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
+    const nodeStakingAddress = '0xe52dCAe33Ad01e1E242A3187cA0CF282B7e87D8e';
     const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -1058,8 +1058,8 @@ ipcMain.handle('nexus-register-operator', async (_, walletName, cryloAddress) =>
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
+    const tokenAddress = '0x32a4d52d12Ac6c8af9Ad5749Fe5344dC68ea8Bb8';
+    const nodeStakingAddress = '0xe52dCAe33Ad01e1E242A3187cA0CF282B7e87D8e';
 
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
     const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
@@ -1085,7 +1085,7 @@ ipcMain.handle('nexus-register-operator', async (_, walletName, cryloAddress) =>
       nexusAddress: wallet.address,
       tier: 'Operator',
       nodeRpc: rpc,
-      chainId: 5546,
+      chainId: 546,
       nodeStakingContract: nodeStakingAddress
     });
 
@@ -1108,8 +1108,8 @@ ipcMain.handle('nexus-register-validator', async (_, walletName, cryloAddress) =
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
+    const tokenAddress = '0x32a4d52d12Ac6c8af9Ad5749Fe5344dC68ea8Bb8';
+    const nodeStakingAddress = '0xe52dCAe33Ad01e1E242A3187cA0CF282B7e87D8e';
 
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
     const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
@@ -1135,7 +1135,7 @@ ipcMain.handle('nexus-register-validator', async (_, walletName, cryloAddress) =
       nexusAddress: wallet.address,
       tier: 'Validator',
       nodeRpc: rpc,
-      chainId: 5546,
+      chainId: 546,
       nodeStakingContract: nodeStakingAddress
     });
 
@@ -1151,7 +1151,7 @@ ipcMain.handle('nexus-unregister-node', async (_, walletName, cryloAddress) => {
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
+    const nodeStakingAddress = '0xe52dCAe33Ad01e1E242A3187cA0CF282B7e87D8e';
     const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -1174,7 +1174,7 @@ ipcMain.handle('nexus-claim-node-rewards', async (_, walletName, cryloAddress) =
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
+    const nodeStakingAddress = '0xe52dCAe33Ad01e1E242A3187cA0CF282B7e87D8e';
     const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
 
     const provider = new ethers.JsonRpcProvider(rpc);
@@ -1286,7 +1286,7 @@ app.on('web-contents-created', (_, contents) => {
   });
 });
 
-const GAS_MANAGER_ADDRESS = '0xCB26FebCD655De1946e21db1A17fF9B70Cf536Cf';
+const GAS_MANAGER_ADDRESS = '0x458f2f8b21957a7456807feE8e05c184Fe918AE2';
 const GAS_MANAGER_ABI = [
   'function dailyGasAmount() view returns (uint256)',
   'function starterGasAmount() view returns (uint256)',
@@ -1362,7 +1362,7 @@ ipcMain.handle('nexus-buy-gas-wcrylo', async (_, amountText, walletName, cryloAd
     const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
     const wallet = loadBoundNexusWallet(walletName, cryloAddress).connect(provider);
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
+    const tokenAddress = '0x32a4d52d12Ac6c8af9Ad5749Fe5344dC68ea8Bb8';
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
     const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
     const gm = new ethers.Contract(GAS_MANAGER_ADDRESS, GAS_MANAGER_ABI, wallet);
@@ -1397,10 +1397,10 @@ ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
     const latest = await provider.getBlockNumber();
     const fromBlock = Math.max(0, latest - 50000);
 
-    const wcrylo = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const gasManager = '0xCB26FebCD655De1946e21db1A17fF9B70Cf536Cf';
-    const staking = '0xA51adce930306362528C5064Eb1E69f906CA830A';
-    const nodeStaking = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
+    const wcrylo = '0x32a4d52d12Ac6c8af9Ad5749Fe5344dC68ea8Bb8';
+    const gasManager = '0x458f2f8b21957a7456807feE8e05c184Fe918AE2';
+    const staking = '0x88B22dF76655B7e150AA1682ec956b087f564B92';
+    const nodeStaking = '0xe52dCAe33Ad01e1E242A3187cA0CF282B7e87D8e';
 
     const erc20Iface = new ethers.Interface([
       'event Transfer(address indexed from,address indexed to,uint256 value)'
@@ -1478,7 +1478,7 @@ ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
     }
 
 
-    const bridge = '0x5f59a0f0010468E8bc6bbF551ac839a8Ddc964a2';
+    const bridge = '0x1EA96575D2619F727E8492e9e79E01be46DAE0a9';
     const bridgeIface = new ethers.Interface([
       'event MintedFromCryLo(bytes32 indexed depositId,address indexed to,uint256 amount)',
       'event BurnedForCryLo(address indexed from,string cryloAddress,uint256 amount,uint256 indexed nonce)'

@@ -79,9 +79,6 @@ contextBridge.exposeInMainWorld('crylo', {
   bridgeStatus: (paymentId) =>
     ipcRenderer.invoke('bridge-status', paymentId),
 
-  bridgeReleaseStatus: (nexusTxHash) =>
-    ipcRenderer.invoke('bridge-release-status', nexusTxHash),
-
   nexusBurnForCryLo: (amountText, walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-burn-for-crylo', amountText, walletName, cryloAddress),
 
