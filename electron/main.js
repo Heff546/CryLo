@@ -555,8 +555,8 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
     const rpc = NEXUS_RPC_URL;
 
     const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const nftAddress = '0x2C4A328a533C699c318eD65df8C4F3E98D462a56';
-    const vaultAddress = '0xD1946c051c31722d1Dab8698897f0109225e38e1';
+    const nftAddress = '0x7fdD458940b4D8Be338449Ed495cC504FAdb44Db';
+    const vaultAddress = '0x6faE56421a0dC721b1190a701518BAd95BB26D39';
 
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
     const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
@@ -624,8 +624,8 @@ ipcMain.handle('nexus-buyback-nft', async (_, tokenId, walletName, cryloAddress)
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const nftAddress = '0x2C4A328a533C699c318eD65df8C4F3E98D462a56';
-    const vaultAddress = '0xD1946c051c31722d1Dab8698897f0109225e38e1';
+    const nftAddress = '0x7fdD458940b4D8Be338449Ed495cC504FAdb44Db';
+    const vaultAddress = '0x6faE56421a0dC721b1190a701518BAd95BB26D39';
 
     const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
     const vaultArtifact = require('./src/abis/CryLoBuybackVault.json');
@@ -681,7 +681,7 @@ ipcMain.handle('nexus-burn-nft', async (_, tokenId, walletName, cryloAddress) =>
   try {
     const rpc = NEXUS_RPC_URL;
 
-    const nftAddress = '0x2C4A328a533C699c318eD65df8C4F3E98D462a56';
+    const nftAddress = '0x7fdD458940b4D8Be338449Ed495cC504FAdb44Db';
 
     const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
 
@@ -732,15 +732,32 @@ ipcMain.handle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloAd
     const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
     const wallet = loadBoundNexusWallet(walletName, cryloAddress).connect(provider);
 
-    const bridgeAddress = '0x5f59a0f0010468E8bc6bbF551ac839a8Ddc964a2';
-    const bridgeArtifact = require('./src/abis/CryLoBridge.json');
+    const bridgeAddress = '0x625b2DC4F7f43Be42715DcDCf43dd595f9F932c7';
+    const bridgeArtifact = require('./src/abis/BridgeManager.json');
 
     const bridge = new ethers.Contract(bridgeAddress, bridgeArtifact.abi, wallet);
     const amount = parseWcryloUnits(amountText);
 
     const nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
-    const tx = await bridge.burnForCryLo(cryloAddress, amount, { nonce });
+    const burnId = ethers.keccak256(
+      ethers.solidityPacked(
+        ['address', 'string', 'uint256', 'uint256'],
+        [
+          wallet.address,
+          cryloAddress,
+          amount,
+          BigInt(Date.now())
+        ]
+      )
+    );
+
+    const tx = await bridge.burnForCryLo(
+      burnId,
+      cryloAddress,
+      amount,
+      { nonce }
+    );
     const receipt = await tx.wait();
 
 
@@ -1478,7 +1495,7 @@ ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
     }
 
 
-    const bridge = '0x5f59a0f0010468E8bc6bbF551ac839a8Ddc964a2';
+    const bridge = '0x625b2DC4F7f43Be42715DcDCf43dd595f9F932c7';
     const bridgeIface = new ethers.Interface([
       'event MintedFromCryLo(bytes32 indexed depositId,address indexed to,uint256 amount)',
       'event BurnedForCryLo(address indexed from,string cryloAddress,uint256 amount,uint256 indexed nonce)'
