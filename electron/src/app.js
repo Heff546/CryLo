@@ -2,8 +2,25 @@
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CRYLO_DECIMALS = 11;
-const WCRYLO_DECIMALS = 11;
-const COIN = 100000000000; // 10^11 atomic units = 1 CryLo/wCRYLO
+const wCryLo_DECIMALS = 11;
+const COIN = 100000000000; // 10^11 atomic units = 1 CryLo/wCryLo
+
+// Nexus action estimates are client-side UX values.
+// Economic policy is read live from GasManager.
+const NEXUS_GAS_ESTIMATES = Object.freeze({
+  bridgeRelease: 0.006,
+  nftBuyback: 0.008,
+  nftBurn: 0.008,
+  staking: 0.006,
+  unstaking: 0.006,
+  claimStakingRewards: 0.003,
+  nodeDeregistration: 0.006,
+  claimNodeRewards: 0.003,
+  defaultAction: 0.006
+});
+
+const NEXUS_GAS_SAFETY_MULTIPLIER = 2;
+const NEXUS_AUTOMATIC_GAS_PURCHASE_MIN_WCRYLO = 0.5;
 
 //  CryLo vesting tier unlock delays (in blocks, relative to coinbase height)
 const VESTING_TIERS = [
@@ -24,7 +41,8 @@ const State = {
   unlockedBalance: 0,
   miningActive: false,
   miningStatusTimer: null,
-  miningStartHeight: null
+  miningStartHeight: null,
+  gasPolicy: null
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -341,8 +359,23 @@ async function restoreWallet() {
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 function openMainScreen() {
-  el('setup-screen').classList.add('hidden');
-  el('main-screen').classList.remove('hidden');
+  const setupScreen = el('setup-screen');
+  const mainScreen = el('main-screen');
+
+  /*
+   * Wallet switching may set inline display values while
+   * navigating to the login form. Always clear those values
+   * when opening the active wallet screen again.
+   */
+  if (setupScreen) {
+    setupScreen.classList.add('hidden');
+    setupScreen.style.display = 'none';
+  }
+
+  if (mainScreen) {
+    mainScreen.classList.remove('hidden');
+    mainScreen.style.display = '';
+  }
 
   el('topbar-wallet-name').textContent = State.walletName;
 
@@ -372,13 +405,74 @@ function openMainScreen() {
   }, 10000);
 }
 
+let nexusRefreshPromise = null;
+
+async function refreshNexusDashboard() {
+  // Prevent the timer, button, and transaction handlers from launching
+  // overlapping Nexus refreshes.
+  if (nexusRefreshPromise) {
+    return nexusRefreshPromise;
+  }
+
+  nexusRefreshPromise = (async () => {
+    const refreshTasks = [
+      ['native CRYLO gas', refreshNexusGasStatus],
+      ['wCryLo balance', refreshNexusWcryloBalance],
+      ['staked balance', refreshNexusStakedBalance],
+      ['pending rewards', refreshNexusPendingRewards],
+      ['node status', refreshNexusNodeStatus]
+    ];
+
+    if (document.getElementById('nexus-tx-list')) {
+      refreshTasks.push(['Nexus transactions', loadNexusTransactions]);
+    }
+
+    if (
+      document.getElementById('nexus-nft-list') &&
+      getLinkedNexusAddress()
+    ) {
+      refreshTasks.push(['Nexus NFTs and buyback', loadNexusBuyback]);
+    }
+
+    const results = await Promise.allSettled(
+      refreshTasks.map(([, refreshFn]) => refreshFn())
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(
+          `Nexus refresh failed for ${refreshTasks[index][0]}:`,
+          result.reason
+        );
+      }
+    });
+
+    return {
+      ok: results.every(result => result.status === 'fulfilled'),
+      results
+    };
+  })();
+
+  try {
+    return await nexusRefreshPromise;
+  } finally {
+    nexusRefreshPromise = null;
+  }
+}
+
+function scheduleNexusDashboardRefresh(delayMs = 5000) {
+  setTimeout(() => {
+    refreshNexusDashboard().catch(err => {
+      console.error('Delayed Nexus dashboard refresh failed:', err);
+    });
+  }, delayMs);
+}
+
 async function refreshAll() {
-  await Promise.all([
+  await Promise.allSettled([
     updateSyncStatus(),
     updateBalance(),
-    refreshNexusWcryloBalance(),
-    refreshNexusStakedBalance(),
-    refreshNexusPendingRewards(),
+    refreshNexusDashboard(),
     refreshActiveTab()
   ]);
 }
@@ -502,7 +596,6 @@ async function getMinedSplitBalances() {
 async function updateBalance() {
   const res = await window.crylo.walletRpc('get_balance', { account_index: 0 });
 
-  console.log("get_balance response:", res);
 
   if (!res.ok) return;
 
@@ -567,10 +660,7 @@ async function loadAddress() {
   }
 
   await loadSavedNexusLinkedAddress();
-  await refreshNexusWcryloBalance();
-  await refreshNexusStakedBalance();
-  await refreshNexusPendingRewards();
-  await refreshNexusNodeStatus();
+  await refreshNexusDashboard();
 }
 
 function copyAddress() {
@@ -963,7 +1053,27 @@ function switchTab(tab) {
   if (tab === 'vesting')      loadVesting();
   if (tab === 'receive')      loadAddress();
   if (tab === 'mining')       initMiningTab();
-  if (tab === 'nexus') { clearNexusUiForWalletSwitch(); loadSavedNexusLinkedAddress().then(async () => { refreshBridgeAddressFields(); await refreshNexusNodeStatus(); }); }
+  if (tab === 'nexus') {
+    loadSavedNexusLinkedAddress()
+      .then(async () => {
+        refreshBridgeAddressFields();
+
+        try {
+          await refreshNexusDashboard();
+        } catch (error) {
+          console.error(
+            'Nexus tab refresh failed:',
+            error
+          );
+        }
+      })
+      .catch(error => {
+        console.error(
+          'Failed to load bound Nexus wallet:',
+          error
+        );
+      });
+  }
   if (tab === 'nexusTx') loadNexusTransactions();
   if (tab === 'nexusNfts') loadSavedNexusLinkedAddress();
 }
@@ -971,27 +1081,158 @@ function switchTab(tab) {
 async function switchWallet() {
   const confirmed = await window.crylo.confirm({
     title: 'Switch Wallet',
-    message: 'Close current wallet and go back to wallet selection?',
+    message:
+      'Close current wallet and go back to wallet selection?',
     buttons: ['Yes', 'Cancel']
   });
+
   if (!confirmed) return;
 
-  // Close current wallet
-  await window.crylo.walletRpc('close_wallet', { autosave_current: true });
+  /*
+   * Stop daemon mining before closing the wallet so the daemon
+   * cannot continue mining to an address whose wallet session
+   * is no longer active.
+   */
+  try {
+    await window.crylo.minerStop();
+  } catch (error) {
+    console.error(
+      'Failed to stop daemon mining before wallet switch:',
+      error
+    );
+  }
 
-  // Reset state
-  State.walletName = '';
-  State.address    = '';
+  State.miningActive = false;
+  State.miningStartHeight = null;
+
+  try {
+    await window.crylo.walletRpc(
+      'close_wallet',
+      { autosave_current: true }
+    );
+  } catch (error) {
+    console.error(
+      'Failed to close active wallet:',
+      error
+    );
+  }
+
+  // Stop wallet-specific refresh tasks.
   if (State.refreshTimer) {
     clearInterval(State.refreshTimer);
     State.refreshTimer = null;
   }
+
   if (State.blockPoller) {
     clearInterval(State.blockPoller);
     State.blockPoller = null;
   }
 
-  showSetup();
+  if (State.miningStatusTimer) {
+    clearInterval(State.miningStatusTimer);
+    State.miningStatusTimer = null;
+  }
+
+  if (
+    typeof nexusPostCreateRefreshTimer !==
+      'undefined' &&
+    nexusPostCreateRefreshTimer
+  ) {
+    clearInterval(
+      nexusPostCreateRefreshTimer
+    );
+
+    nexusPostCreateRefreshTimer = null;
+  }
+
+  State.walletName = '';
+  State.address = '';
+  State.nexusAddress = '';
+  State.currentHeight = 0;
+  State.unlockedBalance = 0;
+  State.lockedBalance = 0;
+  State.miningActive = false;
+
+  clearNexusUiForWalletSwitch();
+  setOpenWalletLoading(false);
+  clearPasswordInvalid('open-pass');
+
+  const passwordInput =
+    document.getElementById('open-pass');
+
+  const select =
+    document.getElementById('open-select');
+
+  const mainScreen =
+    document.getElementById('main-screen');
+
+  const setupScreen =
+    document.getElementById('setup-screen');
+
+  const setupCards =
+    document.getElementById('setup-cards') ||
+    document.querySelector('.setup-cards');
+
+  const openForm =
+    document.getElementById('form-open');
+
+  if (passwordInput) {
+    passwordInput.value = '';
+  }
+
+  if (select) {
+    select.value = '';
+  }
+
+  /*
+   * Navigate before making any asynchronous calls.
+   * This guarantees that a failed wallet-list refresh cannot
+   * leave the emptied main wallet screen visible.
+   */
+  if (mainScreen) {
+    mainScreen.classList.add('hidden');
+    mainScreen.style.display = 'none';
+  }
+
+  if (setupScreen) {
+    setupScreen.classList.remove('hidden');
+    setupScreen.style.display = '';
+  }
+
+  document
+    .querySelectorAll('.setup-form')
+    .forEach(form => {
+      form.classList.add('hidden');
+      form.style.display = 'none';
+    });
+
+  if (setupCards) {
+    setupCards.classList.add('hidden');
+    setupCards.style.display = 'none';
+  }
+
+  if (openForm) {
+    openForm.classList.remove('hidden');
+    openForm.style.display = '';
+  }
+
+  setOpenWalletLoading(false);
+
+  /*
+   * Refreshing the chooser must not block navigation.
+   */
+  try {
+    await refreshWalletList();
+  } catch (error) {
+    console.error(
+      'Failed to refresh wallet list:',
+      error
+    );
+  }
+
+  if (passwordInput) {
+    passwordInput.focus();
+  }
 }
 
 // ─── Expose to HTML ───────────────────────────────────────────────────────────
@@ -1022,9 +1263,160 @@ async function initMiningTab() {
     await loadAddress();
   }
 
-  const addrField = document.getElementById('mining-address');
+  const addrField =
+    document.getElementById('mining-address');
+
   if (addrField && State.address) {
     addrField.value = State.address;
+  }
+
+  /*
+   * The daemon is the source of truth. A previous wallet
+   * session may have left stale mining text and statistics
+   * visible even though mining was stopped during switching.
+   */
+  try {
+    const daemonMining =
+      await window.crylo.minerGetStatus();
+
+    if (daemonMining.ok && daemonMining.running) {
+      State.miningActive = true;
+
+      const miningButton =
+        document.getElementById('mining-btn');
+
+      const miningStatus =
+        document.getElementById('mining-status');
+
+      const miningHashrate =
+        document.getElementById('mining-hashrate');
+
+      const miningStats =
+        document.getElementById('mining-stats');
+
+      const miningMode =
+        document.getElementById('mining-mode');
+
+      if (miningButton) {
+        miningButton.textContent =
+          '⏹ Stop Mining';
+
+        miningButton.className =
+          'btn btn-secondary';
+      }
+
+      if (miningStatus) {
+        miningStatus.textContent =
+          'Mining active';
+
+        miningStatus.style.color =
+          'var(--success)';
+      }
+
+      if (miningHashrate) {
+        miningHashrate.textContent =
+          `${daemonMining.hashrate || 0} H/s`;
+
+        miningHashrate.style.display =
+          'block';
+      }
+
+      if (miningStats) {
+        miningStats.style.display =
+          'block';
+      }
+
+      if (miningMode) {
+        miningMode.style.display =
+          'block';
+      }
+
+      const threadStat =
+        document.getElementById(
+          'mining-stat-threads'
+        );
+
+      if (threadStat) {
+        threadStat.textContent =
+          daemonMining.threads || 0;
+      }
+    } else {
+      State.miningActive = false;
+      State.miningStartHeight = null;
+
+      if (State.miningStatusTimer) {
+        clearInterval(
+          State.miningStatusTimer
+        );
+
+        State.miningStatusTimer = null;
+      }
+
+      const miningButton =
+        document.getElementById('mining-btn');
+
+      const miningStatus =
+        document.getElementById('mining-status');
+
+      const miningHashrate =
+        document.getElementById('mining-hashrate');
+
+      const miningStats =
+        document.getElementById('mining-stats');
+
+      const miningMode =
+        document.getElementById('mining-mode');
+
+      if (miningButton) {
+        miningButton.textContent =
+          '⛏ Start Mining';
+
+        miningButton.className =
+          'btn btn-primary';
+      }
+
+      if (miningStatus) {
+        miningStatus.textContent =
+          'Miner stopped';
+
+        miningStatus.style.color =
+          'var(--text-dim)';
+      }
+
+      if (miningHashrate) {
+        miningHashrate.textContent =
+          '0 H/s';
+
+        miningHashrate.style.display =
+          'none';
+      }
+
+      if (miningStats) {
+        miningStats.style.display =
+          'none';
+      }
+
+      if (miningMode) {
+        miningMode.style.display =
+          'none';
+      }
+
+      const blocksFound =
+        document.getElementById(
+          'mining-stat-blocks-found'
+        );
+
+      if (blocksFound) {
+        blocksFound.textContent = '0';
+      }
+    }
+  } catch (error) {
+    console.error(
+      'Unable to synchronize mining UI:',
+      error
+    );
+
+    State.miningActive = false;
   }
 
   try {
@@ -1065,16 +1457,22 @@ async function toggleMining() {
 }
 
 async function startMining() {
-  const address = document.getElementById('mining-address').value.trim();
-  const worker  = document.getElementById('mining-worker').value.trim() || 'desktop';
-  const pool    = document.getElementById('mining-pool').value.trim();
-  const threads = parseInt(document.getElementById('mining-threads').value) || 2;
+  const address =
+    document.getElementById('mining-address').value.trim();
+
+  const threads =
+    parseInt(
+      document.getElementById('mining-threads').value
+    ) || 2;
   if (!address || address.length < 20) {
     toast('Enter a valid CryLo wallet address', 'error');
     return;
   }
   try {
-    const r = await window.crylo.minerStart({ walletAddress: address, workerName: worker, poolUrl: pool, threads });
+    const r = await window.crylo.minerStart({
+      walletAddress: address,
+      threads
+    });
     if (!r.ok) throw new Error(r.error);
     State.miningActive = true;
     document.getElementById('mining-btn').textContent = '⏹ Stop Mining';
@@ -1210,7 +1608,7 @@ async function loadNexusBuyback() {
     }
 
     statusEl.textContent =
-      `Found ${result.nfts.length} NFT(s) | Vault: ${result.vaultBalance} wCRYLO`;
+      `Found ${result.nfts.length} NFT(s) | Vault: ${result.vaultBalance} wCryLo`;
 
     let html = '';
 
@@ -1220,7 +1618,7 @@ async function loadNexusBuyback() {
           <div><strong>NFT #${nft.tokenId}</strong></div>
           <div>Mint Code: ${nft.code}</div>
           <div>Eligible: ${nft.eligible ? 'YES' : 'NO'}</div>
-          <div>Pool Balance: ${nft.codePool} wCRYLO</div>
+          <div>Pool Balance: ${nft.codePool} wCryLo</div>
           <div>Redeemed: ${nft.redeemed}</div>
 	  ${nft.eligible
   	    ? `<button class="btn btn-primary nexus-buyback-btn" style="margin-top:10px" data-token-id="${nft.tokenId}">Buy Back NFT</button>`
@@ -1269,27 +1667,97 @@ async function ensureCryLoAddressLoaded() {
 function setNexusUiAddress(addr) {
   State.nexusAddress = addr || '';
 
-  const label = document.getElementById('nexus-wallet-label');
+  const label =
+    document.getElementById('nexus-wallet-label');
+
+  const input =
+    document.getElementById('nexus-linked-address');
+
+  const status =
+    document.getElementById('nexus-linked-status');
+
+  const createButton =
+    document.getElementById('nexus-create-wallet-btn');
+
   if (label) {
     label.textContent = State.nexusAddress
       ? 'Bound Nexus Wallet'
       : 'Create / Bind Nexus Wallet';
   }
 
-  const input = document.getElementById('nexus-linked-address');
-  const status = document.getElementById('nexus-linked-status');
-
   if (input) {
     input.value = State.nexusAddress;
-    input.setAttribute('value', State.nexusAddress);
+    input.setAttribute(
+      'value',
+      State.nexusAddress
+    );
+  }
+
+  if (createButton) {
+    createButton.style.display =
+      State.nexusAddress ? 'none' : '';
   }
 
   if (status) {
-    status.textContent = State.nexusAddress
-      ? `Bound Nexus wallet: ${State.nexusAddress}`
-      : 'No Nexus wallet created for this CryLo wallet yet.';
+    if (State.nexusAddress) {
+      status.textContent = '';
+      status.style.display = 'none';
+    } else {
+      status.textContent =
+        'No Nexus wallet created for this CryLo wallet yet.';
+      status.style.display = '';
+    }
   }
 }
+
+let nexusPostCreateRefreshTimer = null;
+
+function startNexusPostCreateRefresh() {
+  if (nexusPostCreateRefreshTimer) {
+    clearInterval(nexusPostCreateRefreshTimer);
+  }
+
+  let attempts = 0;
+  const maximumAttempts = 15;
+
+  const refresh = async () => {
+    attempts += 1;
+
+    try {
+      await refreshNexusDashboard();
+
+      const starterText =
+        document
+          .getElementById('nexus-gas-starter')
+          ?.textContent || '';
+
+      if (
+        starterText.includes('Sent') &&
+        starterText.includes('Registered')
+      ) {
+        clearInterval(nexusPostCreateRefreshTimer);
+        nexusPostCreateRefreshTimer = null;
+        return;
+      }
+    } catch (error) {
+      console.error(
+        'Post-create Nexus refresh failed:',
+        error
+      );
+    }
+
+    if (attempts >= maximumAttempts) {
+      clearInterval(nexusPostCreateRefreshTimer);
+      nexusPostCreateRefreshTimer = null;
+    }
+  };
+
+  refresh();
+
+  nexusPostCreateRefreshTimer =
+    setInterval(refresh, 2000);
+}
+
 
 async function createBoundNexusWallet() {
   const status = document.getElementById('nexus-linked-status');
@@ -1306,12 +1774,27 @@ async function createBoundNexusWallet() {
     return;
   }
 
+  // The IPC now returns as soon as the binding file is saved.
+  // Paint the address before any Nexus network requests run.
   setNexusUiAddress(result.nexusAddress);
 
-  await refreshNexusWcryloBalance();
-  await refreshNexusStakedBalance();
-  await refreshNexusPendingRewards();
-  await refreshNexusNodeStatus();
+  await new Promise(resolve => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(resolve);
+    });
+  });
+
+  startNexusPostCreateRefresh();
+
+  // Reload the persisted binding, then refresh every Nexus panel
+  // so the newly created address appears immediately.
+  await loadSavedNexusLinkedAddress();
+
+  await refreshNexusDashboard();
+
+  if (typeof loadNexusTransactions === 'function') {
+    await loadNexusTransactions();
+  }
 }
 
 async function loadSavedNexusLinkedAddress() {
@@ -1348,13 +1831,13 @@ function clearNexusUiForWalletSwitch() {
   if (nexusStatus) nexusStatus.textContent = 'Create a Nexus wallet to access staking, NFTs, buybacks, and node features.';
 
   const w = document.getElementById('nexus-wcrylo-balance');
-  if (w) w.textContent = '0.0000 wCRYLO';
+  if (w) w.textContent = '0.0000 wCryLo';
 
   const staked = document.getElementById('nexus-staked-balance');
-  if (staked) staked.textContent = '0.0000 wCRYLO';
+  if (staked) staked.textContent = '0.0000 wCryLo';
 
   const pending = document.getElementById('nexus-pending-rewards');
-  if (pending) pending.textContent = '0.0000 wCRYLO';
+  if (pending) pending.textContent = '0.0000 wCryLo';
 }
 
 function getLinkedNexusAddress() {
@@ -1362,26 +1845,132 @@ function getLinkedNexusAddress() {
 }
 
 
-function resetBridgeFormAfterMint() {
-  const amount = document.getElementById('bridge-amount');
-  const btn = document.getElementById('bridge-submit-btn');
+const BRIDGE_PROGRESS_TRACKS = [
+  '○ ─ ○ ─ ○ ─ ○',
+  '● ─ ○ ─ ○ ─ ○',
+  '● ─ ● ─ ○ ─ ○',
+  '● ─ ● ─ ● ─ ○',
+  '● ─ ● ─ ● ─ ●'
+];
 
-  if (amount) amount.value = '';
-  if (btn) {
-    btn.disabled = false;
-    btn.textContent = 'Generate & Send Bridge Deposit';
+function setBridgeButtonBusy(direction, busy) {
+  const buttonId = direction === 'out'
+    ? 'bridge-out-submit-btn'
+    : 'bridge-submit-btn';
+
+  const button = document.getElementById(buttonId);
+  if (!button) return;
+
+  button.disabled = !!busy;
+
+  if (direction === 'out') {
+    button.textContent = busy
+      ? 'Release in Progress...'
+      : 'Burn & Release CryLo';
+  } else {
+    button.textContent = busy
+      ? 'Bridge in Progress...'
+      : 'Generate & Send Bridge Deposit';
   }
+}
+
+function setBridgeProgress(
+  direction,
+  step,
+  title,
+  detail = ''
+) {
+  const prefix = direction === 'out'
+    ? 'bridge-out-progress'
+    : 'bridge-progress';
+
+  const container =
+    document.getElementById(prefix);
+
+  const track =
+    document.getElementById(`${prefix}-track`);
+
+  const titleEl =
+    document.getElementById(`${prefix}-title`);
+
+  const detailEl =
+    document.getElementById(`${prefix}-detail`);
+
+  if (container) {
+    container.style.display = '';
+  }
+
+  const safeStep = Math.max(
+    0,
+    Math.min(4, Number(step) || 0)
+  );
+
+  if (track) {
+    track.textContent =
+      BRIDGE_PROGRESS_TRACKS[safeStep];
+  }
+
+  if (titleEl) {
+    titleEl.textContent = title || '';
+  }
+
+  if (detailEl) {
+    detailEl.textContent = detail || '';
+  }
+}
+
+function setBridgeFailure(direction, error) {
+  const message =
+    error?.message ||
+    String(error || 'Bridge operation failed.');
+
+  setBridgeProgress(
+    direction,
+    0,
+    '❌ Bridge Failed',
+    message
+  );
+
+  setBridgeButtonBusy(direction, false);
+}
+
+function setBridgeComplete(
+  direction,
+  sourceAmount,
+  sourceAsset,
+  destinationAsset,
+  transactionText = ''
+) {
+  setBridgeProgress(
+    direction,
+    4,
+    direction === 'out'
+      ? '✅ Release Complete'
+      : '✅ Bridge Complete',
+    `${sourceAmount} ${sourceAsset} → ${sourceAmount} ${destinationAsset}` +
+      (transactionText ? ` · ${transactionText}` : '')
+  );
+
+  setBridgeButtonBusy(direction, false);
+}
+
+function resetBridgeFormAfterMint() {
+  const amount =
+    document.getElementById('bridge-amount');
+
+  if (amount) {
+    amount.value = '';
+  }
+
+  setBridgeButtonBusy('in', false);
 }
 
 
 
 
 async function refreshBridgeRelatedViews() {
-  try { await refreshNexusWcryloBalance(); } catch (_) {}
-  try { await refreshNexusStakedBalance(); } catch (_) {}
-  try { await refreshNexusGasStatus(); } catch (_) {}
-  try { if (typeof loadNexusTransactions === 'function') await loadNexusTransactions(); } catch (_) {}
-  try { if (typeof updateBalance === 'function') await updateBalance(); } catch (_) {}
+  await refreshAll();
+  scheduleNexusDashboardRefresh(5000);
 }
 
 function setBridgeOutStatus(msg) {
@@ -1394,38 +1983,162 @@ let bridgeReleasePollTimer = null;
 
 function pollBridgeReleaseStatus(nexusTxHash) {
   if (!nexusTxHash || nexusTxHash === 'sent') return;
-  if (bridgeReleasePollTimer) clearInterval(bridgeReleasePollTimer);
+
+  if (bridgeReleasePollTimer) {
+    clearInterval(bridgeReleasePollTimer);
+  }
 
   bridgeReleasePollTimer = setInterval(async () => {
     try {
-      const res = await window.crylo.bridgeReleaseStatus(nexusTxHash);
+      const res =
+        await window.crylo.bridgeReleaseStatus(
+          nexusTxHash
+        );
+
       if (!res.ok) {
-        setBridgeOutStatus(res.error || 'Release status check failed.');
+        setBridgeOutStatus(
+          res.error ||
+          'Release status check failed.'
+        );
+
+        setBridgeProgress(
+          'out',
+          3,
+          '⏳ Waiting for bridge relayer',
+          res.error ||
+          'The release remains pending.'
+        );
+
         return;
       }
 
-      if (res.released && res.release) {
+      const status =
+        String(res.status || 'pending')
+          .toLowerCase();
+
+      if (status === 'completed') {
         clearInterval(bridgeReleasePollTimer);
         bridgeReleasePollTimer = null;
 
         const l1Tx =
-          res.release.l1_tx_hash ||
-          res.release.crylo_tx_hash ||
+          res.releaseTxHash ||
+          res.cryloTxHash ||
           'released';
 
-        setBridgeOutStatus(`✅ Release completed. CryLo TX: ${l1Tx}`);
+        const pendingRaw =
+          localStorage.getItem(
+            'cryloBridgeReleasePending'
+          );
+
+        let pendingAmount = '';
+
+        try {
+          pendingAmount =
+            JSON.parse(
+              pendingRaw || '{}'
+            ).amount || '';
+        } catch (_) {}
+
+        setBridgeOutStatus(
+          `✅ Release completed. CryLo TX: ${l1Tx}`
+        );
+
+        setBridgeComplete(
+          'out',
+          pendingAmount || 'Requested amount',
+          'wCryLo',
+          'CryLo',
+          `CryLo TX: ${l1Tx}`
+        );
+
+        localStorage.removeItem(
+          'cryloBridgeReleasePending'
+        );
+
+        const outInput =
+          document.getElementById(
+            'bridge-out-amount'
+          );
+
+        if (outInput) {
+          outInput.value = '';
+        }
+
+        setBridgeButtonBusy('out', false);
+
         await refreshBridgeRelatedViews();
-        setTimeout(refreshBridgeRelatedViews, 3000);
-        setTimeout(refreshBridgeRelatedViews, 10000);
+
+        return;
       }
+
+      if (status === 'failed') {
+        clearInterval(bridgeReleasePollTimer);
+        bridgeReleasePollTimer = null;
+
+        const message =
+          res.error ||
+          res.message ||
+          'CryLo release failed.';
+
+        setBridgeOutStatus(
+          `❌ ${message}`
+        );
+
+        setBridgeProgress(
+          'out',
+          0,
+          'Release Failed',
+          message
+        );
+
+        localStorage.removeItem(
+          'cryloBridgeReleasePending'
+        );
+
+        setBridgeButtonBusy('out', false);
+        return;
+      }
+
+      setBridgeButtonBusy('out', true);
+
+      setBridgeOutStatus(
+        res.message ||
+        (
+          status === 'processing'
+            ? 'Processing CryLo release...'
+            : 'Waiting for bridge relayer...'
+        )
+      );
+
+      setBridgeProgress(
+        'out',
+        3,
+        status === 'processing'
+          ? 'Processing CryLo release'
+          : 'Waiting for bridge relayer',
+        res.message ||
+        'The release remains pending.'
+      );
     } catch (e) {
-      console.error(e);
+      console.error(
+        'Release-status polling failed:',
+        e
+      );
     }
   }, 5000);
 }
 
 async function startCryLoBridgeOut() {
   try {
+    setBridgeButtonBusy('out', true);
+
+    setBridgeProgress(
+      'out',
+      1,
+      'Preparing release',
+      'Checking the CryLo and Nexus wallets.'
+    );
+
     if (!(await ensureCryLoAddressLoaded())) {
       throw new Error('Open a CryLo wallet first.');
     }
@@ -1439,28 +2152,68 @@ async function startCryLoBridgeOut() {
     const amount = Number(amountText);
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      throw new Error('Invalid wCRYLO amount.');
+      throw new Error('Invalid wCryLo amount.');
     }
 
     setBridgeOutStatus('Checking Nexus gas...');
 
-    const gasCheck = await ensureNexusGasForAction('wCRYLO to CRYLO bridge release', 0.04);
+    setBridgeProgress(
+      'out',
+      1,
+      'Preparing release',
+      'Checking available CRYLO gas.'
+    );
+
+    const gasCheck = await ensureNexusGasForAction('wCryLo to CRYLO bridge release', NEXUS_GAS_ESTIMATES.bridgeRelease);
     if (!gasCheck.ok) {
-      setBridgeOutStatus(gasCheck.cancelled ? 'Release cancelled.' : `Release failed: ${gasCheck.error}`);
+      const message = gasCheck.cancelled
+        ? 'Release cancelled.'
+        : `Release failed: ${gasCheck.error}`;
+
+      setBridgeOutStatus(message);
+
+      if (gasCheck.cancelled) {
+        setBridgeProgress(
+          'out',
+          0,
+          'Release Cancelled',
+          'No wCryLo was burned.'
+        );
+        setBridgeButtonBusy('out', false);
+      } else {
+        setBridgeFailure('out', message);
+      }
+
       return;
     }
 
     const yes = confirm(
-      `Burn ${amountText} wCRYLO and release CRYLO back to your CryLo wallet?\n\n` +
+      `Burn ${amountText} wCryLo and release CryLo back to your CryLo wallet?\n\n` +
       `Destination CryLo wallet:\n${State.address}`
     );
 
     if (!yes) {
       setBridgeOutStatus('Release cancelled.');
+
+      setBridgeProgress(
+        'out',
+        0,
+        'Release Cancelled',
+        'No wCryLo was burned.'
+      );
+
+      setBridgeButtonBusy('out', false);
       return;
     }
 
-    setBridgeOutStatus('Burning wCRYLO on Nexus...');
+    setBridgeOutStatus('Burning wCryLo on Nexus...');
+
+    setBridgeProgress(
+      'out',
+      2,
+      'Burning wCryLo',
+      `${amountText} wCryLo is being burned on Nexus.`
+    );
 
     const result = await window.crylo.nexusBurnForCryLo(amountText, State.walletName, State.address);
 
@@ -1468,22 +2221,41 @@ async function startCryLoBridgeOut() {
       throw new Error(result.error || 'Burn failed.');
     }
 
-    setBridgeOutStatus(`Burn confirmed. Reserve release is processing. Nexus TX: ${result.txHash}`);
+    setBridgeOutStatus(
+      `Burn confirmed. Reserve release is processing. Nexus TX: ${result.txHash}`
+    );
 
-    const outInput = document.getElementById('bridge-out-amount');
-    if (outInput) outInput.value = '';
+    setBridgeProgress(
+      'out',
+      3,
+      'Waiting for bridge relayer',
+      `Burn confirmed · Nexus TX: ${result.txHash}`
+    );
 
-    await refreshNexusWcryloBalance();
+    localStorage.setItem(
+      'cryloBridgeReleasePending',
+      JSON.stringify({
+        nexusTxHash: result.txHash,
+        amount: amountText,
+        createdAt: Date.now()
+      })
+    );
+
+    pollBridgeReleaseStatus(result.txHash);
+
     await refreshAll();
-    await loadNexusTransactions();
-
-    setTimeout(refreshAll, 5000);
-    setTimeout(refreshAll, 15000);
-    setTimeout(refreshNexusWcryloBalance, 5000);
-    setTimeout(refreshNexusWcryloBalance, 15000);
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
-    setBridgeOutStatus(err.message || 'release failed');
+
+    setBridgeOutStatus(
+      err.message || 'Release failed.'
+    );
+
+    setBridgeFailure(
+      'out',
+      err.message || 'Release failed.'
+    );
   }
 }
 
@@ -1510,6 +2282,15 @@ function cryloToAtomic(amountText) {
 
 async function startCryLoBridgeIn() {
   try {
+    setBridgeButtonBusy('in', true);
+
+    setBridgeProgress(
+      'in',
+      1,
+      'Preparing bridge',
+      'Checking the CryLo and Nexus wallets.'
+    );
+
     setBridgeStatus('checking wallet');
 
     if (!(await ensureCryLoAddressLoaded())) {
@@ -1531,7 +2312,7 @@ async function startCryLoBridgeIn() {
     }
 
     if (totalAmount > 150) {
-      throw new Error('Bridge limit is currently 150 CRYLO per session.');
+      throw new Error('Bridge limit is currently 150 CryLo per session.');
     }
 
     const CHUNK_SIZE = 50;
@@ -1544,7 +2325,16 @@ async function startCryLoBridgeIn() {
       remaining = Number((remaining - chunk).toFixed(11));
     }
 
-    setBridgeStatus(`preparing ${chunks.length} bridge deposit${chunks.length === 1 ? '' : 's'}`);
+    setBridgeStatus(
+      `preparing ${chunks.length} bridge deposit${chunks.length === 1 ? '' : 's'}`
+    );
+
+    setBridgeProgress(
+      'in',
+      1,
+      'Preparing bridge',
+      `${chunks.length} CryLo deposit${chunks.length === 1 ? '' : 's'} will be created.`
+    );
 
     const sent = [];
 
@@ -1553,7 +2343,16 @@ async function startCryLoBridgeIn() {
       const chunkText = String(chunkAmount);
       const amountAtomic = cryloToAtomic(chunkText);
 
-      setBridgeStatus(`creating deposit ${i + 1}/${chunks.length} for ${chunkText} CRYLO`);
+      setBridgeStatus(
+        `creating deposit ${i + 1}/${chunks.length} for ${chunkText} CryLo`
+      );
+
+      setBridgeProgress(
+        'in',
+        1,
+        'Generating bridge deposit',
+        `Deposit ${i + 1} of ${chunks.length} · ${chunkText} CryLo`
+      );
 
       const req = await window.crylo.bridgeRequest({
         nexusAddress,
@@ -1582,20 +2381,28 @@ async function startCryLoBridgeIn() {
           amount: Number(amountAtomic)
         }],
         account_index: 0,
-        subaddr_indices: [0],
         priority: 0,
         unlock_time: 0,
         get_tx_key: true
       };
 
-      setBridgeStatus(`sending deposit ${i + 1}/${chunks.length} for ${chunkText} CRYLO`);
+      setBridgeStatus(
+        `sending deposit ${i + 1}/${chunks.length} for ${chunkText} CryLo`
+      );
+
+      setBridgeProgress(
+        'in',
+        2,
+        'Sending CryLo',
+        `Deposit ${i + 1} of ${chunks.length} is being submitted.`
+      );
 
       let tx = await window.crylo.walletRpc('transfer_split', transferParams, 120000);
 
       if (!tx.ok) {
         throw new Error(
           (tx.error || '').includes('not enough money')
-            ? 'Not enough unlocked CRYLO. Try a smaller amount.'
+            ? 'Not enough unlocked CryLo. Try a smaller amount.'
             : (tx.error || `CryLo transfer ${i + 1} failed.`)
         );
       }
@@ -1624,11 +2431,31 @@ async function startCryLoBridgeIn() {
       createdAt: Date.now()
     }));
 
-    setBridgeStatus(`waiting for CryLo confirmations on ${sent.length} deposit${sent.length === 1 ? '' : 's'}`);
-    pollCryLoBridgeStatus(sent[0]?.paymentId);
+    setBridgeStatus(
+      `waiting for CryLo confirmations on ${sent.length} deposit${sent.length === 1 ? '' : 's'}`
+    );
+
+    setBridgeProgress(
+      'in',
+      3,
+      'Waiting for confirmations',
+      `${sent.length} deposit${sent.length === 1 ? '' : 's'} sent. Confirming and minting wCryLo.`
+    );
+
+    pollCryLoBridgeStatus(
+      sent[0]?.paymentId
+    );
   } catch (e) {
     console.error(e);
-    setBridgeStatus(e.message || 'bridge failed');
+
+    setBridgeStatus(
+      e.message || 'Bridge failed.'
+    );
+
+    setBridgeFailure(
+      'in',
+      e.message || 'Bridge failed.'
+    );
   }
 }
 
@@ -1657,8 +2484,46 @@ function pollCryLoBridgeStatus(paymentId) {
           res.processed.mintTxHash ||
           'processed';
 
-        setBridgeField('bridge-nexus-tx', mintTx);
-        setBridgeStatus('✅ Mint completed — wCRYLO received.');
+        setBridgeField(
+          'bridge-nexus-tx',
+          mintTx
+        );
+
+        const pendingRaw =
+          localStorage.getItem(
+            'cryloBridgePending'
+          );
+
+        let pendingAmount = '';
+
+        try {
+          const pending =
+            JSON.parse(pendingRaw || '{}');
+
+          pendingAmount =
+            (pending.deposits || [])
+              .reduce(
+                (sum, deposit) =>
+                  sum + Number(deposit.amount || 0),
+                0
+              )
+              .toFixed(11)
+              .replace(/0+$/, '')
+              .replace(/\.$/, '');
+        } catch (_) {}
+
+        setBridgeStatus(
+          '✅ Mint completed — wCryLo received.'
+        );
+
+        setBridgeComplete(
+          'in',
+          pendingAmount || 'Deposited amount',
+          'CryLo',
+          'wCryLo',
+          `Nexus TX: ${mintTx}`
+        );
+
         await refreshBridgeRelatedViews();
         setTimeout(refreshBridgeRelatedViews, 3000);
         setTimeout(refreshBridgeRelatedViews, 10000);
@@ -1683,7 +2548,16 @@ function pollCryLoBridgeStatus(paymentId) {
         return;
       }
 
-      setBridgeStatus('waiting for CryLo confirmations');
+      setBridgeStatus(
+        'waiting for CryLo confirmations'
+      );
+
+      setBridgeProgress(
+        'in',
+        3,
+        'Waiting for confirmations',
+        'CryLo deposit detected. Confirming and minting wCryLo.'
+      );
     } catch (e) {
       console.error(e);
       setBridgeStatus(e.message || 'status error');
@@ -1697,7 +2571,7 @@ async function buyBackNexusNFT(tokenId) {
 
   statusEl.textContent = `Processing buyback for NFT #${tokenId}...`;
 
-  const gasCheck = await ensureNexusGasForAction('NFT buyback', 0.06);
+  const gasCheck = await ensureNexusGasForAction('NFT buyback', NEXUS_GAS_ESTIMATES.nftBuyback);
   if (!gasCheck.ok) {
     statusEl.textContent = gasCheck.cancelled ? 'Buyback cancelled.' : `Buyback failed: ${gasCheck.error}`;
     return;
@@ -1729,7 +2603,7 @@ async function burnNexusNFT(tokenId) {
 
   statusEl.textContent = `Burning NFT #${tokenId}...`;
 
-  const gasCheck = await ensureNexusGasForAction('NFT burn', 0.05);
+  const gasCheck = await ensureNexusGasForAction('NFT burn', NEXUS_GAS_ESTIMATES.nftBurn);
   if (!gasCheck.ok) {
     statusEl.textContent = gasCheck.cancelled ? 'Burn cancelled.' : `Burn failed: ${gasCheck.error}`;
     return;
@@ -1767,7 +2641,7 @@ async function refreshNexusWcryloBalance() {
   const linkedAddress = getLinkedNexusAddress();
 
   if (!linkedAddress) {
-    el.innerHTML = `—<span class="balance-unit"> wCRYLO</span>`;
+    el.innerHTML = `—<span class="balance-unit"> wCryLo</span>`;
     return;
   }
 
@@ -1775,14 +2649,14 @@ async function refreshNexusWcryloBalance() {
     const result = await window.crylo.nexusWcryloBalance(linkedAddress);
 
     if (!result.ok) {
-      el.innerHTML = `—<span class="balance-unit"> wCRYLO</span>`;
+      el.innerHTML = `—<span class="balance-unit"> wCryLo</span>`;
       return;
     }
 
-    el.innerHTML = `${fmtDecimalAmount(result.balance, 4)}<span class="balance-unit"> wCRYLO</span>`;
+    el.innerHTML = `${fmtDecimalAmount(result.balance, 4)}<span class="balance-unit"> wCryLo</span>`;
   } catch (err) {
     console.error(err);
-    el.innerHTML = `—<span class="balance-unit"> wCRYLO</span>`;
+    el.innerHTML = `—<span class="balance-unit"> wCryLo</span>`;
   }
 }
 
@@ -1795,7 +2669,7 @@ async function refreshNexusStakedBalance() {
 
   if (!linkedAddress) {
     el.innerHTML =
-      `—<span class="balance-unit"> wCRYLO</span>`;
+      `—<span class="balance-unit"> wCryLo</span>`;
     return;
   }
 
@@ -1803,21 +2677,20 @@ async function refreshNexusStakedBalance() {
     const result =
       await window.crylo.nexusStakedBalance(linkedAddress);
 
-    console.log('STAKED RESULT:', result);
 
     if (!result.ok) {
       el.innerHTML =
-        `0.0000<span class="balance-unit"> wCRYLO</span>`;
+        `0.0000<span class="balance-unit"> wCryLo</span>`;
       return;
     }
 
     el.innerHTML =
-      `${fmtDecimalAmount(result.balance, 4)}<span class="balance-unit"> wCRYLO</span>`;
+      `${fmtDecimalAmount(result.balance, 4)}<span class="balance-unit"> wCryLo</span>`;
   } catch (err) {
     console.error(err);
 
     el.innerHTML =
-      `0.0000<span class="balance-unit"> wCRYLO</span>`;
+      `0.0000<span class="balance-unit"> wCryLo</span>`;
   }
 }
 
@@ -1850,7 +2723,10 @@ async function refreshNexusPendingRewards() {
 }
 
 
-async function ensureNexusGasForAction(actionLabel, estimatedGasCryLo = 0.03) {
+async function ensureNexusGasForAction(
+  actionLabel,
+  estimatedGasCryLo = NEXUS_GAS_ESTIMATES.defaultAction
+) {
   const linkedAddress = getLinkedNexusAddress();
 
   if (!linkedAddress) {
@@ -1860,32 +2736,85 @@ async function ensureNexusGasForAction(actionLabel, estimatedGasCryLo = 0.03) {
   const status = await window.crylo.nexusGasStatus(linkedAddress);
 
   if (!status.ok) {
-    return { ok: false, error: status.error || 'Unable to check Nexus gas.' };
+    return {
+      ok: false,
+      error: status.error || 'Unable to check Nexus gas.'
+    };
   }
 
-  const currentGas = Number(status.nativeGas || 0);
-  const neededGas = Number(estimatedGasCryLo || 0.03);
+  const gasPolicy = {
+    starterGasAmount: Number(status.starterGasAmount),
+    lowGasThreshold: Number(status.lowGasThreshold),
+    purchaseRateNativePerWcrylo:
+      Number(status.purchaseRateNativePerWcrylo),
+    minimumTreasuryReserve:
+      Number(status.minimumTreasuryReserve)
+  };
 
-  if (currentGas >= neededGas) {
+  if (
+    !Number.isFinite(gasPolicy.lowGasThreshold) ||
+    gasPolicy.lowGasThreshold < 0 ||
+    !Number.isFinite(gasPolicy.purchaseRateNativePerWcrylo) ||
+    gasPolicy.purchaseRateNativePerWcrylo <= 0
+  ) {
+    return {
+      ok: false,
+      error: 'GasManager returned an invalid live gas policy.'
+    };
+  }
+
+  State.gasPolicy = gasPolicy;
+
+  const currentGas = Number(status.nativeGas || 0);
+  const baseEstimate = Number(estimatedGasCryLo);
+
+  if (
+    !Number.isFinite(currentGas) ||
+    currentGas < 0 ||
+    !Number.isFinite(baseEstimate) ||
+    baseEstimate <= 0
+  ) {
+    return {
+      ok: false,
+      error: 'Unable to calculate the required Nexus gas.'
+    };
+  }
+
+  const estimatedActionGas =
+    baseEstimate * NEXUS_GAS_SAFETY_MULTIPLIER;
+
+  const targetGas =
+    estimatedActionGas + gasPolicy.lowGasThreshold;
+
+  if (currentGas >= targetGas) {
     return { ok: true, toppedUp: false };
   }
 
-  const shortfall = Math.max(0, neededGas - currentGas);
+  const shortfall = Math.max(0, targetGas - currentGas);
 
-  // GasManager uses 1:1 value: 1 wCRYLO buys 1 native CRYLO (GAS).
-  // Add a small buffer so transaction + follow-up action has room.
-  const wcryloNeeded = Math.ceil((shortfall + 0.005) * 100000) / 100000;
+  const calculatedWcrylo =
+    shortfall / gasPolicy.purchaseRateNativePerWcrylo;
+
+  const wcryloNeeded =
+    Math.max(
+      NEXUS_AUTOMATIC_GAS_PURCHASE_MIN_WCRYLO,
+      Math.ceil(calculatedWcrylo * 100000) / 100000
+    );
 
   const yes = confirm(
     `Not enough Nexus gas for ${actionLabel}.\n\n` +
-    `Current gas: ${currentGas.toFixed(6)} CRYLO (GAS)\n` +
-    `Estimated needed: ${neededGas.toFixed(6)} CRYLO (GAS)\n\n` +
-    `Add about ${wcryloNeeded} wCRYLO for gas and continue?\n\n` +
-    `For reliability, make sure you have at least double this suggested amount available in wCRYLO.`
+    `Current gas: ${currentGas.toFixed(6)} CRYLO\n` +
+    `Estimated action gas: ${estimatedActionGas.toFixed(6)} CRYLO\n` +
+    `Target balance: ${targetGas.toFixed(6)} CRYLO\n\n` +
+    `Purchase ${wcryloNeeded.toFixed(5)} wCryLo for gas and continue?`
   );
 
   if (!yes) {
-    return { ok: false, cancelled: true, error: 'User cancelled gas top-up.' };
+    return {
+      ok: false,
+      cancelled: true,
+      error: 'User cancelled gas top-up.'
+    };
   }
 
   const buy = await window.crylo.nexusBuyGasWithWcrylo(
@@ -1895,11 +2824,14 @@ async function ensureNexusGasForAction(actionLabel, estimatedGasCryLo = 0.03) {
   );
 
   if (!buy.ok) {
-    return { ok: false, error: buy.error || 'Gas top-up failed.' };
+    return {
+      ok: false,
+      error: buy.error || 'Gas top-up failed.'
+    };
   }
 
-  await refreshNexusGasStatus();
-  await refreshNexusWcryloBalance();
+  await refreshNexusDashboard();
+  scheduleNexusDashboardRefresh(5000);
 
   return {
     ok: true,
@@ -1924,13 +2856,13 @@ async function stakeNexusWcrylo() {
   const available = Number(availableText.replace(/[^0-9.]/g, '') || 0);
 
   if (Number(amount) > available) {
-    statusEl.textContent = `Stake failed: only ${available.toFixed(4)} wCRYLO available.`;
+    statusEl.textContent = `Stake failed: only ${available.toFixed(4)} wCryLo available.`;
     return;
   }
 
   statusEl.textContent = `Checking Nexus gas for staking...`;
 
-  const gasCheck = await ensureNexusGasForAction('staking', 0.04);
+  const gasCheck = await ensureNexusGasForAction('staking', NEXUS_GAS_ESTIMATES.staking);
 
   if (!gasCheck.ok) {
     statusEl.textContent = gasCheck.cancelled
@@ -1939,7 +2871,7 @@ async function stakeNexusWcrylo() {
     return;
   }
 
-  statusEl.textContent = `Staking ${amount} wCRYLO...`;
+  statusEl.textContent = `Staking ${amount} wCryLo...`;
 
   try {
     const result = await window.crylo.nexusStakeWcrylo(amount, State.walletName, State.address);
@@ -1949,24 +2881,11 @@ async function stakeNexusWcrylo() {
       return;
     }
 
-    statusEl.textContent = `Staked ${amount} wCRYLO successfully.`;
+    statusEl.textContent = `Staked ${amount} wCryLo successfully.`;
     input.value = '';
 
-    await refreshNexusWcryloBalance();
-    await refreshNexusStakedBalance();
-    await refreshNexusPendingRewards();
-    setTimeout(() => refreshNexusWcryloBalance(), 5000);
-    setTimeout(() => refreshNexusStakedBalance(), 5000);
-    setTimeout(() => refreshNexusPendingRewards(), 5000);
-    setTimeout(() => refreshNexusWcryloBalance(), 15000);
-    setTimeout(() => refreshNexusStakedBalance(), 15000);
-    setTimeout(() => refreshNexusPendingRewards(), 15000);
-    setTimeout(() => refreshNexusWcryloBalance(), 5000);
-    setTimeout(() => refreshNexusStakedBalance(), 5000);
-    setTimeout(() => refreshNexusPendingRewards(), 5000);
-    setTimeout(() => refreshNexusWcryloBalance(), 15000);
-    setTimeout(() => refreshNexusStakedBalance(), 15000);
-    setTimeout(() => refreshNexusPendingRewards(), 15000);
+    await refreshNexusDashboard();
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Stake failed.';
@@ -1985,13 +2904,13 @@ async function unstakeNexusWcrylo() {
 
   statusEl.textContent = 'Checking Nexus gas for unstaking...';
 
-  const gasCheck = await ensureNexusGasForAction('unstaking', 0.04);
+  const gasCheck = await ensureNexusGasForAction('unstaking', NEXUS_GAS_ESTIMATES.unstaking);
   if (!gasCheck.ok) {
     statusEl.textContent = gasCheck.cancelled ? 'Unstake cancelled.' : `Unstake failed: ${gasCheck.error}`;
     return;
   }
 
-  statusEl.textContent = `Unstaking ${amount} wCRYLO...`;
+  statusEl.textContent = `Unstaking ${amount} wCryLo...`;
 
   try {
     const result = await window.crylo.nexusUnstakeWcrylo(amount, State.walletName, State.address);
@@ -2001,24 +2920,11 @@ async function unstakeNexusWcrylo() {
       return;
     }
 
-    statusEl.textContent = `Unstaked ${amount} wCRYLO successfully.`;
+    statusEl.textContent = `Unstaked ${amount} wCryLo successfully.`;
     input.value = '';
 
-    await refreshNexusWcryloBalance();
-    await refreshNexusStakedBalance();
-    await refreshNexusPendingRewards();
-    setTimeout(() => refreshNexusWcryloBalance(), 5000);
-    setTimeout(() => refreshNexusStakedBalance(), 5000);
-    setTimeout(() => refreshNexusPendingRewards(), 5000);
-    setTimeout(() => refreshNexusWcryloBalance(), 15000);
-    setTimeout(() => refreshNexusStakedBalance(), 15000);
-    setTimeout(() => refreshNexusPendingRewards(), 15000);
-    setTimeout(() => refreshNexusWcryloBalance(), 5000);
-    setTimeout(() => refreshNexusStakedBalance(), 5000);
-    setTimeout(() => refreshNexusPendingRewards(), 5000);
-    setTimeout(() => refreshNexusWcryloBalance(), 15000);
-    setTimeout(() => refreshNexusStakedBalance(), 15000);
-    setTimeout(() => refreshNexusPendingRewards(), 15000);
+    await refreshNexusDashboard();
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Unstake failed.';
@@ -2030,7 +2936,7 @@ async function claimNexusRewards() {
 
   statusEl.textContent = 'Checking Nexus gas for staking reward claim...';
 
-  const gasCheck = await ensureNexusGasForAction('claiming staking rewards', 0.03);
+  const gasCheck = await ensureNexusGasForAction('claiming staking rewards', NEXUS_GAS_ESTIMATES.claimStakingRewards);
   if (!gasCheck.ok) {
     statusEl.textContent = gasCheck.cancelled ? 'Claim cancelled.' : `Claim failed: ${gasCheck.error}`;
     return;
@@ -2057,21 +2963,8 @@ async function claimNexusRewards() {
     statusEl.textContent =
       'Staking rewards claimed successfully.';
 
-    await refreshNexusWcryloBalance();
-    await refreshNexusStakedBalance();
-    await refreshNexusPendingRewards();
-    setTimeout(() => refreshNexusWcryloBalance(), 5000);
-    setTimeout(() => refreshNexusStakedBalance(), 5000);
-    setTimeout(() => refreshNexusPendingRewards(), 5000);
-    setTimeout(() => refreshNexusWcryloBalance(), 15000);
-    setTimeout(() => refreshNexusStakedBalance(), 15000);
-    setTimeout(() => refreshNexusPendingRewards(), 15000);
-    setTimeout(() => refreshNexusWcryloBalance(), 5000);
-    setTimeout(() => refreshNexusStakedBalance(), 5000);
-    setTimeout(() => refreshNexusPendingRewards(), 5000);
-    setTimeout(() => refreshNexusWcryloBalance(), 15000);
-    setTimeout(() => refreshNexusStakedBalance(), 15000);
-    setTimeout(() => refreshNexusPendingRewards(), 15000);
+    await refreshNexusDashboard();
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Claim failed.';
@@ -2105,8 +2998,8 @@ async function refreshNexusNodeStatus() {
 
     statusEl.innerHTML =
       `Tier: <strong>${tierName}</strong> · ` +
-      `Stake: <strong>${Number(result.stake).toFixed(4)} wCRYLO</strong> · ` +
-      `Pending: <strong>${Number(result.pending).toFixed(6)} wCRYLO</strong>`;
+      `Stake: <strong>${Number(result.stake).toFixed(4)} wCryLo</strong> · ` +
+      `Pending: <strong>${Number(result.pending).toFixed(6)} wCryLo</strong>`;
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Unable to load node status.';
@@ -2115,7 +3008,7 @@ async function refreshNexusNodeStatus() {
 
 async function registerNexusOperator() {
   const statusEl = document.getElementById('nexus-node-action-status');
-  statusEl.textContent = 'Registering Operator node with 300 wCRYLO...';
+  statusEl.textContent = 'Registering Operator node with 300 wCryLo...';
 
   try {
     const result = await window.crylo.nexusRegisterOperator(State.walletName, State.address);
@@ -2126,8 +3019,8 @@ async function registerNexusOperator() {
     }
 
     statusEl.textContent = 'Operator node registered successfully.';
-    await refreshNexusWcryloBalance();
-    await refreshNexusNodeStatus();
+    await refreshNexusDashboard();
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Operator registration failed.';
@@ -2136,7 +3029,7 @@ async function registerNexusOperator() {
 
 async function registerNexusValidator() {
   const statusEl = document.getElementById('nexus-node-action-status');
-  statusEl.textContent = 'Registering Validator node with 750 wCRYLO...';
+  statusEl.textContent = 'Registering Validator node with 750 wCryLo...';
 
   try {
     const result = await window.crylo.nexusRegisterValidator(State.walletName, State.address);
@@ -2147,8 +3040,8 @@ async function registerNexusValidator() {
     }
 
     statusEl.textContent = 'Validator node registered successfully.';
-    await refreshNexusWcryloBalance();
-    await refreshNexusNodeStatus();
+    await refreshNexusDashboard();
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Validator registration failed.';
@@ -2160,14 +3053,14 @@ async function unregisterNexusNode() {
   const statusEl = document.getElementById('nexus-node-action-status');
 
   const yes = confirm(
-    'Deregister this Nexus node?\n\nYour staked wCRYLO and available node rewards will be returned.'
+    'Deregister this Nexus node?\n\nYour staked wCryLo and available node rewards will be returned.'
   );
 
   if (!yes) return;
 
   statusEl.textContent = 'Checking Nexus gas for node deregistration...';
 
-  const gasCheck = await ensureNexusGasForAction('node deregistration', 0.04);
+  const gasCheck = await ensureNexusGasForAction('node deregistration', NEXUS_GAS_ESTIMATES.nodeDeregistration);
   if (!gasCheck.ok) {
     statusEl.textContent = gasCheck.cancelled ? 'Node deregistration cancelled.' : `Node deregistration failed: ${gasCheck.error}`;
     return;
@@ -2184,8 +3077,8 @@ async function unregisterNexusNode() {
     }
 
     statusEl.textContent = 'Node deregistered successfully.';
-    await refreshNexusWcryloBalance();
-    await refreshNexusNodeStatus();
+    await refreshNexusDashboard();
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Node deregistration failed.';
@@ -2197,7 +3090,7 @@ async function claimNexusNodeRewards() {
   const statusEl = document.getElementById('nexus-node-action-status');
   statusEl.textContent = 'Checking Nexus gas for node reward claim...';
 
-  const gasCheck = await ensureNexusGasForAction('claiming node rewards', 0.03);
+  const gasCheck = await ensureNexusGasForAction('claiming node rewards', NEXUS_GAS_ESTIMATES.claimNodeRewards);
   if (!gasCheck.ok) {
     statusEl.textContent = gasCheck.cancelled ? 'Node reward claim cancelled.' : `Node reward claim failed: ${gasCheck.error}`;
     return;
@@ -2224,8 +3117,8 @@ async function claimNexusNodeRewards() {
     }
 
     statusEl.textContent = 'Node rewards claimed successfully.';
-    await refreshNexusWcryloBalance();
-    await refreshNexusNodeStatus();
+    await refreshNexusDashboard();
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Node reward claim failed.';
@@ -2242,13 +3135,33 @@ function fmtUnix(ts) {
 async function refreshNexusGasStatus() {
   const statusEl = document.getElementById('nexus-gas-status');
   const nativeEl = document.getElementById('nexus-gas-native');
+  const starterEl = document.getElementById('nexus-gas-starter');
   const dailyEl = document.getElementById('nexus-gas-daily');
   const activityEl = document.getElementById('nexus-gas-activity');
 
   const linkedAddress = getLinkedNexusAddress();
 
   if (!linkedAddress) {
-    if (statusEl) statusEl.textContent = 'Gas status: Create/bind a Nexus wallet first.';
+    if (statusEl) {
+      statusEl.textContent =
+        'Gas status: Create/bind a Nexus wallet first.';
+    }
+
+    const headerGasEl =
+      document.getElementById('bal-crylo-gas');
+
+    if (headerGasEl) {
+      headerGasEl.innerHTML =
+        '—<span class="balance-unit"> CRYLO</span>';
+    }
+
+    const starterRow =
+      document.getElementById('nexus-starter-gas-row');
+
+    if (starterRow) {
+      starterRow.style.display = '';
+    }
+
     return;
   }
 
@@ -2260,6 +3173,17 @@ async function refreshNexusGasStatus() {
       return;
     }
 
+    State.gasPolicy = {
+      starterGasAmount:
+        Number(result.starterGasAmount),
+      lowGasThreshold:
+        Number(result.lowGasThreshold),
+      purchaseRateNativePerWcrylo:
+        Number(result.purchaseRateNativePerWcrylo),
+      minimumTreasuryReserve:
+        Number(result.minimumTreasuryReserve)
+    };
+
     const now = Date.now() / 1000;
     const active = result.lastActivityAt && (now - result.lastActivityAt) <= (3 * 24 * 60 * 60);
 
@@ -2269,8 +3193,47 @@ async function refreshNexusGasStatus() {
         : `Gas status: ${active ? 'Active / cooldown' : 'Inactive until Nexus activity'}`;
     }
 
-    if (nativeEl) nativeEl.textContent = `Native Gas: ${fmtDecimalAmount(result.nativeGas, 6)} CRYLO (GAS)`;
-    if (dailyEl) dailyEl.textContent = `Daily Gas: ${fmtDecimalAmount(result.dailyGasAmount, 6)} CRYLO (GAS) · Vault: ${fmtDecimalAmount(result.vaultBalance, 4)} CRYLO (GAS)`;
+    const formattedNativeGas =
+      fmtDecimalAmount(result.nativeGas, 6);
+
+    if (nativeEl) {
+      nativeEl.textContent =
+        `Native Gas: ${formattedNativeGas} CRYLO`;
+    }
+
+    const headerGasEl =
+      document.getElementById('bal-crylo-gas');
+
+    if (headerGasEl) {
+      headerGasEl.innerHTML =
+        `${formattedNativeGas}` +
+        `<span class="balance-unit"> CRYLO</span>`;
+    }
+
+    const starterRow =
+      document.getElementById('nexus-starter-gas-row');
+
+    if (starterRow) {
+      starterRow.style.display =
+        result.starterGasClaimed ? 'none' : '';
+    }
+
+    if (starterEl && !result.starterGasClaimed) {
+      const registryState = result.registered
+        ? 'Registered'
+        : 'Not registered';
+
+      starterEl.textContent =
+        `Starter Gas: ${fmtDecimalAmount(result.starterGasAmount, 6)} CRYLO` +
+        ` · Not sent` +
+        ` · Wallet: ${registryState}`;
+    }
+
+    if (dailyEl) {
+      dailyEl.textContent =
+        `Daily Gas: ${fmtDecimalAmount(result.dailyGasAmount, 6)} CRYLO` +
+        ` · Vault: ${fmtDecimalAmount(result.vaultBalance, 4)} CRYLO`;
+    }
     if (activityEl) activityEl.textContent = `Last Activity: ${fmtUnix(result.lastActivityAt)} · Last Claim: ${fmtUnix(result.lastGasClaimAt)}`;
   } catch (err) {
     console.error(err);
@@ -2296,7 +3259,8 @@ async function claimNexusDailyGas() {
     }
 
     if (statusEl) statusEl.textContent = `Daily gas claimed: ${result.txHash}`;
-    await refreshNexusGasStatus();
+    await refreshNexusDashboard();
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
     if (statusEl) statusEl.textContent = 'Claim failed.';
@@ -2309,11 +3273,11 @@ async function buyNexusGasWithWcrylo() {
   const amount = input ? input.value.trim() : '';
 
   if (!amount || Number(amount) <= 0) {
-    if (statusEl) statusEl.textContent = 'Enter a valid wCRYLO amount.';
+    if (statusEl) statusEl.textContent = 'Enter a valid wCryLo amount.';
     return;
   }
 
-  if (statusEl) statusEl.textContent = `Buying gas with ${amount} wCRYLO...`;
+  if (statusEl) statusEl.textContent = `Buying gas with ${amount} wCryLo...`;
 
   try {
     const result = await window.crylo.nexusBuyGasWithWcrylo(amount, State.walletName, State.address);
@@ -2326,8 +3290,8 @@ async function buyNexusGasWithWcrylo() {
     if (input) input.value = '';
     if (statusEl) statusEl.textContent = `Gas purchased: ${result.txHash}`;
 
-    await refreshNexusGasStatus();
-    await refreshNexusWcryloBalance();
+    await refreshNexusDashboard();
+    scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
     if (statusEl) statusEl.textContent = 'Buy gas failed.';
@@ -2402,6 +3366,87 @@ async function loadNexusTransactions() {
 }
 
 
+function resumePendingBridgeOperations() {
+  try {
+    const inboundRaw =
+      localStorage.getItem('cryloBridgePending');
+
+    if (inboundRaw) {
+      const inbound = JSON.parse(inboundRaw);
+
+      const paymentId =
+        inbound.paymentId ||
+        inbound.paymentIds?.[0];
+
+      if (paymentId) {
+        setBridgeButtonBusy('in', true);
+
+        setBridgeProgress(
+          'in',
+          3,
+          'Waiting for confirmations',
+          'Resuming the pending CryLo → wCryLo bridge.'
+        );
+
+        pollCryLoBridgeStatus(paymentId);
+      }
+    }
+  } catch (error) {
+    console.error(
+      'Failed to resume inbound bridge:',
+      error
+    );
+  }
+
+  try {
+    const outboundRaw =
+      localStorage.getItem(
+        'cryloBridgeReleasePending'
+      );
+
+    if (outboundRaw) {
+      const outbound =
+        JSON.parse(outboundRaw);
+
+      if (outbound.nexusTxHash) {
+        setBridgeButtonBusy('out', true);
+
+        setBridgeProgress(
+          'out',
+          3,
+          'Waiting for bridge relayer',
+          'Resuming the pending wCryLo → CryLo release.'
+        );
+
+        pollBridgeReleaseStatus(
+          outbound.nexusTxHash
+        );
+      }
+    }
+  } catch (error) {
+    console.error(
+      'Failed to resume outbound bridge:',
+      error
+    );
+  }
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener(
+    'DOMContentLoaded',
+    () => setTimeout(
+      resumePendingBridgeOperations,
+      500
+    )
+  );
+} else {
+  setTimeout(
+    resumePendingBridgeOperations,
+    500
+  );
+}
+
+
 window.App = {
   sendMax,
   toggleAdvanced,
@@ -2412,6 +3457,7 @@ window.App = {
   restoreWallet,
   openMainScreen,
   refreshAll,
+  refreshNexusDashboard,
   switchTab,
   switchWallet,
   sendTx,

@@ -17,28 +17,225 @@ const WALLET_DIR_NAME   = 'wallets';
 const LOG_DIR_NAME      = 'logs';
 const DATA_DIR_NAME     = 'CryLo-testnet';
 
-// CryLo and wCRYLO use 11 decimal places. Nexus native CRYLO (GAS) uses 18.
+// CryLo and wCryLo use 11 decimal places. Nexus native CRYLO uses 18.
 const CRYLO_DECIMALS = 11;
-const WCRYLO_DECIMALS = 11;
+const wCryLo_DECIMALS = 11;
 const NEXUS_GAS_DECIMALS = 18;
 
 function parseWcryloUnits(amountText) {
-  return ethers.parseUnits(String(amountText), WCRYLO_DECIMALS);
+  return ethers.parseUnits(String(amountText), wCryLo_DECIMALS);
 }
 
 function formatWcryloUnits(amount) {
-  return ethers.formatUnits(amount, WCRYLO_DECIMALS);
+  return ethers.formatUnits(amount, wCryLo_DECIMALS);
 }
 
 function formatNexusGasUnits(amount) {
   return ethers.formatUnits(amount, NEXUS_GAS_DECIMALS);
 }
 
-const NEXUS_RPC_URL =
-  process.env.NEXUS_RPC_URL ||
-  'http://34.118.158.133:9654/ext/bc/EPA2TKpkcmYRdaa4QKMYdFHkjzy5SWuGHEiBwznNspdTqexrQ/rpc';
+const BRIDGE_API_URL =
+  process.env.CRYLONEXUS_API_URL ||
+  'http://34.118.135.234/crylonexus-api';
 
-const BRIDGE_API_URL = 'http://34.118.158.133:8088';
+const NEXUS_RUNTIME_CACHE_MS = 60_000;
+
+let nexusRuntimeCache = null;
+let nexusRuntimeLoadedAt = 0;
+
+const REQUIRED_NEXUS_CONTRACTS = [
+  'wCryLo',
+  'BridgeManager',
+  'BridgeLedger',
+  'BridgeReserveVault',
+  'WalletRegistry',
+  'GasManager',
+  'GasTreasuryVault',
+  'RewardManager',
+  'RewardVault',
+  'Staking',
+  'NodeStaking',
+  'RevenueRouter',
+  'RevenuePolicy'
+];
+
+const OPTIONAL_NEXUS_CONTRACTS = [
+  'CryLoInteractiveNFT',
+  'CryLoBuybackVault',
+  'NFTRevenueSplitter'
+];
+
+async function getNexusRuntimeConfig(forceRefresh = false) {
+  const now = Date.now();
+
+  if (
+    !forceRefresh &&
+    nexusRuntimeCache &&
+    now - nexusRuntimeLoadedAt < NEXUS_RUNTIME_CACHE_MS
+  ) {
+    return nexusRuntimeCache;
+  }
+
+  const response = await fetch(
+    `${BRIDGE_API_URL}/nexus/bridge-config`,
+    {
+      headers: {
+        Accept: 'application/json'
+      }
+    }
+  );
+
+  const raw = await response.text();
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (_) {
+    throw new Error(
+      `CryLoNexus Foundation returned invalid JSON: ${raw.slice(0, 200)}`
+    );
+  }
+
+  if (!response.ok || !data?.ok) {
+    throw new Error(
+      data?.error ||
+      `CryLoNexus Foundation configuration failed with HTTP ${response.status}`
+    );
+  }
+
+  const rpc = String(data.rpc || '').trim();
+  const chainId = Number(data.chainId);
+  const sourceContracts = data.contracts || {};
+
+  if (!/^https?:\/\//i.test(rpc)) {
+    throw new Error('CryLoNexus Foundation returned an invalid RPC URL.');
+  }
+
+  if (!Number.isSafeInteger(chainId) || chainId <= 0) {
+    throw new Error('CryLoNexus Foundation returned an invalid chain ID.');
+  }
+
+  const contracts = {};
+
+  for (const name of REQUIRED_NEXUS_CONTRACTS) {
+    const address = sourceContracts[name];
+
+    if (!ethers.isAddress(address)) {
+      throw new Error(
+        `CryLoNexus Foundation returned an invalid ${name} address.`
+      );
+    }
+
+    const normalized = ethers.getAddress(address);
+
+    if (normalized === ethers.ZeroAddress) {
+      throw new Error(
+        `CryLoNexus Foundation returned a zero ${name} address.`
+      );
+    }
+
+    contracts[name] = normalized;
+  }
+
+  /*
+   * NFT and buyback contracts are optional until those features are
+   * deployed on the active CryLoNexus network. A missing optional
+   * contract must not block balances, staking, gas, bridge, or nodes.
+   */
+  for (const name of OPTIONAL_NEXUS_CONTRACTS) {
+    const address = sourceContracts[name];
+
+    if (!address) {
+      continue;
+    }
+
+    if (!ethers.isAddress(address)) {
+      console.warn(
+        `Ignoring invalid optional Nexus contract ${name}:`,
+        address
+      );
+      continue;
+    }
+
+    const normalized = ethers.getAddress(address);
+
+    if (normalized === ethers.ZeroAddress) {
+      console.warn(
+        `Ignoring zero optional Nexus contract ${name}.`
+      );
+      continue;
+    }
+
+    contracts[name] = normalized;
+  }
+
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const network = await provider.getNetwork();
+
+  if (Number(network.chainId) !== chainId) {
+    throw new Error(
+      `CryLoNexus chain mismatch: Foundation reports ${chainId}, RPC reports ${network.chainId}.`
+    );
+  }
+
+  const runtime = Object.freeze({
+    platform: data.platform,
+    configVersion: data.configVersion,
+    environment: data.environment,
+    networkName: data.networkName,
+    version: data.version,
+    chainId,
+    chainIdHex: data.chainIdHex,
+    blockchainId: data.blockchainId,
+    rpc,
+    nativeToken: Object.freeze({ ...(data.nativeToken || {}) }),
+    features: Object.freeze({ ...(data.features || {}) }),
+    contracts: Object.freeze(contracts),
+    provider,
+    generatedAt: data.generatedAt
+  });
+
+  nexusRuntimeCache = runtime;
+  nexusRuntimeLoadedAt = now;
+
+  return runtime;
+}
+
+function clearNexusRuntimeConfig() {
+  nexusRuntimeCache = null;
+  nexusRuntimeLoadedAt = 0;
+}
+
+ipcMain.handle('nexus-runtime-status', async () => {
+  try {
+    const runtime = await getNexusRuntimeConfig(true);
+    const latestBlock = await runtime.provider.getBlockNumber();
+
+    return {
+      ok: true,
+      platform: runtime.platform,
+      environment: runtime.environment,
+      networkName: runtime.networkName,
+      version: runtime.version,
+      chainId: runtime.chainId,
+      chainIdHex: runtime.chainIdHex,
+      blockchainId: runtime.blockchainId,
+      rpc: runtime.rpc,
+      latestBlock,
+      contractCount: Object.keys(runtime.contracts).length,
+      contracts: runtime.contracts,
+      features: runtime.features,
+      generatedAt: runtime.generatedAt
+    };
+  } catch (e) {
+    clearNexusRuntimeConfig();
+
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
+  }
+});
 
 // Detect OS
 const IS_WIN   = process.platform === 'win32';
@@ -350,23 +547,103 @@ function safeNexusFileName(cryloAddress) {
 }
 
 
-async function registerBoundNexusWallet(nexusAddress) {
-  const url = `${BRIDGE_API_URL}/nexus/register-bound-wallet`;
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nexusAddress })
-  });
-
-  const json = await res.json();
-
-  if (!res.ok || !json.ok) {
-    throw new Error(json.error || 'Failed to register Nexus wallet for gas support');
+async function performBoundNexusWalletRegistration(wallet) {
+  if (!wallet || !wallet.address || !wallet.privateKey) {
+    throw new Error(
+      'A bound Nexus wallet is required for onboarding'
+    );
   }
 
-  return json;
+  const challengeResponse = await fetch(
+    `${BRIDGE_API_URL}/nexus/onboarding-challenge`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        nexusAddress: wallet.address
+      })
+    }
+  );
+
+  const challenge = await challengeResponse.json();
+
+  if (!challengeResponse.ok || !challenge.ok) {
+    throw new Error(
+      challenge.error ||
+      'Failed to request Nexus onboarding challenge'
+    );
+  }
+
+  const signature =
+    await wallet.signMessage(challenge.message);
+
+  const registerResponse = await fetch(
+    `${BRIDGE_API_URL}/nexus/register-bound-wallet`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        nexusAddress: wallet.address,
+        signature
+      })
+    }
+  );
+
+  const registration = await registerResponse.json();
+
+  if (!registerResponse.ok || !registration.ok) {
+    throw new Error(
+      registration.error ||
+      'Failed to register Nexus wallet'
+    );
+  }
+
+  return registration;
 }
+
+/*
+ * Only one Foundation onboarding request may run at a time for a
+ * particular bound Nexus wallet.
+ *
+ * This prevents two Electron lifecycle paths from requesting separate
+ * challenges for the same address and invalidating one another.
+ */
+const nexusOnboardingRequests = new Map();
+
+async function registerBoundNexusWallet(wallet) {
+  if (!wallet || !wallet.address) {
+    return performBoundNexusWalletRegistration(wallet);
+  }
+
+  const addressKey =
+    ethers.getAddress(wallet.address).toLowerCase();
+
+  const existingRequest =
+    nexusOnboardingRequests.get(addressKey);
+
+  if (existingRequest) {
+    return existingRequest;
+  }
+
+  const request =
+    performBoundNexusWalletRegistration(wallet)
+      .finally(() => {
+        if (
+          nexusOnboardingRequests.get(addressKey) === request
+        ) {
+          nexusOnboardingRequests.delete(addressKey);
+        }
+      });
+
+  nexusOnboardingRequests.set(addressKey, request);
+
+  return request;
+}
+
 
 ipcMain.handle('nexus-wallet-create', async (_, walletName, cryloAddress) => {
   try {
@@ -379,8 +656,25 @@ ipcMain.handle('nexus-wallet-create', async (_, walletName, cryloAddress) => {
     if (fs.existsSync(file)) {
       const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
       let registration = null;
-      if (existing.nexusAddress) {
-        registration = await registerBoundNexusWallet(existing.nexusAddress);
+
+      if (
+        existing.nexusAddress &&
+        existing.privateKey
+      ) {
+        const existingWallet =
+          new ethers.Wallet(existing.privateKey);
+
+        if (
+          ethers.getAddress(existingWallet.address) !==
+          ethers.getAddress(existing.nexusAddress)
+        ) {
+          throw new Error(
+            'Stored Nexus private key does not match the bound address'
+          );
+        }
+
+        registration =
+          await registerBoundNexusWallet(existingWallet);
       }
 
       return {
@@ -401,13 +695,54 @@ ipcMain.handle('nexus-wallet-create', async (_, walletName, cryloAddress) => {
       createdAt: new Date().toISOString()
     }, null, 2), { mode: 0o600 });
 
-    const registration = await registerBoundNexusWallet(wallet.address);
+    /*
+     * Return the newly created address immediately.
+     *
+     * Registration and starter gas continue using the exact
+     * same saved wallet and binding. No second Nexus wallet is
+     * created and the CryLo-to-Nexus binding remains one-to-one.
+     */
+    registerBoundNexusWallet(wallet)
+      .then(registration => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(
+            'nexus-wallet-onboarding-result',
+            {
+              ok: true,
+              nexusAddress: wallet.address,
+              registration
+            }
+          );
+        }
+      })
+      .catch(error => {
+        console.error(
+          'Nexus wallet onboarding failed:',
+          error
+        );
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(
+            'nexus-wallet-onboarding-result',
+            {
+              ok: false,
+              nexusAddress: wallet.address,
+              error:
+                error?.shortMessage ||
+                error?.reason ||
+                error?.message ||
+                String(error)
+            }
+          );
+        }
+      });
 
     return {
       ok: true,
       alreadyExists: false,
       nexusAddress: wallet.address,
-      gasRegistered: !!registration.ok
+      onboardingPending: true,
+      gasRegistered: false
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -432,9 +767,71 @@ ipcMain.handle('nexus-wallet-load', async (_, walletName, cryloAddress) => {
       return { ok: true, nexusAddress: '' };
     }
 
+    if (!data.nexusAddress || !data.privateKey) {
+      throw new Error(
+        'Bound Nexus wallet file is incomplete'
+      );
+    }
+
+    const existingWallet =
+      new ethers.Wallet(data.privateKey);
+
+    if (
+      ethers.getAddress(existingWallet.address) !==
+      ethers.getAddress(data.nexusAddress)
+    ) {
+      throw new Error(
+        'Stored Nexus private key does not match the bound address'
+      );
+    }
+
+    /*
+     * Reconcile the permanent Nexus binding in the background.
+     *
+     * This does not create or replace a Nexus wallet. The
+     * Foundation onboarding route is idempotent and completes
+     * any missing registration, activity, or starter-gas state
+     * for the exact wallet already bound to this CryLo wallet.
+     */
+    registerBoundNexusWallet(existingWallet)
+      .then(registration => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(
+            'nexus-wallet-onboarding-result',
+            {
+              ok: true,
+              nexusAddress: existingWallet.address,
+              registration
+            }
+          );
+        }
+      })
+      .catch(error => {
+        console.error(
+          'Nexus wallet reconciliation failed:',
+          error
+        );
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(
+            'nexus-wallet-onboarding-result',
+            {
+              ok: false,
+              nexusAddress: existingWallet.address,
+              error:
+                error?.shortMessage ||
+                error?.reason ||
+                error?.message ||
+                String(error)
+            }
+          );
+        }
+      });
+
     return {
       ok: true,
-      nexusAddress: data.nexusAddress || ''
+      nexusAddress: data.nexusAddress,
+      onboardingPending: true
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -465,7 +862,7 @@ function loadBoundNexusWallet(walletName, cryloAddress) {
     throw new Error('Missing Nexus private key');
   }
 
-  return new ethers.Wallet(data.privateKey, new ethers.JsonRpcProvider(NEXUS_RPC_URL));
+  return new ethers.Wallet(data.privateKey);
 }
 
 
@@ -509,6 +906,47 @@ ipcMain.handle('miner-get-info', async () => {
   };
 });
 
+async function stopDaemonMining() {
+  try {
+    await daemonHttp('/stop_mining', {});
+    console.log('CryLo daemon mining stopped.');
+  } catch (error) {
+    /*
+     * Safe to ignore when mining is already stopped or the
+     * daemon is unavailable during shutdown.
+     */
+    console.log(
+      'Daemon mining stop completed with no active miner:',
+      error?.message || String(error)
+    );
+  }
+}
+
+let backendShutdownPromise = null;
+
+async function shutdownBackendsSafely() {
+  if (backendShutdownPromise) {
+    return backendShutdownPromise;
+  }
+
+  backendShutdownPromise = (async () => {
+    shuttingDown = true;
+
+    // Required shutdown order:
+    // 1. Stop daemon mining.
+    // 2. Stop wallet-rpc.
+    // 3. Stop an optional miner process.
+    // 4. Stop the daemon.
+    await stopDaemonMining();
+    await killProc(walletProc, 'wallet-rpc');
+    await killProc(minerProc, 'miner');
+    await killProc(daemonProc, 'daemon');
+  })();
+
+  return backendShutdownPromise;
+}
+
+
 ipcMain.handle('miner-start', async (_, opts) => {
   try {
     const result = await daemonHttp('/start_mining', {
@@ -526,10 +964,13 @@ ipcMain.handle('miner-start', async (_, opts) => {
 
 ipcMain.handle('miner-stop', async () => {
   try {
-    const result = await daemonHttp('/stop_mining', {});
-    return { ok: true, result };
-  } catch(e) {
-    return { ok: false, error: e.message };
+    await stopDaemonMining();
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.message
+    };
   }
 });
 
@@ -552,30 +993,40 @@ ipcMain.handle('miner-get-status', async () => {
 // ─── CryLo Nexus ──────────────────────────────────────────────────────────────
 ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
-
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const nftAddress = '0x7fdD458940b4D8Be338449Ed495cC504FAdb44Db';
-    const vaultAddress = '0x6faE56421a0dC721b1190a701518BAd95BB26D39';
-
-    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
-    const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
-    const vaultArtifact = require('./src/abis/CryLoBuybackVault.json');
-
-    const provider = new ethers.JsonRpcProvider(rpc);
-
-    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, provider);
-    const nft = new ethers.Contract(nftAddress, nftArtifact.abi, provider);
-    const vault = new ethers.Contract(vaultAddress, vaultArtifact.abi, provider);
-
     const normalizedLinked = String(linkedAddress || '').toLowerCase();
 
     if (!ethers.isAddress(normalizedLinked)) {
       return { ok: false, error: 'Invalid linked Nexus address' };
     }
 
+    const runtime = await getNexusRuntimeConfig();
+
+    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
+    const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
+    const vaultArtifact = require('./src/abis/CryLoBuybackVault.json');
+
+    const token = new ethers.Contract(
+      runtime.contracts.wCryLo,
+      tokenArtifact.abi,
+      runtime.provider
+    );
+
+    const nft = new ethers.Contract(
+      runtime.contracts.CryLoInteractiveNFT,
+      nftArtifact.abi,
+      runtime.provider
+    );
+
+    const vault = new ethers.Contract(
+      runtime.contracts.CryLoBuybackVault,
+      vaultArtifact.abi,
+      runtime.provider
+    );
+
     const nextTokenId = Number(await nft.nextTokenId());
-    const vaultBalance = await token.balanceOf(vaultAddress);
+    const vaultBalance = await token.balanceOf(
+      runtime.contracts.CryLoBuybackVault
+    );
 
     const owned = [];
 
@@ -591,20 +1042,16 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
         const codeHash = ethers.keccak256(ethers.toUtf8Bytes(code));
         const poolData = await vault.codePools(codeHash);
 
-        const approved = poolData[0];
-        const poolBalance = poolData[1];
-        const redeemedCount = poolData[2];
-
         owned.push({
           tokenId,
           owner,
           code,
-          eligible: !!approved,
-          codePool: formatWcryloUnits(poolBalance),
-          redeemed: redeemedCount.toString()
+          eligible: !!poolData[0],
+          codePool: formatWcryloUnits(poolData[1]),
+          redeemed: poolData[2].toString()
         });
       } catch (_) {
-        // burned/nonexistent token or unreadable token; skip
+        // Burned, nonexistent, or unreadable token; skip it.
       }
     }
 
@@ -622,30 +1069,43 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
 
 ipcMain.handle('nexus-buyback-nft', async (_, tokenId, walletName, cryloAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const nftAddress = '0x7fdD458940b4D8Be338449Ed495cC504FAdb44Db';
-    const vaultAddress = '0x6faE56421a0dC721b1190a701518BAd95BB26D39';
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
 
     const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
     const vaultArtifact = require('./src/abis/CryLoBuybackVault.json');
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
+    const nft = new ethers.Contract(
+      runtime.contracts.CryLoInteractiveNFT,
+      nftArtifact.abi,
+      wallet
+    );
 
-    const nft = new ethers.Contract(nftAddress, nftArtifact.abi, wallet);
-    const vault = new ethers.Contract(vaultAddress, vaultArtifact.abi, wallet);
+    const vault = new ethers.Contract(
+      runtime.contracts.CryLoBuybackVault,
+      vaultArtifact.abi,
+      wallet
+    );
 
     const id = Number(tokenId);
-
     const owner = await nft.ownerOf(id);
+
     if (owner.toLowerCase() !== wallet.address.toLowerCase()) {
       return { ok: false, error: 'Linked wallet does not own this NFT.' };
     }
 
     let nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
-    let tx = await nft.approve(vaultAddress, id, { nonce });
+    let tx = await nft.approve(
+      runtime.contracts.CryLoBuybackVault,
+      id,
+      { nonce }
+    );
     await tx.wait();
     nonce++;
 
@@ -654,7 +1114,10 @@ ipcMain.handle('nexus-buyback-nft', async (_, tokenId, walletName, cryloAddress)
 
     const newOwner = await nft.ownerOf(id);
 
-    if (newOwner.toLowerCase() !== vaultAddress.toLowerCase()) {
+    if (
+      newOwner.toLowerCase() !==
+      runtime.contracts.CryLoBuybackVault.toLowerCase()
+    ) {
       return {
         ok: false,
         error: `Buyback transaction completed, but NFT #${id} is still owned by ${newOwner}`,
@@ -679,31 +1142,36 @@ ipcMain.handle('nexus-buyback-nft', async (_, tokenId, walletName, cryloAddress)
 
 ipcMain.handle('nexus-burn-nft', async (_, tokenId, walletName, cryloAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const nftAddress = '0x7fdD458940b4D8Be338449Ed495cC504FAdb44Db';
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
 
     const nftArtifact = require('./src/abis/CryLoInteractiveNFT.json');
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
-
-    const nft = new ethers.Contract(nftAddress, nftArtifact.abi, wallet);
+    const nft = new ethers.Contract(
+      runtime.contracts.CryLoInteractiveNFT,
+      nftArtifact.abi,
+      wallet
+    );
 
     const id = Number(tokenId);
-
     const owner = await nft.ownerOf(id);
+
     if (owner.toLowerCase() !== wallet.address.toLowerCase()) {
       return { ok: false, error: 'Linked wallet does not own this NFT.' };
     }
 
     const nonce = await provider.getTransactionCount(wallet.address, 'pending');
-
     const tx = await nft.burn(id, { nonce });
     const receipt = await tx.wait();
 
     try {
       await nft.ownerOf(id);
+
       return {
         ok: false,
         error: `Burn transaction completed, but NFT #${id} still exists.`,
@@ -726,18 +1194,25 @@ ipcMain.handle('nexus-burn-nft', async (_, tokenId, walletName, cryloAddress) =>
 });
 
 
-
 ipcMain.handle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloAddress) => {
   try {
-    const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress).connect(provider);
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const bridgeAddress = '0x625b2DC4F7f43Be42715DcDCf43dd595f9F932c7';
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
+
     const bridgeArtifact = require('./src/abis/BridgeManager.json');
 
-    const bridge = new ethers.Contract(bridgeAddress, bridgeArtifact.abi, wallet);
-    const amount = parseWcryloUnits(amountText);
+    const bridge = new ethers.Contract(
+      runtime.contracts.BridgeManager,
+      bridgeArtifact.abi,
+      wallet
+    );
 
+    const amount = parseWcryloUnits(amountText);
     const nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
     const burnId = ethers.keccak256(
@@ -758,16 +1233,20 @@ ipcMain.handle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloAd
       amount,
       { nonce }
     );
-    const receipt = await tx.wait();
 
+    const receipt = await tx.wait();
 
     return {
       ok: true,
       txHash: tx.hash,
-      blockNumber: receipt.blockNumber
+      blockNumber: receipt.blockNumber,
+      burnId
     };
   } catch (e) {
-    return { ok: false, error: e.shortMessage || e.reason || e.message };
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
   }
 });
 
@@ -833,17 +1312,18 @@ ipcMain.handle('bridge-release-status', async (_, nexusTxHash) => {
 
 ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
-
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
-
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, provider);
-
     if (!ethers.isAddress(linkedAddress)) {
       return { ok: false, error: 'Invalid Nexus address' };
     }
+
+    const runtime = await getNexusRuntimeConfig();
+    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
+
+    const token = new ethers.Contract(
+      runtime.contracts.wCryLo,
+      tokenArtifact.abi,
+      runtime.provider
+    );
 
     const balance = await token.balanceOf(linkedAddress);
 
@@ -852,23 +1332,34 @@ ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
       balance: formatWcryloUnits(balance)
     };
   } catch (e) {
-    return { ok: false, error: e.message };
+    console.error('[nexus-wcrylo-balance] failed', {
+      message: e?.message,
+      shortMessage: e?.shortMessage,
+      reason: e?.reason,
+      code: e?.code
+    });
+
+    return {
+      ok: false,
+      error: e?.shortMessage || e?.reason || e?.message || String(e)
+    };
   }
 });
 
 ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
-
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
-    const stakingArtifact = require('./src/abis/CryLoStaking.json');
-
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, provider);
-
     if (!ethers.isAddress(linkedAddress)) {
       return { ok: false, error: 'Invalid Nexus address' };
     }
+
+    const runtime = await getNexusRuntimeConfig();
+    const stakingArtifact = require('./src/abis/CryLoStaking.json');
+
+    const staking = new ethers.Contract(
+      runtime.contracts.Staking,
+      stakingArtifact.abi,
+      runtime.provider
+    );
 
     const balance = await staking.stakedBalance(linkedAddress);
 
@@ -883,17 +1374,18 @@ ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
 
 ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
-
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
-    const stakingArtifact = require('./src/abis/CryLoStaking.json');
-
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, provider);
-
     if (!ethers.isAddress(linkedAddress)) {
       return { ok: false, error: 'Invalid Nexus address' };
     }
+
+    const runtime = await getNexusRuntimeConfig();
+    const stakingArtifact = require('./src/abis/CryLoStaking.json');
+
+    const staking = new ethers.Contract(
+      runtime.contracts.Staking,
+      stakingArtifact.abi,
+      runtime.provider
+    );
 
     const rewards = await staking.pendingRewards(linkedAddress);
 
@@ -908,19 +1400,22 @@ ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
 
 ipcMain.handle('nexus-claim-rewards', async (_, walletName, cryloAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
+    const runtime = await getNexusRuntimeConfig();
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(runtime.provider);
 
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
-
-    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
+    const staking = new ethers.Contract(
+      runtime.contracts.Staking,
+      stakingArtifact.abi,
+      wallet
+    );
 
     const tx = await staking.claimRewards();
     const receipt = await tx.wait();
-
 
     return {
       ok: true,
@@ -937,30 +1432,42 @@ ipcMain.handle('nexus-claim-rewards', async (_, walletName, cryloAddress) => {
 
 ipcMain.handle('nexus-stake-wcrylo', async (_, amountText, walletName, cryloAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
 
     const tokenArtifact = require('./src/abis/WrappedCryLo.json');
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
+    const token = new ethers.Contract(
+      runtime.contracts.wCryLo,
+      tokenArtifact.abi,
+      wallet
+    );
 
-    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
-    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
+    const staking = new ethers.Contract(
+      runtime.contracts.Staking,
+      stakingArtifact.abi,
+      wallet
+    );
 
     const amount = parseWcryloUnits(amountText);
     let nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
-    let tx = await token.approve(stakingAddress, amount, { nonce });
+    let tx = await token.approve(
+      runtime.contracts.Staking,
+      amount,
+      { nonce }
+    );
     await tx.wait();
     nonce++;
 
     tx = await staking.stake(amount, { nonce });
     const receipt = await tx.wait();
-
 
     return {
       ok: true,
@@ -977,22 +1484,27 @@ ipcMain.handle('nexus-stake-wcrylo', async (_, amountText, walletName, cryloAddr
 
 ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText, walletName, cryloAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const stakingAddress = '0xA51adce930306362528C5064Eb1E69f906CA830A';
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
+
     const stakingArtifact = require('./src/abis/CryLoStaking.json');
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
-
-    const staking = new ethers.Contract(stakingAddress, stakingArtifact.abi, wallet);
+    const staking = new ethers.Contract(
+      runtime.contracts.Staking,
+      stakingArtifact.abi,
+      wallet
+    );
 
     const amount = parseWcryloUnits(amountText);
     const nonce = await provider.getTransactionCount(wallet.address, 'pending');
 
     const tx = await staking.unstake(amount, { nonce });
     const receipt = await tx.wait();
-
 
     return {
       ok: true,
@@ -1009,26 +1521,50 @@ ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText, walletName, cryloAd
 
 ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
-
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
-    const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
-
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const node = new ethers.Contract(nodeStakingAddress, nodeArtifact.abi, provider);
-
     if (!ethers.isAddress(linkedAddress)) {
       return { ok: false, error: 'Invalid Nexus address' };
     }
 
-    const tier = await node.nodeTier(linkedAddress);
-    const stake = await node.nodeStake(linkedAddress);
-    const pending = await node.pendingRewards(linkedAddress);
-    const operatorStake = await node.operatorStake();
-    const validatorStake = await node.validatorStake();
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
+
+    const nodeArtifact =
+      require('./src/abis/CryLoNodeStaking.json');
+
+    const rewardVaultArtifact =
+      require('./src/abis/RewardVault.json');
+
+    const node = new ethers.Contract(
+      runtime.contracts.NodeStaking,
+      nodeArtifact.abi,
+      provider
+    );
+
+    const rewardVault = new ethers.Contract(
+      runtime.contracts.RewardVault,
+      rewardVaultArtifact.abi,
+      provider
+    );
+
+    const [
+      registered,
+      tier,
+      stake,
+      pending,
+      operatorStake,
+      validatorStake
+    ] = await Promise.all([
+      node.isNodeWallet(linkedAddress),
+      node.nodeTier(linkedAddress),
+      node.nodeStake(linkedAddress),
+      rewardVault.pendingRewards(linkedAddress),
+      node.operatorStakeRequirement(),
+      node.validatorStakeRequirement()
+    ]);
 
     return {
       ok: true,
+      registered: !!registered,
       tier: tier.toString(),
       stake: formatWcryloUnits(stake),
       pending: formatWcryloUnits(pending),
@@ -1036,22 +1572,41 @@ ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
       validatorStake: formatWcryloUnits(validatorStake)
     };
   } catch (e) {
-    return { ok: false, error: e.shortMessage || e.reason || e.message };
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
   }
 });
 
 
-function saveOperatorConfig({ cryloAddress, nexusAddress, tier, nodeRpc, chainId, nodeStakingContract }) {
-  const dir = path.join(os.homedir(), '.config', 'crylo-wallet', 'operator');
+function saveOperatorConfig({
+  cryloAddress,
+  nexusAddress,
+  tier,
+  nodeRpc,
+  chainId,
+  nodeStakingContract
+}) {
+  const dir = path.join(
+    os.homedir(),
+    '.config',
+    'crylo-wallet',
+    'operator'
+  );
+
   fs.mkdirSync(dir, { recursive: true });
 
   const file = path.join(dir, 'operator.json');
   const now = new Date().toISOString();
 
   let createdAt = now;
+
   if (fs.existsSync(file)) {
     try {
-      createdAt = JSON.parse(fs.readFileSync(file, 'utf8')).createdAt || now;
+      createdAt =
+        JSON.parse(fs.readFileSync(file, 'utf8')).createdAt ||
+        now;
     } catch (_) {}
   }
 
@@ -1067,30 +1622,56 @@ function saveOperatorConfig({ cryloAddress, nexusAddress, tier, nodeRpc, chainId
     updatedAt: now
   };
 
-  fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  fs.writeFileSync(
+    file,
+    JSON.stringify(config, null, 2) + '\n',
+    { mode: 0o600 }
+  );
+
   return config;
 }
 
 ipcMain.handle('nexus-register-operator', async (_, walletName, cryloAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
 
-    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
-    const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
+    const tokenArtifact =
+      require('./src/abis/WrappedCryLo.json');
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
+    const nodeArtifact =
+      require('./src/abis/CryLoNodeStaking.json');
 
-    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
-    const node = new ethers.Contract(nodeStakingAddress, nodeArtifact.abi, wallet);
+    const token = new ethers.Contract(
+      runtime.contracts.wCryLo,
+      tokenArtifact.abi,
+      wallet
+    );
 
-    const amount = await node.operatorStake();
-    let nonce = await provider.getTransactionCount(wallet.address, 'pending');
+    const node = new ethers.Contract(
+      runtime.contracts.NodeStaking,
+      nodeArtifact.abi,
+      wallet
+    );
 
-    let tx = await token.approve(nodeStakingAddress, amount, { nonce });
+    const amount = await node.operatorStakeRequirement();
+
+    let nonce = await provider.getTransactionCount(
+      wallet.address,
+      'pending'
+    );
+
+    let tx = await token.approve(
+      runtime.contracts.NodeStaking,
+      amount,
+      { nonce }
+    );
+
     await tx.wait();
     nonce++;
 
@@ -1101,11 +1682,11 @@ ipcMain.handle('nexus-register-operator', async (_, walletName, cryloAddress) =>
       cryloAddress,
       nexusAddress: wallet.address,
       tier: 'Operator',
-      nodeRpc: rpc,
-      chainId: 5546,
-      nodeStakingContract: nodeStakingAddress
+      nodeRpc: runtime.rpc,
+      chainId: runtime.chainId,
+      nodeStakingContract:
+        runtime.contracts.NodeStaking
     });
-
 
     return {
       ok: true,
@@ -1123,24 +1704,45 @@ ipcMain.handle('nexus-register-operator', async (_, walletName, cryloAddress) =>
 
 ipcMain.handle('nexus-register-validator', async (_, walletName, cryloAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
 
-    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
-    const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
+    const tokenArtifact =
+      require('./src/abis/WrappedCryLo.json');
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
+    const nodeArtifact =
+      require('./src/abis/CryLoNodeStaking.json');
 
-    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
-    const node = new ethers.Contract(nodeStakingAddress, nodeArtifact.abi, wallet);
+    const token = new ethers.Contract(
+      runtime.contracts.wCryLo,
+      tokenArtifact.abi,
+      wallet
+    );
 
-    const amount = await node.validatorStake();
-    let nonce = await provider.getTransactionCount(wallet.address, 'pending');
+    const node = new ethers.Contract(
+      runtime.contracts.NodeStaking,
+      nodeArtifact.abi,
+      wallet
+    );
 
-    let tx = await token.approve(nodeStakingAddress, amount, { nonce });
+    const amount = await node.validatorStakeRequirement();
+
+    let nonce = await provider.getTransactionCount(
+      wallet.address,
+      'pending'
+    );
+
+    let tx = await token.approve(
+      runtime.contracts.NodeStaking,
+      amount,
+      { nonce }
+    );
+
     await tx.wait();
     nonce++;
 
@@ -1151,61 +1753,115 @@ ipcMain.handle('nexus-register-validator', async (_, walletName, cryloAddress) =
       cryloAddress,
       nexusAddress: wallet.address,
       tier: 'Validator',
-      nodeRpc: rpc,
-      chainId: 5546,
-      nodeStakingContract: nodeStakingAddress
+      nodeRpc: runtime.rpc,
+      chainId: runtime.chainId,
+      nodeStakingContract:
+        runtime.contracts.NodeStaking
     });
 
-
-    return { ok: true, txHash: tx.hash, blockNumber: receipt.blockNumber, operatorConfig };
+    return {
+      ok: true,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      operatorConfig
+    };
   } catch (e) {
-    return { ok: false, error: e.shortMessage || e.reason || e.message };
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
   }
 });
 
-
 ipcMain.handle('nexus-unregister-node', async (_, walletName, cryloAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
-    const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
+    const nodeArtifact =
+      require('./src/abis/CryLoNodeStaking.json');
 
-    const node = new ethers.Contract(nodeStakingAddress, nodeArtifact.abi, wallet);
+    const node = new ethers.Contract(
+      runtime.contracts.NodeStaking,
+      nodeArtifact.abi,
+      wallet
+    );
 
-    const nonce = await provider.getTransactionCount(wallet.address, 'pending');
+    const nonce = await provider.getTransactionCount(
+      wallet.address,
+      'pending'
+    );
+
     const tx = await node.unregisterNode({ nonce });
     const receipt = await tx.wait();
 
-
-    return { ok: true, txHash: tx.hash, blockNumber: receipt.blockNumber };
+    return {
+      ok: true,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber
+    };
   } catch (e) {
-    return { ok: false, error: e.shortMessage || e.reason || e.message };
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
   }
 });
 
 ipcMain.handle('nexus-claim-node-rewards', async (_, walletName, cryloAddress) => {
   try {
-    const rpc = NEXUS_RPC_URL;
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const nodeStakingAddress = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
-    const nodeArtifact = require('./src/abis/CryLoNodeStaking.json');
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
 
-    const provider = new ethers.JsonRpcProvider(rpc);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
+    const rewardVaultArtifact =
+      require('./src/abis/RewardVault.json');
 
-    const node = new ethers.Contract(nodeStakingAddress, nodeArtifact.abi, wallet);
+    const rewardVault = new ethers.Contract(
+      runtime.contracts.RewardVault,
+      rewardVaultArtifact.abi,
+      wallet
+    );
 
-    const tx = await node.claimRewards();
+    const pending =
+      await rewardVault.pendingRewards(wallet.address);
+
+    if (pending <= 0n) {
+      return {
+        ok: false,
+        error:
+          'No node rewards are currently available to claim.'
+      };
+    }
+
+    const nonce = await provider.getTransactionCount(
+      wallet.address,
+      'pending'
+    );
+
+    const tx = await rewardVault.claim({ nonce });
     const receipt = await tx.wait();
 
-
-    return { ok: true, txHash: tx.hash, blockNumber: receipt.blockNumber };
+    return {
+      ok: true,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      claimed: formatWcryloUnits(pending)
+    };
   } catch (e) {
-    return { ok: false, error: e.shortMessage || e.reason || e.message };
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
   }
 });
 
@@ -1275,13 +1931,75 @@ if (process.platform === 'darwin') {
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', async () => {
-  shuttingDown = true;
-  // Gracefully stop wallet-rpc first, then daemon
-  await killProc(minerProc,  'miner');
-  await killProc(walletProc, 'wallet-rpc');
-  await killProc(daemonProc, 'daemon');
+  await shutdownBackendsSafely();
   app.quit();
 });
+
+let quitCleanupStarted = false;
+
+app.on('before-quit', event => {
+  if (quitCleanupStarted) {
+    return;
+  }
+
+  quitCleanupStarted = true;
+  event.preventDefault();
+
+  shutdownBackendsSafely()
+    .catch(error => {
+      console.error(
+        'Safe backend shutdown failed:',
+        error
+      );
+    })
+    .finally(() => {
+      app.quit();
+    });
+});
+
+
+let signalShutdownStarted = false;
+
+async function handleProcessShutdownSignal(signal) {
+  if (signalShutdownStarted) {
+    return;
+  }
+
+  signalShutdownStarted = true;
+
+  console.log(
+    `Received ${signal}; stopping CryLo services safely.`
+  );
+
+  try {
+    await shutdownBackendsSafely();
+  } catch (error) {
+    console.error(
+      `Shutdown after ${signal} failed:`,
+      error
+    );
+  } finally {
+    /*
+     * Exit directly after cleanup. Calling app.quit() here can
+     * re-enter before-quit while the process is already handling
+     * an operating-system termination signal.
+     */
+    process.exit(0);
+  }
+}
+
+process.once('SIGTERM', () => {
+  handleProcessShutdownSignal('SIGTERM');
+});
+
+process.once('SIGINT', () => {
+  handleProcessShutdownSignal('SIGINT');
+});
+
+process.once('SIGHUP', () => {
+  handleProcessShutdownSignal('SIGHUP');
+});
+
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1303,44 +2021,138 @@ app.on('web-contents-created', (_, contents) => {
   });
 });
 
-const GAS_MANAGER_ADDRESS = '0xCB26FebCD655De1946e21db1A17fF9B70Cf536Cf';
-const GAS_MANAGER_ABI = [
-  'function dailyGasAmount() view returns (uint256)',
-  'function starterGasAmount() view returns (uint256)',
-  'function lowGasThreshold() view returns (uint256)',
-  'function lastGasClaimAt(address) view returns (uint256)',
-  'function lastActivityAt(address) view returns (uint256)',
-  'function canClaimDailyGas(address) view returns (bool)',
-  'function vaultBalance() view returns (uint256)',
-  'function claimDailyGas()',
-  'function buyGasWithWcrylo(uint256)'
-];
+async function getLatestGasEpoch(gm, walletAddress) {
+  const count = Number(await gm.epochCount());
+
+  if (!Number.isFinite(count) || count <= 0) {
+    return {
+      epochId: null,
+      epoch: null,
+      eligible: false,
+      claimed: false
+    };
+  }
+
+  for (
+    let epochId = count;
+    epochId >= Math.max(0, count - 25);
+    epochId--
+  ) {
+    try {
+      const epoch = await gm.epochs(epochId);
+
+      const [eligible, claimed] = await Promise.all([
+        gm.eligible(epochId, walletAddress),
+        gm.claimed(epochId, walletAddress)
+      ]);
+
+      return {
+        epochId,
+        epoch,
+        eligible: !!eligible,
+        claimed: !!claimed
+      };
+    } catch (_) {}
+  }
+
+  return {
+    epochId: null,
+    epoch: null,
+    eligible: false,
+    claimed: false
+  };
+}
+
+async function getClaimableGasEpoch(gm, walletAddress) {
+  const count = Number(await gm.epochCount());
+
+  if (!Number.isFinite(count) || count <= 0) {
+    return null;
+  }
+
+  for (
+    let epochId = count;
+    epochId >= Math.max(0, count - 50);
+    epochId--
+  ) {
+    try {
+      const [eligible, claimed] = await Promise.all([
+        gm.eligible(epochId, walletAddress),
+        gm.claimed(epochId, walletAddress)
+      ]);
+
+      if (eligible && !claimed) {
+        return epochId;
+      }
+    } catch (_) {}
+  }
+
+  return null;
+}
 
 ipcMain.handle('nexus-gas-status', async (_, linkedAddress) => {
   try {
-    const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
-    if (!ethers.isAddress(linkedAddress)) return { ok: false, error: 'Invalid Nexus address' };
+    if (!ethers.isAddress(linkedAddress)) {
+      return {
+        ok: false,
+        error: 'Invalid Nexus address'
+      };
+    }
 
-    const gm = new ethers.Contract(GAS_MANAGER_ADDRESS, GAS_MANAGER_ABI, provider);
-    const nativeBalance = await provider.getBalance(linkedAddress);
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
+
+    const gasArtifact = require('./src/abis/GasManager.json');
+    const registryArtifact = require('./src/abis/WalletRegistry.json');
+
+    const gm = new ethers.Contract(
+      runtime.contracts.GasManager,
+      gasArtifact.abi,
+      provider
+    );
+
+    const registry = new ethers.Contract(
+      runtime.contracts.WalletRegistry,
+      registryArtifact.abi,
+      provider
+    );
 
     const [
-      dailyGasAmount,
+      nativeBalance,
       starterGasAmount,
       lowGasThreshold,
-      lastGasClaimAt,
+      purchaseRateNativePerWcrylo,
+      minimumTreasuryReserve,
+      starterClaimed,
       lastActivityAt,
-      canClaim,
-      vaultBalance
+      registered,
+      active,
+      treasuryBalance,
+      latest
     ] = await Promise.all([
-      gm.dailyGasAmount(),
+      provider.getBalance(linkedAddress),
       gm.starterGasAmount(),
       gm.lowGasThreshold(),
-      gm.lastGasClaimAt(linkedAddress),
-      gm.lastActivityAt(linkedAddress),
-      gm.canClaimDailyGas(linkedAddress),
-      gm.vaultBalance()
+      gm.purchaseRateNativePerWcrylo(),
+      gm.minimumTreasuryReserve(),
+      gm.starterGasClaimed(linkedAddress),
+      registry.lastActivityAt(linkedAddress),
+      registry.isRegistered(linkedAddress),
+      registry.isActive(linkedAddress),
+      provider.getBalance(runtime.contracts.GasTreasuryVault),
+      getLatestGasEpoch(gm, linkedAddress)
     ]);
+
+    let dailyGasAmount = 0n;
+
+    if (latest.epoch) {
+      dailyGasAmount =
+        latest.epoch.amountPerWallet ??
+        latest.epoch.gasAmountPerWallet ??
+        latest.epoch.claimAmount ??
+        latest.epoch[2] ??
+        0n;
+    }
 
     return {
       ok: true,
@@ -1348,57 +2160,269 @@ ipcMain.handle('nexus-gas-status', async (_, linkedAddress) => {
       dailyGasAmount: formatNexusGasUnits(dailyGasAmount),
       starterGasAmount: formatNexusGasUnits(starterGasAmount),
       lowGasThreshold: formatNexusGasUnits(lowGasThreshold),
-      lastGasClaimAt: Number(lastGasClaimAt),
+      purchaseRateNativePerWcrylo:
+        formatNexusGasUnits(purchaseRateNativePerWcrylo),
+      minimumTreasuryReserve:
+        formatNexusGasUnits(minimumTreasuryReserve),
+      lastGasClaimAt: 0,
       lastActivityAt: Number(lastActivityAt),
-      canClaim,
-      vaultBalance: formatNexusGasUnits(vaultBalance)
+      canClaim: latest.eligible && !latest.claimed,
+      vaultBalance: formatNexusGasUnits(treasuryBalance),
+      starterGasClaimed: !!starterClaimed,
+      registered: !!registered,
+      active: !!active,
+      epochId: latest.epochId
     };
   } catch (e) {
-    return { ok: false, error: e.shortMessage || e.reason || e.message };
+    console.error('[nexus-gas-status] failed', {
+      message: e?.message,
+      shortMessage: e?.shortMessage,
+      reason: e?.reason,
+      code: e?.code
+    });
+
+    return {
+      ok: false,
+      error: e?.shortMessage || e?.reason || e?.message || String(e)
+    };
   }
 });
 
 ipcMain.handle('nexus-claim-daily-gas', async (_, walletName, cryloAddress) => {
   try {
-    const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress);
-    const gm = new ethers.Contract(GAS_MANAGER_ADDRESS, GAS_MANAGER_ABI, wallet.connect(provider));
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
 
-    const tx = await gm.claimDailyGas();
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
+
+    const gasArtifact = require('./src/abis/GasManager.json');
+
+    const gm = new ethers.Contract(
+      runtime.contracts.GasManager,
+      gasArtifact.abi,
+      wallet
+    );
+
+    const epochId = await getClaimableGasEpoch(
+      gm,
+      wallet.address
+    );
+
+    if (epochId === null) {
+      return {
+        ok: false,
+        error: 'No eligible unclaimed gas epoch is currently available.'
+      };
+    }
+
+    const nonce = await provider.getTransactionCount(
+      wallet.address,
+      'pending'
+    );
+
+    const tx = await gm.claimGas(
+      epochId,
+      { nonce }
+    );
+
     const receipt = await tx.wait();
 
-
-    return { ok: true, txHash: tx.hash, blockNumber: receipt.blockNumber };
+    return {
+      ok: true,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      epochId
+    };
   } catch (e) {
-    return { ok: false, error: e.shortMessage || e.reason || e.message };
+    return {
+      ok: false,
+      error: e.shortMessage || e.reason || e.message
+    };
   }
 });
 
 ipcMain.handle('nexus-buy-gas-wcrylo', async (_, amountText, walletName, cryloAddress) => {
-  try {
-    const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
-    const wallet = loadBoundNexusWallet(walletName, cryloAddress).connect(provider);
+  let stage = 'initialization';
 
-    const tokenAddress = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const tokenArtifact = require('./src/abis/WrappedCryLo.json');
-    const token = new ethers.Contract(tokenAddress, tokenArtifact.abi, wallet);
-    const gm = new ethers.Contract(GAS_MANAGER_ADDRESS, GAS_MANAGER_ABI, wallet);
+  try {
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
+
+    const wallet = loadBoundNexusWallet(
+      walletName,
+      cryloAddress
+    ).connect(provider);
+
+    const tokenArtifact =
+      require('./src/abis/WrappedCryLo.json');
+
+    const gasArtifact =
+      require('./src/abis/GasManager.json');
+
+    const token = new ethers.Contract(
+      runtime.contracts.wCryLo,
+      tokenArtifact.abi,
+      wallet
+    );
+
+    const gm = new ethers.Contract(
+      runtime.contracts.GasManager,
+      gasArtifact.abi,
+      wallet
+    );
 
     const amount = parseWcryloUnits(amountText);
 
-    let nonce = await provider.getTransactionCount(wallet.address, 'pending');
+    if (amount <= 0n) {
+      throw new Error('Gas purchase amount must be greater than zero');
+    }
 
-    let tx = await token.approve(GAS_MANAGER_ADDRESS, amount, { nonce });
-    await tx.wait();
-    nonce++;
+    const [
+      nativeBalance,
+      tokenBalance,
+      currentAllowance
+    ] = await Promise.all([
+      provider.getBalance(wallet.address),
+      token.balanceOf(wallet.address),
+      token.allowance(
+        wallet.address,
+        runtime.contracts.GasManager
+      )
+    ]);
 
-    tx = await gm.buyGasWithWcrylo(amount, { nonce });
+    if (tokenBalance < amount) {
+      throw new Error(
+        `Insufficient wCryLo. Available: ${formatWcryloUnits(tokenBalance)}`
+      );
+    }
+
+    let nonce = await provider.getTransactionCount(
+      wallet.address,
+      'pending'
+    );
+
+    let approvalHash = null;
+
+    if (currentAllowance < amount) {
+      stage = 'approval estimation';
+
+      const approvalGas =
+        await token.approve.estimateGas(
+          runtime.contracts.GasManager,
+          amount,
+          { nonce }
+        );
+
+      const feeData = await provider.getFeeData();
+      const gasPrice =
+        feeData.maxFeePerGas ||
+        feeData.gasPrice ||
+        0n;
+
+      const estimatedApprovalCost =
+        approvalGas * gasPrice;
+
+      if (
+        estimatedApprovalCost > 0n &&
+        nativeBalance < estimatedApprovalCost
+      ) {
+        return {
+          ok: false,
+          stage,
+          stranded: true,
+          nativeBalance:
+            ethers.formatEther(nativeBalance),
+          estimatedApprovalCost:
+            ethers.formatEther(estimatedApprovalCost),
+          error:
+            'Native CRYLO balance is too low to authorize the gas purchase.'
+        };
+      }
+
+      stage = 'approval submission';
+
+      const approvalTx = await token.approve(
+        runtime.contracts.GasManager,
+        amount,
+        { nonce }
+      );
+
+      approvalHash = approvalTx.hash;
+
+      stage = 'approval confirmation';
+      await approvalTx.wait();
+      nonce++;
+    }
+
+    stage = 'purchase estimation';
+
+    const purchaseGas =
+      await gm.buyGasWithWcrylo.estimateGas(
+        amount,
+        { nonce }
+      );
+
+    const feeData = await provider.getFeeData();
+    const gasPrice =
+      feeData.maxFeePerGas ||
+      feeData.gasPrice ||
+      0n;
+
+    const estimatedPurchaseCost =
+      purchaseGas * gasPrice;
+
+    const balanceBeforePurchase =
+      await provider.getBalance(wallet.address);
+
+    if (
+      estimatedPurchaseCost > 0n &&
+      balanceBeforePurchase <
+        estimatedPurchaseCost
+    ) {
+      return {
+        ok: false,
+        stage,
+        stranded: true,
+        approvalHash,
+        nativeBalance:
+          ethers.formatEther(balanceBeforePurchase),
+        estimatedPurchaseCost:
+          ethers.formatEther(estimatedPurchaseCost),
+        error:
+          'Native CRYLO balance is too low to submit the gas purchase.'
+      };
+    }
+
+    stage = 'purchase submission';
+
+    const tx = await gm.buyGasWithWcrylo(
+      amount,
+      { nonce }
+    );
+
+    stage = 'purchase confirmation';
+
     const receipt = await tx.wait();
 
-
-    return { ok: true, txHash: tx.hash, blockNumber: receipt.blockNumber };
+    return {
+      ok: true,
+      txHash: tx.hash,
+      approvalHash,
+      blockNumber: receipt.blockNumber
+    };
   } catch (e) {
-    return { ok: false, error: e.shortMessage || e.reason || e.message };
+    return {
+      ok: false,
+      stage,
+      error:
+        e?.shortMessage ||
+        e?.reason ||
+        e?.message ||
+        String(e)
+    };
   }
 });
 
@@ -1408,16 +2432,18 @@ ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
       return { ok: false, error: 'Invalid Nexus address' };
     }
 
-    const provider = new ethers.JsonRpcProvider(NEXUS_RPC_URL);
+    const runtime = await getNexusRuntimeConfig();
+    const provider = runtime.provider;
+    const contracts = runtime.contracts;
     const user = ethers.getAddress(linkedAddress);
 
     const latest = await provider.getBlockNumber();
     const fromBlock = Math.max(0, latest - 50000);
 
-    const wcrylo = '0x53E57880dD0865b484AfD0f467BBe8844c9d9727';
-    const gasManager = '0xCB26FebCD655De1946e21db1A17fF9B70Cf536Cf';
-    const staking = '0xA51adce930306362528C5064Eb1E69f906CA830A';
-    const nodeStaking = '0x8Ec32977c1Ba0d537fD565c3047A5b7750E83B3a';
+    const wcrylo = contracts.wCryLo;
+    const gasManager = contracts.GasManager;
+    const staking = contracts.Staking;
+    const nodeStaking = contracts.NodeStaking;
 
     const erc20Iface = new ethers.Interface([
       'event Transfer(address indexed from,address indexed to,uint256 value)'
@@ -1458,14 +2484,14 @@ ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
       fromBlock,
       toBlock: latest,
       topics: [erc20Iface.getEvent('Transfer').topicHash, zeroTopicUser]
-    }, erc20Iface, 'wCRYLO Sent');
+    }, erc20Iface, 'wCryLo Sent');
 
     await safeLogs({
       address: wcrylo,
       fromBlock,
       toBlock: latest,
       topics: [erc20Iface.getEvent('Transfer').topicHash, null, zeroTopicUser]
-    }, erc20Iface, 'wCRYLO Received');
+    }, erc20Iface, 'wCryLo Received');
 
     for (const eventName of ['DailyGasClaimed', 'GasPurchased', 'StarterGasSent']) {
       await safeLogs({
@@ -1495,7 +2521,7 @@ ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
     }
 
 
-    const bridge = '0x625b2DC4F7f43Be42715DcDCf43dd595f9F932c7';
+    const bridge = contracts.BridgeManager;
     const bridgeIface = new ethers.Interface([
       'event MintedFromCryLo(bytes32 indexed depositId,address indexed to,uint256 amount)',
       'event BurnedForCryLo(address indexed from,string cryloAddress,uint256 amount,uint256 indexed nonce)'
@@ -1523,19 +2549,19 @@ ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
       let amount = '';
 
       if (p.name === 'Transfer') {
-        amount = formatWcryloUnits(p.args.value) + ' wCRYLO';
+        amount = formatWcryloUnits(p.args.value) + ' wCryLo';
       } else if (p.name === 'MintedFromCryLo' || p.name === 'BurnedForCryLo') {
-        amount = formatWcryloUnits(p.args.amount) + ' wCRYLO';
+        amount = formatWcryloUnits(p.args.amount) + ' wCryLo';
       } else if (p.args.amount != null) {
         amount = formatWcryloUnits(p.args.amount);
-        if (p.name.includes('Gas') || p.name === 'StarterGasSent') amount += ' CRYLO (GAS)';
-        else amount += ' wCRYLO';
+        if (p.name.includes('Gas') || p.name === 'StarterGasSent') amount += ' CRYLO';
+        else amount += ' wCryLo';
       } else if (p.args.wcryloAmount != null) {
         amount =
           formatWcryloUnits(p.args.wcryloAmount) +
-          ' wCRYLO → ' +
+          ' wCryLo → ' +
           formatNexusGasUnits(p.args.nativeGasAmount) +
-          ' CRYLO (GAS)';
+          ' CRYLO';
       }
 
       txs.push({

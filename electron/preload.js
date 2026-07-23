@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('crylo', {
     ipcRenderer.invoke('nexus-wallet-create', walletName, cryloAddress),
   nexusWalletLoad: (walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-wallet-load', walletName, cryloAddress),
+
+  nexusRuntimeStatus: () =>
+    ipcRenderer.invoke('nexus-runtime-status'),
   openLogDir:  ()                => ipcRenderer.invoke('open-log-dir'),
   openDataDir: ()                => ipcRenderer.invoke('open-data-dir'),
   getVersion:  ()                => ipcRenderer.invoke('get-version'),

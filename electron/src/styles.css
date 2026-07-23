@@ -215,8 +215,8 @@ html, body {
 .balance-item { display: flex; flex-direction: column; gap: 2px; }
 .balance-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
 .balance-amount { font-size: 22px; font-weight: 700; color: var(--coin); font-family: var(--font-mono); }
-.balance-amount.unlocked { color: var(--success); font-size: 18px; }
-.balance-amount.locked   { color: var(--text-muted); font-size: 16px; }
+.balance-amount.unlocked { color: var(--success); }
+.balance-amount.locked   { color: var(--text-muted); }
 .balance-unit { font-size: 12px; color: var(--text-dim); font-weight: 400; }
 
 /* ─── Tabs ───────────────────────────────────────────────────────────────── */
