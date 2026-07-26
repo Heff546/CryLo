@@ -1,0 +1,19 @@
+{
+  "protocol": "CEP-2",
+  "protocolVersion": "1.0.0",
+  "description": "Canonical Keccak-256 commitment to normalized operator status evidence.",
+  "input": {
+    "chainId": 5546,
+    "connected": true,
+    "nodeId": "operator-node-001",
+    "nodeRpcHealthy": true,
+    "operatorAddress": "0x1111111111111111111111111111111111111111",
+    "registered": true,
+    "rewardEligible": false,
+    "tier": "operator",
+    "uptimeVerified": false,
+    "wCryLoDecimals": 11
+  },
+  "expectedCanonicalJson": "{\"chainId\":5546,\"connected\":true,\"nodeId\":\"operator-node-001\",\"nodeRpcHealthy\":true,\"operatorAddress\":\"0x1111111111111111111111111111111111111111\",\"registered\":true,\"rewardEligible\":false,\"tier\":\"operator\",\"uptimeVerified\":false,\"wCryLoDecimals\":11}",
+  "expectedStatusHash": "0xbd3973d745b256a63391b991fcac14191841ffd2ad7780d2bf20b4188d9676b0"
+}
