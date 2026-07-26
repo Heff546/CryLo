@@ -16,12 +16,25 @@ const {
   buildUnsignedHeartbeat
 } = require('./heartbeat-builder');
 
+const {
+  CRYLONEXUS_CHAIN_ID,
+  REQUIRED_FIELDS,
+  SUPPORTED_PROTOCOL_VERSION,
+  unsignedPayloadFromHeartbeat,
+  validateUnsignedHeartbeat
+} = require('./heartbeat-validator');
+
 module.exports = {
   buildUnsignedHeartbeat,
   canonicalHash,
   canonicalJson,
   canonicalJsonBytes,
+  CRYLONEXUS_CHAIN_ID,
   heartbeatPayloadHash,
   isCanonicalHash,
-  statusHash
+  REQUIRED_FIELDS,
+  statusHash,
+  SUPPORTED_PROTOCOL_VERSION,
+  unsignedPayloadFromHeartbeat,
+  validateUnsignedHeartbeat
 };
