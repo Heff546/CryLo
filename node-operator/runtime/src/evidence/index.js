@@ -59,3 +59,11 @@ module.exports = Object.freeze({
   ...module.exports,
   ...detachedSigning
 });
+
+const signedHeartbeatBuilder =
+  require('./signed-heartbeat-builder');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...signedHeartbeatBuilder
+});
