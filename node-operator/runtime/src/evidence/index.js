@@ -12,7 +12,12 @@ const {
   statusHash
 } = require('./hashing');
 
+const {
+  buildUnsignedHeartbeat
+} = require('./heartbeat-builder');
+
 module.exports = {
+  buildUnsignedHeartbeat,
   canonicalHash,
   canonicalJson,
   canonicalJsonBytes,
