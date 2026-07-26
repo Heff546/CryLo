@@ -3615,6 +3615,15 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     // signature spending it.
     if (!check_tx_input(tx.version, in_to_key, tx_prefix_hash, tx.version == 1 ? tx.signatures[sig_index] : std::vector<crypto::signature>(), tx.rct_signatures, pubkeys[sig_index], pmax_used_block_height, hf_version))
     {
+      MERROR(
+        "CRYLO_TX_INPUT_CALL_FAIL"
+        << " input_index=" << sig_index
+        << " tx_version=" << static_cast<unsigned>(tx.version)
+        << " hf_version=" << static_cast<unsigned>(hf_version)
+        << " ring_size=" << in_to_key.key_offsets.size()
+        << " key_image=" << in_to_key.k_image
+        << " output_keys_loaded=" << pubkeys[sig_index].size()
+      );
       MERROR_VER("Failed to check ring signature for tx " << get_transaction_hash(tx) << "  vin key with k_image: " << in_to_key.k_image << "  sig_index: " << sig_index);
       if (pmax_used_block_height) // a default value of NULL is used when called from Blockchain::handle_block_to_main_chain()
       {
@@ -3658,8 +3667,28 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
   // enforce min output age
   if (hf_version >= HF_VERSION_ENFORCE_MIN_AGE)
   {
-    CHECK_AND_ASSERT_MES(*pmax_used_block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE <= m_db->height(),
-        false, "Transaction spends at least one output which is too young");
+    const uint64_t chain_height = m_db->height();
+    const uint64_t newest_referenced_height = *pmax_used_block_height;
+    const uint64_t required_height =
+      newest_referenced_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
+
+    if (required_height > chain_height)
+    {
+      MERROR(
+        "CRYLO_TOO_YOUNG_INPUT"
+        << " chain_height=" << chain_height
+        << " newest_referenced_height=" << newest_referenced_height
+        << " spendable_age=" << CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE
+        << " required_chain_height=" << required_height
+        << " blocks_remaining=" << (required_height - chain_height)
+      );
+
+      MERROR_VER(
+        "Transaction spends at least one output which is too young"
+      );
+
+      return false;
+    }
   }
 
   // Warn that new RCT types are present, and thus the cache is not being used effectively
@@ -4093,7 +4122,12 @@ bool Blockchain::check_tx_input(size_t tx_version, const txin_to_key& txin, cons
       if (!m_bch.is_tx_spendtime_unlocked(unlock_time, hf_version))
       {
         MERROR_VER("One of outputs for one of inputs has wrong tx.unlock_time = " << unlock_time);
-        return false;
+        MERROR(
+      "CRYLO_CHECK_TX_INPUT_FAIL"
+      << " line=" << __LINE__
+      << " function=" << __func__
+    );
+    return false;
       }
 
       // The original code includes a check for the output corresponding to this input
@@ -4115,12 +4149,22 @@ bool Blockchain::check_tx_input(size_t tx_version, const txin_to_key& txin, cons
   if (!scan_outputkeys_for_indexes(tx_version, txin, vi, tx_prefix_hash, pmax_related_block_height))
   {
     MERROR_VER("Failed to get output keys for tx with amount = " << print_money(txin.amount) << " and count indexes " << txin.key_offsets.size());
+    MERROR(
+      "CRYLO_CHECK_TX_INPUT_FAIL"
+      << " line=" << __LINE__
+      << " function=" << __func__
+    );
     return false;
   }
 
   if(txin.key_offsets.size() != output_keys.size())
   {
     MERROR_VER("Output keys for tx with amount = " << txin.amount << " and count indexes " << txin.key_offsets.size() << " returned wrong keys count " << output_keys.size());
+    MERROR(
+      "CRYLO_CHECK_TX_INPUT_FAIL"
+      << " line=" << __LINE__
+      << " function=" << __func__
+    );
     return false;
   }
   if (tx_version == 1) {

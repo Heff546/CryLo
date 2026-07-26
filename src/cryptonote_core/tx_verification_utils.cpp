@@ -185,6 +185,10 @@ static bool ver_non_input_consensus_templated(TxForwardIt tx_begin, TxForwardIt 
     // Rule 7
     if (!ver_mixed_rct_semantics(std::move(rvv)))
     {
+        MERROR(
+            "CRYLO_RCT_SEMANTICS_FAIL"
+            << " hf_version=" << static_cast<unsigned>(hf_version)
+        );
         tvc.m_verifivation_failed = true;
         tvc.m_invalid_input = true;
         return false;

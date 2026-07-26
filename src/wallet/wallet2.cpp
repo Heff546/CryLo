@@ -7108,30 +7108,28 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
   	  uint64_t cb_height =
     	    boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
 
-  	  // vout[0] = miner 50% instant
-	  // vout[1] = miner 50% vested 45 days
-  	  // vout[2] = dev fund
-  	  // vout[3] = liquidity fund
+      // vout[0] = miner 50% instant
+      // vout[1] = miner 50% vested 45 days
+      // vout[2] = dev fund
+      // vout[3] = liquidity fund
 
-  	  if (cb_height >= 2 && td.m_internal_output_index == 0)
-          {
-            amount = td.amount();
-            blocks_to_unlock = 0;
-            time_to_unlock = 0;
-            auto found = amount_per_subaddr.find(td.m_subaddr_index.minor);
-            if (found == amount_per_subaddr.end())
-              amount_per_subaddr[td.m_subaddr_index.minor] = std::make_pair(amount, std::make_pair(blocks_to_unlock, time_to_unlock));
-            else
-              found->second.first += amount;
-            continue;
-          }
-
-  	  if (cb_height >= 2 && td.m_internal_output_index == 1)
-    	    effective_unlock = cb_height + 18514;
-  	  else
-    	    effective_unlock = 0;
-	}
-        if (effective_unlock < CRYPTONOTE_MAX_BLOCK_NUMBER && effective_unlock > unlock_height)
+      if (cb_height >= 2 && td.m_internal_output_index == 0)
+      {
+        /*
+         * No long-term vesting applies to the instant miner half.
+         * Normal four-block maturity is calculated below.
+         */
+        effective_unlock = 0;
+      }
+      else if (cb_height >= 2 && td.m_internal_output_index == 1)
+      {
+        effective_unlock = cb_height + 18514;
+      }
+      else
+      {
+        effective_unlock = 0;
+      }
+if (effective_unlock < CRYPTONOTE_MAX_BLOCK_NUMBER && effective_unlock > unlock_height)
           unlock_height = effective_unlock;
         uint64_t unlock_time = effective_unlock >= CRYPTONOTE_MAX_BLOCK_NUMBER ? effective_unlock : 0;
         blocks_to_unlock = unlock_height > blockchain_height ? unlock_height - blockchain_height : 0;
@@ -7341,12 +7339,22 @@ bool wallet2::is_transfer_unlocked(const transfer_details& td)
     // vout[3] = liquidity fund
 
     if (cb_height >= 2 && td.m_internal_output_index == 0)
-      return true; // CryLo instant miner half is spendable immediately
-
-    if (cb_height >= 2 && td.m_internal_output_index == 1)
-      unlock_time = cb_height + 18514;
-    else
+    {
+      /*
+       * CryLo instant miner half has no long-term vesting delay,
+       * but it must still satisfy the universal transaction
+       * spendable-age rule enforced by consensus.
+       */
       unlock_time = 0;
+    }
+    else if (cb_height >= 2 && td.m_internal_output_index == 1)
+    {
+      unlock_time = cb_height + 18514;
+    }
+    else
+    {
+      unlock_time = 0;
+    }
   }
 
   return is_transfer_unlocked(unlock_time, td.m_block_height);
@@ -7638,6 +7646,26 @@ void wallet2::commit_tx(pending_tx& ptx)
       uint64_t pre_call_credits = m_rpc_payment_state.credits;
       req.client = get_client_signature();
       bool r = epee::net_utils::invoke_http_json("/sendrawtransaction", req, daemon_send_resp, *m_http_client, rpc_timeout);
+
+      if (r && daemon_send_resp.status != CORE_RPC_STATUS_OK)
+      {
+        MERROR(
+          "CRYLO_DAEMON_TX_REJECTION"
+          << " status=" << daemon_send_resp.status
+          << " reasons=" << get_text_reason(daemon_send_resp)
+          << " low_mixin=" << daemon_send_resp.low_mixin
+          << " double_spend=" << daemon_send_resp.double_spend
+          << " invalid_input=" << daemon_send_resp.invalid_input
+          << " invalid_output=" << daemon_send_resp.invalid_output
+          << " too_few_outputs=" << daemon_send_resp.too_few_outputs
+          << " too_big=" << daemon_send_resp.too_big
+          << " overspend=" << daemon_send_resp.overspend
+          << " fee_too_low=" << daemon_send_resp.fee_too_low
+          << " sanity_check_failed=" << daemon_send_resp.sanity_check_failed
+          << " not_relayed=" << daemon_send_resp.not_relayed
+        );
+      }
+
       THROW_ON_RPC_RESPONSE_ERROR(r, {}, daemon_send_resp, "sendrawtransaction", error::tx_rejected, ptx.tx, get_rpc_status(daemon_send_resp.status), get_text_reason(daemon_send_resp));
       check_rpc_cost("/sendrawtransaction", daemon_send_resp.credits, pre_call_credits, COST_PER_TX_RELAY);
     }
@@ -8613,16 +8641,24 @@ uint64_t wallet2::get_dynamic_base_fee_estimate()
 //----------------------------------------------------------------------------------------------------
 uint64_t wallet2::get_base_fee()
 {
-  if(m_light_wallet)
+  const bool use_per_byte_fee =
+    use_fork_rules(HF_VERSION_PER_BYTE_FEE, 0);
+
+  if (m_light_wallet)
   {
-    if (use_fork_rules(HF_VERSION_PER_BYTE_FEE))
+    if (use_per_byte_fee)
       return m_light_wallet_per_kb_fee / 1024;
     else
       return m_light_wallet_per_kb_fee;
   }
-  bool use_dyn_fee = use_fork_rules(HF_VERSION_DYNAMIC_FEE, -30 * 1);
+
+  const bool use_dyn_fee =
+    use_fork_rules(HF_VERSION_DYNAMIC_FEE, -30);
+
   if (!use_dyn_fee)
-    return FEE_PER_KB;
+    return use_per_byte_fee
+      ? FEE_PER_BYTE
+      : FEE_PER_KB;
 
   return get_dynamic_base_fee_estimate();
 }
@@ -9439,15 +9475,30 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     std::unique_ptr<gamma_picker> gamma;
     if (has_rct)
     {
-      // CryLo FIX: use the mined-money unlock window as the exclusion boundary
-      // instead of Monero's default (3 blocks). CryLo Chain locks coinbase outputs much longer.
-      gamma.reset(new gamma_picker(rct_offsets, GAMMA_SHAPE, GAMMA_SCALE,
-          CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW));
+      /*
+       * Decoy selection excludes only the normal recent-output
+       * spendability window. Coinbase maturity and CryLo vesting
+       * are enforced separately by is_transfer_unlocked().
+       */
+      gamma.reset(
+        new gamma_picker(
+          rct_offsets,
+          GAMMA_SHAPE,
+          GAMMA_SCALE
+        )
+      );
     }
 
     size_t num_selected_transfers = 0;
-    req.outputs.reserve(selected_transfers.size() * (base_requested_outputs_count + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2));
-    daemon_resp.outs.reserve(selected_transfers.size() * (base_requested_outputs_count + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2));
+    req.outputs.reserve(
+      selected_transfers.size() *
+      base_requested_outputs_count
+    );
+
+    daemon_resp.outs.reserve(
+      selected_transfers.size() *
+      base_requested_outputs_count
+    );
     for(size_t idx: selected_transfers)
     {
       ++num_selected_transfers;
@@ -9455,7 +9506,8 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       const uint64_t amount = td.is_rct() ? 0 : td.amount();
       std::unordered_set<uint64_t> seen_indices;
       // request more for rct in base recent (locked) coinbases are picked, since they're locked for longer
-      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2 - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE : 0);
+      size_t requested_outputs_count =
+        base_requested_outputs_count;
       size_t start = req.outputs.size();
       bool use_histogram = amount != 0;
 
@@ -9609,13 +9661,32 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       }
       else
       {
-        // start with real one
-        if (num_found == 0)
+        /*
+         * Always ensure the real output is present in this request
+         * section. A reusable known ring may contain acceptable
+         * decoys while its real output lies outside the gamma
+         * picker's recent-output range. The real output must still
+         * be requested because the wallet and daemon have already
+         * determined that it is spendable.
+         *
+         * The request subsection is sorted below, so this does not
+         * reveal which requested output is real.
+         */
+        if (seen_indices.count(td.m_global_output_index) == 0)
         {
-          num_found = 1;
           seen_indices.emplace(td.m_global_output_index);
-          add_output_to_lists({amount, td.m_global_output_index});
-          LOG_PRINT_L1("Selecting real output: " << td.m_global_output_index << " for " << print_money(amount));
+          add_output_to_lists({
+            amount,
+            td.m_global_output_index
+          });
+          ++num_found;
+
+          LOG_PRINT_L1(
+            "Selecting real output: "
+            << td.m_global_output_index
+            << " for "
+            << print_money(amount)
+          );
         }
 
         std::unordered_map<const char*, std::set<uint64_t>> picks;
@@ -9795,7 +9866,8 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     for(size_t idx: selected_transfers)
     {
       const transfer_details &td = m_transfers[idx];
-      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2 - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE : 0);
+      size_t requested_outputs_count =
+        base_requested_outputs_count;
       outs.push_back(std::vector<get_outs_entry>());
       outs.back().reserve(fake_outputs_count + 1);
       const rct::key mask = td.is_rct() ? rct::commit(td.amount(), td.m_mask) : rct::zeroCommit(td.amount());
@@ -9823,14 +9895,61 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       // the real one, which the node can then tell from the fake outputs,
       // as it has different data than the dummy data it had sent earlier
       bool real_out_found = false;
+      bool real_index_found = false;
+
       for (size_t n = 0; n < requested_outputs_count; ++n)
       {
-        size_t i = base + n;
-        if (req.outputs[i].index == td.m_global_output_index)
-          if (daemon_resp.outs[i].key == td.get_public_key())
-            if (daemon_resp.outs[i].mask == mask)
-              if (daemon_resp.outs[i].unlocked)
-                real_out_found = true;
+        const size_t i = base + n;
+
+        if (req.outputs[i].index != td.m_global_output_index)
+          continue;
+
+        real_index_found = true;
+
+        const bool key_matches =
+          daemon_resp.outs[i].key == td.get_public_key();
+
+        const bool mask_matches =
+          daemon_resp.outs[i].mask == mask;
+
+        const bool daemon_says_unlocked =
+          daemon_resp.outs[i].unlocked;
+
+        MERROR(
+          "CRYLO_REAL_OUTPUT_DIAGNOSTIC"
+          << " transfer_index=" << idx
+          << " global_index=" << td.m_global_output_index
+          << " block_height=" << td.m_block_height
+          << " amount=" << td.amount()
+          << " wallet_is_unlocked=" << is_transfer_unlocked(td)
+          << " daemon_is_unlocked=" << daemon_says_unlocked
+          << " key_matches=" << key_matches
+          << " mask_matches=" << mask_matches
+          << " key_image_known=" << td.m_key_image_known
+          << " key_image_partial=" << td.m_key_image_partial
+          << " is_rct=" << td.is_rct()
+        );
+
+        if (
+          key_matches &&
+          mask_matches &&
+          daemon_says_unlocked
+        )
+        {
+          real_out_found = true;
+        }
+      }
+
+      if (!real_index_found)
+      {
+        MERROR(
+          "CRYLO_REAL_OUTPUT_DIAGNOSTIC"
+          << " transfer_index=" << idx
+          << " global_index=" << td.m_global_output_index
+          << " requested_index_not_returned=true"
+          << " request_count=" << requested_outputs_count
+          << " response_count=" << daemon_resp.outs.size()
+        );
       }
       THROW_WALLET_EXCEPTION_IF(!real_out_found, error::wallet_internal_error,
           "Daemon response did not include the requested real output");
@@ -11242,7 +11361,21 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   // early out if we know we can't make it anyway
   // we could also check for being within FEE_PER_KB, but if the fee calculation
   // ever changes, this might be missed, so let this go through
-  const uint64_t min_fee = (base_fee * estimate_tx_size(use_rct, 1, fake_outs_count, 2, extra.size(), bulletproof, clsag, bulletproof_plus, bulletproof_plus_full_commit, use_view_tags));
+  const uint64_t min_fee = estimate_fee(
+    use_per_byte_fee,
+    use_rct,
+    1,
+    fake_outs_count,
+    2,
+    extra.size(),
+    bulletproof,
+    clsag,
+    bulletproof_plus,
+    bulletproof_plus_full_commit,
+    use_view_tags,
+    base_fee,
+    fee_quantization_mask
+  );
   total_needed_money = needed_money + (subtract_fee_from_outputs.size() ? 0 : min_fee);
   uint64_t balance_subtotal = 0;
   uint64_t unlocked_balance_subtotal = 0;
@@ -11251,6 +11384,47 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
     balance_subtotal += balance_per_subaddr[index_minor];
     unlocked_balance_subtotal += unlocked_balance_per_subaddr[index_minor].first;
   }
+  MERROR(
+    "CRYLO_TX_DIAGNOSTIC"
+    << " needed_money=" << needed_money
+    << " total_needed_money=" << total_needed_money
+    << " base_fee=" << base_fee
+    << " estimated_size="
+    << estimate_tx_size(
+         use_rct,
+         1,
+         fake_outs_count,
+         2,
+         extra.size(),
+         bulletproof,
+         clsag,
+         bulletproof_plus,
+         bulletproof_plus_full_commit,
+         use_view_tags
+       )
+    << " min_fee=" << min_fee
+    << " balance_subtotal=" << balance_subtotal
+    << " unlocked_balance_subtotal=" << unlocked_balance_subtotal
+    << " subaddr_count=" << subaddr_indices.size()
+    << " fake_outs_count=" << fake_outs_count
+    << " use_per_byte_fee=" << use_per_byte_fee
+  );
+
+  for (uint32_t diagnostic_index : subaddr_indices)
+  {
+    MERROR(
+      "CRYLO_TX_SUBADDR"
+      << " index=" << diagnostic_index
+      << " balance=" << balance_per_subaddr[diagnostic_index]
+      << " unlocked="
+      << unlocked_balance_per_subaddr[diagnostic_index].first
+      << " secondary_first="
+      << unlocked_balance_per_subaddr[diagnostic_index].second.first
+      << " secondary_second="
+      << unlocked_balance_per_subaddr[diagnostic_index].second.second
+    );
+  }
+
   THROW_WALLET_EXCEPTION_IF(total_needed_money > balance_subtotal || min_fee > balance_subtotal, error::not_enough_money,
     balance_subtotal, needed_money, 0);
   // first check overall balance is enough, then unlocked one, so we throw distinct exceptions
