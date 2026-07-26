@@ -1866,6 +1866,436 @@ ipcMain.handle('nexus-claim-node-rewards', async (_, walletName, cryloAddress) =
 });
 
 
+
+
+// ─── Nexus Operator Dashboard ─────────────────────────────────────────────────
+
+function readJsonFileSafe(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { exists: false, data: null, error: null };
+    }
+
+    return {
+      exists: true,
+      data: JSON.parse(fs.readFileSync(filePath, 'utf8')),
+      error: null
+    };
+  } catch (error) {
+    return {
+      exists: true,
+      data: null,
+      error: error.message
+    };
+  }
+}
+
+function getOperatorPaths() {
+  const operatorDir = path.join(
+    os.homedir(),
+    '.config',
+    'crylo-wallet',
+    'operator'
+  );
+
+  return {
+    directory: operatorDir,
+    config: path.join(operatorDir, 'operator.json'),
+    statusCandidates: [
+      path.join(operatorDir, 'status.json'),
+      path.join(operatorDir, 'operator-status.json'),
+      path.join(operatorDir, 'runtime', 'status.json')
+    ]
+  };
+}
+
+function findOperatorStatusFile(statusCandidates) {
+  for (const candidate of statusCandidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return statusCandidates[0];
+}
+
+function runLocalCommand(command, args, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let finished = false;
+
+    let child;
+
+    try {
+      child = spawn(command, args, {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+    } catch (error) {
+      resolve({
+        ok: false,
+        code: null,
+        stdout: '',
+        stderr: error.message
+      });
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      if (finished) return;
+
+      finished = true;
+      child.kill('SIGTERM');
+
+      resolve({
+        ok: false,
+        code: null,
+        stdout,
+        stderr: `Command timed out after ${timeoutMs}ms`
+      });
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeout);
+
+      resolve({
+        ok: false,
+        code: null,
+        stdout,
+        stderr: error.message
+      });
+    });
+
+    child.on('close', (code) => {
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeout);
+
+      resolve({
+        ok: code === 0,
+        code,
+        stdout: stdout.trim(),
+        stderr: stderr.trim()
+      });
+    });
+  });
+}
+
+async function readOperatorServiceStatus() {
+  if (!IS_LINUX) {
+    return {
+      supported: false,
+      installed: false,
+      running: false,
+      activeState: 'unsupported',
+      subState: 'unsupported',
+      serviceScope: null,
+      serviceName: 'crylo-nexus-operator.service',
+      message: 'Operator service status is currently available on Linux only.'
+    };
+  }
+
+  const serviceName = 'crylo-nexus-operator.service';
+
+  const checks = [
+    {
+      scope: 'system',
+      args: [
+        'show',
+        serviceName,
+        '--no-page',
+        '--property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp'
+      ]
+    },
+    {
+      scope: 'user',
+      args: [
+        '--user',
+        'show',
+        serviceName,
+        '--no-page',
+        '--property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp'
+      ]
+    }
+  ];
+
+  for (const check of checks) {
+    const result = await runLocalCommand('systemctl', check.args);
+
+    if (!result.stdout) continue;
+
+    const values = {};
+
+    for (const line of result.stdout.split(/\r?\n/)) {
+      const separator = line.indexOf('=');
+      if (separator < 0) continue;
+
+      const key = line.slice(0, separator);
+      const value = line.slice(separator + 1);
+      values[key] = value;
+    }
+
+    if (values.LoadState && values.LoadState !== 'not-found') {
+      return {
+        supported: true,
+        installed: true,
+        running: values.ActiveState === 'active',
+        activeState: values.ActiveState || 'unknown',
+        subState: values.SubState || 'unknown',
+        mainPid: values.MainPID || '0',
+        startedAt: values.ExecMainStartTimestamp || null,
+        serviceScope: check.scope,
+        serviceName,
+        message: result.stderr || null
+      };
+    }
+  }
+
+  return {
+    supported: true,
+    installed: false,
+    running: false,
+    activeState: 'not-found',
+    subState: 'not-found',
+    mainPid: '0',
+    startedAt: null,
+    serviceScope: null,
+    serviceName,
+    message: 'Operator service is not installed.'
+  };
+}
+
+function normalizeOperatorWorkers(statusData) {
+  if (!statusData || typeof statusData !== 'object') return [];
+
+  const rawWorkers =
+    statusData.health?.workers ||
+    statusData.workers ||
+    statusData.workerHealth ||
+    statusData.health ||
+    {};
+
+  if (Array.isArray(rawWorkers)) {
+    return rawWorkers.map((worker, index) => ({
+      name: worker.name || `Worker ${index + 1}`,
+      enabled: worker.enabled !== false,
+      healthy: worker.enabled === false ? null : worker.healthy === true,
+      lastRun: worker.lastRun || null,
+      lastSuccess: worker.lastSuccess || null,
+      errors: Number(worker.errors || worker.errorCount || 0),
+      message: worker.message || null
+    }));
+  }
+
+  if (!rawWorkers || typeof rawWorkers !== 'object') return [];
+
+  return Object.entries(rawWorkers)
+    .filter(([, value]) => value && typeof value === 'object')
+    .map(([name, worker]) => ({
+      name: worker.name || name,
+      enabled: worker.enabled !== false,
+      healthy: worker.enabled === false ? null : worker.healthy === true,
+      lastRun: worker.lastRun || null,
+      lastSuccess: worker.lastSuccess || null,
+      errors: Number(worker.errors || worker.errorCount || 0),
+      message: worker.message || null
+    }));
+}
+
+ipcMain.handle('nexus-operator-dashboard', async (_, linkedAddress) => {
+  const paths = getOperatorPaths();
+  const configResult = readJsonFileSafe(paths.config);
+  const statusFile = findOperatorStatusFile(paths.statusCandidates);
+  const statusResult = readJsonFileSafe(statusFile);
+  const service = await readOperatorServiceStatus();
+
+  const now = Date.now();
+  const statusUpdatedAt =
+    statusResult.data?.updatedAt ||
+    statusResult.data?.timestamp ||
+    null;
+
+  const statusUpdatedMs = statusUpdatedAt
+    ? Date.parse(statusUpdatedAt)
+    : NaN;
+
+  const statusAgeSeconds = Number.isFinite(statusUpdatedMs)
+    ? Math.max(0, Math.floor((now - statusUpdatedMs) / 1000))
+    : null;
+
+  const workers = normalizeOperatorWorkers(statusResult.data);
+
+  const workerSummary = workers.reduce(
+    (summary, worker) => {
+      if (!worker.enabled) {
+        summary.disabled += 1;
+      } else if (worker.healthy) {
+        summary.healthy += 1;
+      } else {
+        summary.unhealthy += 1;
+      }
+
+      return summary;
+    },
+    {
+      total: workers.length,
+      healthy: 0,
+      unhealthy: 0,
+      disabled: 0
+    }
+  );
+
+  const response = {
+    ok: true,
+
+    registration: {
+      available: false,
+      registered: false,
+      tier: '0',
+      tierLabel: 'Not Registered',
+      stake: '0',
+      pending: '0',
+      operatorStake: '300',
+      validatorStake: '750',
+      error: null
+    },
+
+    configuration: {
+      exists: configResult.exists,
+      loaded: Boolean(configResult.data),
+      path: paths.config,
+      error: configResult.error,
+      data: configResult.data
+    },
+
+    service,
+
+    runtime: {
+      statusExists: statusResult.exists,
+      statusLoaded: Boolean(statusResult.data),
+      statusPath: statusFile,
+      statusError: statusResult.error,
+      nodeId: statusResult.data?.nodeId || null,
+      updatedAt: statusUpdatedAt,
+      ageSeconds: statusAgeSeconds,
+      stale: statusAgeSeconds != null ? statusAgeSeconds > 120 : null
+    },
+
+    workers,
+    workerSummary,
+
+    metrics:
+      statusResult.data?.metrics &&
+      typeof statusResult.data.metrics === 'object'
+        ? statusResult.data.metrics
+        : {},
+
+    rewardVerification: {
+      connected: false,
+      status: 'Not Connected',
+      message:
+        'Uptime verification and operator reward validation are not connected yet.'
+    }
+  };
+
+  try {
+    if (!ethers.isAddress(linkedAddress)) {
+      response.registration.error = 'Invalid Nexus address';
+      return response;
+    }
+
+    const nexusRuntime =
+      await getNexusRuntimeConfig();
+
+    const configuredNodeStakingAddress =
+      configResult.data?.nodeStakingContract;
+
+    const nodeStakingAddress =
+      ethers.isAddress(configuredNodeStakingAddress)
+        ? ethers.getAddress(configuredNodeStakingAddress)
+        : nexusRuntime.contracts.NodeStaking;
+
+    const nodeArtifact =
+      require('./src/abis/CryLoNodeStaking.json');
+
+    const rewardVaultArtifact =
+      require('./src/abis/RewardVault.json');
+
+    const provider = new ethers.JsonRpcProvider(
+      nexusRuntime.rpc
+    );
+
+    const node = new ethers.Contract(
+      nodeStakingAddress,
+      nodeArtifact.abi,
+      provider
+    );
+
+    const rewardVault = new ethers.Contract(
+      nexusRuntime.contracts.RewardVault,
+      rewardVaultArtifact.abi,
+      provider
+    );
+
+    const [
+      tier,
+      stake,
+      pending,
+      operatorStake,
+      validatorStake,
+      network
+    ] = await Promise.all([
+      node.nodeTier(linkedAddress),
+      node.nodeStake(linkedAddress),
+      rewardVault.pendingRewards(linkedAddress),
+      node.operatorStakeRequirement(),
+      node.validatorStakeRequirement(),
+      provider.getNetwork()
+    ]);
+
+    const tierText = tier.toString();
+
+    response.registration = {
+      available: true,
+      registered: tierText !== '0',
+      tier: tierText,
+      tierLabel:
+        tierText === '1'
+          ? 'Operator'
+          : tierText === '2'
+            ? 'Validator'
+            : 'Not Registered',
+      stake: formatWcryloUnits(stake),
+      pending: formatWcryloUnits(pending),
+      operatorStake: formatWcryloUnits(operatorStake),
+      validatorStake: formatWcryloUnits(validatorStake),
+      contract: nodeStakingAddress,
+      chainId: network.chainId.toString(),
+      linkedAddress,
+      error: null
+    };
+  } catch (error) {
+    response.registration.error =
+      error.shortMessage ||
+      error.reason ||
+      error.message;
+  }
+
+  return response;
+});
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({

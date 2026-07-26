@@ -8,19 +8,28 @@ const COIN = 100000000000; // 10^11 atomic units = 1 CryLo/wCryLo
 // Nexus action estimates are client-side UX values.
 // Economic policy is read live from GasManager.
 const NEXUS_GAS_ESTIMATES = Object.freeze({
+  // Everyday Nexus activity
   bridgeRelease: 0.006,
-  nftBuyback: 0.008,
-  nftBurn: 0.008,
+  nftPurchase: 0.006,
   staking: 0.006,
   unstaking: 0.006,
-  claimStakingRewards: 0.003,
-  nodeDeregistration: 0.006,
-  claimNodeRewards: 0.003,
+  claimStakingRewards: 0.006,
+  standardAction: 0.006,
+
+  // All node administration
+  nodeRegistration: 0.015,
+  nodeDeregistration: 0.015,
+  claimNodeRewards: 0.015,
+  nodeAction: 0.015,
+
+  // NFT lifecycle
+  nftBuyback: 0.050,
+  nftBurn: 0.001,
+
   defaultAction: 0.006
 });
 
-const NEXUS_GAS_SAFETY_MULTIPLIER = 2;
-const NEXUS_AUTOMATIC_GAS_PURCHASE_MIN_WCRYLO = 0.5;
+const NEXUS_GAS_PURCHASE_MIN_WCRYLO = 0.5;
 
 //  CryLo vesting tier unlock delays (in blocks, relative to coinbase height)
 const VESTING_TIERS = [
@@ -1070,6 +1079,18 @@ function switchTab(tab) {
       .catch(error => {
         console.error(
           'Failed to load bound Nexus wallet:',
+          error
+        );
+      });
+  }
+  if (tab === 'nexusNodes') {
+    loadSavedNexusLinkedAddress()
+      .then(() =>
+        refreshNexusOperatorDashboard()
+      )
+      .catch(error => {
+        console.error(
+          'Failed to load Nexus Nodes dashboard:',
           error
         );
       });
@@ -2725,12 +2746,15 @@ async function refreshNexusPendingRewards() {
 
 async function ensureNexusGasForAction(
   actionLabel,
-  estimatedGasCryLo = NEXUS_GAS_ESTIMATES.defaultAction
+  requiredGasCryLo = NEXUS_GAS_ESTIMATES.defaultAction
 ) {
   const linkedAddress = getLinkedNexusAddress();
 
   if (!linkedAddress) {
-    return { ok: false, error: 'No bound Nexus wallet.' };
+    return {
+      ok: false,
+      error: 'Create or load the bound Nexus wallet first.'
+    };
   }
 
   const status = await window.crylo.nexusGasStatus(linkedAddress);
@@ -2742,37 +2766,14 @@ async function ensureNexusGasForAction(
     };
   }
 
-  const gasPolicy = {
-    starterGasAmount: Number(status.starterGasAmount),
-    lowGasThreshold: Number(status.lowGasThreshold),
-    purchaseRateNativePerWcrylo:
-      Number(status.purchaseRateNativePerWcrylo),
-    minimumTreasuryReserve:
-      Number(status.minimumTreasuryReserve)
-  };
-
-  if (
-    !Number.isFinite(gasPolicy.lowGasThreshold) ||
-    gasPolicy.lowGasThreshold < 0 ||
-    !Number.isFinite(gasPolicy.purchaseRateNativePerWcrylo) ||
-    gasPolicy.purchaseRateNativePerWcrylo <= 0
-  ) {
-    return {
-      ok: false,
-      error: 'GasManager returned an invalid live gas policy.'
-    };
-  }
-
-  State.gasPolicy = gasPolicy;
-
   const currentGas = Number(status.nativeGas || 0);
-  const baseEstimate = Number(estimatedGasCryLo);
+  const requiredGas = Number(requiredGasCryLo);
 
   if (
     !Number.isFinite(currentGas) ||
     currentGas < 0 ||
-    !Number.isFinite(baseEstimate) ||
-    baseEstimate <= 0
+    !Number.isFinite(requiredGas) ||
+    requiredGas <= 0
   ) {
     return {
       ok: false,
@@ -2780,64 +2781,25 @@ async function ensureNexusGasForAction(
     };
   }
 
-  const estimatedActionGas =
-    baseEstimate * NEXUS_GAS_SAFETY_MULTIPLIER;
-
-  const targetGas =
-    estimatedActionGas + gasPolicy.lowGasThreshold;
-
-  if (currentGas >= targetGas) {
-    return { ok: true, toppedUp: false };
-  }
-
-  const shortfall = Math.max(0, targetGas - currentGas);
-
-  const calculatedWcrylo =
-    shortfall / gasPolicy.purchaseRateNativePerWcrylo;
-
-  const wcryloNeeded =
-    Math.max(
-      NEXUS_AUTOMATIC_GAS_PURCHASE_MIN_WCRYLO,
-      Math.ceil(calculatedWcrylo * 100000) / 100000
-    );
-
-  const yes = confirm(
-    `Not enough Nexus gas for ${actionLabel}.\n\n` +
-    `Current gas: ${currentGas.toFixed(6)} CRYLO\n` +
-    `Estimated action gas: ${estimatedActionGas.toFixed(6)} CRYLO\n` +
-    `Target balance: ${targetGas.toFixed(6)} CRYLO\n\n` +
-    `Purchase ${wcryloNeeded.toFixed(5)} wCryLo for gas and continue?`
-  );
-
-  if (!yes) {
+  if (currentGas >= requiredGas) {
     return {
-      ok: false,
-      cancelled: true,
-      error: 'User cancelled gas top-up.'
+      ok: true,
+      toppedUp: false,
+      currentGas,
+      requiredGas
     };
   }
-
-  const buy = await window.crylo.nexusBuyGasWithWcrylo(
-    String(wcryloNeeded),
-    State.walletName,
-    State.address
-  );
-
-  if (!buy.ok) {
-    return {
-      ok: false,
-      error: buy.error || 'Gas top-up failed.'
-    };
-  }
-
-  await refreshNexusDashboard();
-  scheduleNexusDashboardRefresh(5000);
 
   return {
-    ok: true,
-    toppedUp: true,
-    txHash: buy.txHash,
-    wcryloUsed: wcryloNeeded
+    ok: false,
+    insufficientGas: true,
+    currentGas,
+    requiredGas,
+    error:
+      `Not enough CRYLO gas for ${actionLabel}. ` +
+      `Required balance: ${requiredGas.toFixed(6)} CRYLO. ` +
+      `Current balance: ${currentGas.toFixed(6)} CRYLO. ` +
+      `Open Buy Gas and purchase 0.5 wCryLo for 0.25 CRYLO.`
   };
 }
 
@@ -2971,80 +2933,713 @@ async function claimNexusRewards() {
   }
 }
 
-async function refreshNexusNodeStatus() {
-  const statusEl = document.getElementById('nexus-node-status');
-  if (!statusEl) return;
+function setNexusNodeDashboardText(id, value, fallback = '—') {
+  const element = document.getElementById(id);
+
+  if (!element) return;
+
+  const usable =
+    value !== undefined &&
+    value !== null &&
+    value !== '';
+
+  element.textContent =
+    usable ? String(value) : fallback;
+}
+
+function setNexusNodeDashboardVisible(id, visible) {
+  const element = document.getElementById(id);
+
+  if (!element) return;
+
+  element.classList.toggle(
+    'hidden',
+    !visible
+  );
+}
+
+function formatNexusOperatorStatusAge(seconds) {
+  const value = Number(seconds);
+
+  if (!Number.isFinite(value) || value < 0) {
+    return 'Unknown';
+  }
+
+  if (value < 60) {
+    return `${Math.floor(value)} sec`;
+  }
+
+  if (value < 3600) {
+    return `${Math.floor(value / 60)} min`;
+  }
+
+  if (value < 86400) {
+    return `${Math.floor(value / 3600)} hr`;
+  }
+
+  return `${Math.floor(value / 86400)} day`;
+}
+
+function formatNexusOperatorTimestamp(value) {
+  if (!value) return 'Never';
+
+  const timestamp = new Date(value);
+
+  if (Number.isNaN(timestamp.getTime())) {
+    return String(value);
+  }
+
+  return timestamp.toLocaleString();
+}
+
+function getConfiguredNexusOperatorAddress(configuration) {
+  if (!configuration || typeof configuration !== 'object') {
+    return null;
+  }
+
+  return (
+    configuration.nexusAddress ||
+    configuration.operatorAddress ||
+    configuration.walletAddress ||
+    configuration.linkedAddress ||
+    configuration.address ||
+    null
+  );
+}
+
+function renderNexusOperatorWorkers(workers, summary) {
+  const container =
+    document.getElementById(
+      'nexus-operator-workers'
+    );
+
+  const summaryElement =
+    document.getElementById(
+      'nexus-operator-worker-summary'
+    );
+
+  if (summaryElement) {
+    if (!Array.isArray(workers) || workers.length === 0) {
+      summaryElement.textContent =
+        'No worker health records are available.';
+    } else {
+      summaryElement.textContent =
+        `${summary?.healthy || 0} healthy · ` +
+        `${summary?.unhealthy || 0} unhealthy · ` +
+        `${summary?.disabled || 0} disabled`;
+    }
+  }
+
+  if (!container) return;
+
+  container.replaceChildren();
+
+  if (!Array.isArray(workers) || workers.length === 0) {
+    const empty =
+      document.createElement('div');
+
+    empty.className = 'muted';
+    empty.textContent =
+      'No worker status loaded.';
+
+    container.appendChild(empty);
+    return;
+  }
+
+  workers.forEach(worker => {
+    const card =
+      document.createElement('div');
+
+    card.className = 'card';
+
+    const title =
+      document.createElement('strong');
+
+    title.textContent =
+      worker.name || 'Unnamed Worker';
+
+    const state =
+      document.createElement('div');
+
+    state.className = 'muted';
+    state.style.marginTop = '6px';
+
+    if (worker.enabled === false) {
+      state.textContent = 'Disabled';
+    } else if (worker.healthy === true) {
+      state.textContent = 'Healthy';
+    } else {
+      state.textContent = 'Unhealthy';
+    }
+
+    const details =
+      document.createElement('div');
+
+    details.className = 'muted';
+    details.style.marginTop = '6px';
+    details.style.fontSize = '12px';
+
+    const lastSuccess =
+      worker.lastSuccess ||
+      worker.lastRun ||
+      'Never';
+
+    details.textContent =
+      `Last activity: ${formatNexusOperatorTimestamp(lastSuccess)} · ` +
+      `Errors: ${Number(worker.errors || 0)}`;
+
+    card.appendChild(title);
+    card.appendChild(state);
+    card.appendChild(details);
+
+    if (worker.message) {
+      const message =
+        document.createElement('div');
+
+      message.className = 'muted';
+      message.style.marginTop = '6px';
+      message.style.fontSize = '12px';
+      message.textContent =
+        String(worker.message);
+
+      card.appendChild(message);
+    }
+
+    container.appendChild(card);
+  });
+}
+
+function renderNexusOperatorMetrics(metrics) {
+  const container =
+    document.getElementById(
+      'nexus-operator-metrics'
+    );
+
+  if (!container) return;
+
+  container.replaceChildren();
+
+  const entries =
+    metrics &&
+    typeof metrics === 'object' &&
+    !Array.isArray(metrics)
+      ? Object.entries(metrics)
+      : [];
+
+  if (entries.length === 0) {
+    const empty =
+      document.createElement('div');
+
+    empty.className = 'muted';
+    empty.textContent =
+      'No metrics loaded.';
+
+    container.appendChild(empty);
+    return;
+  }
+
+  entries.forEach(([name, rawValue]) => {
+    const card =
+      document.createElement('div');
+
+    card.className = 'card';
+
+    const label =
+      document.createElement('div');
+
+    label.className = 'muted';
+    label.textContent = name;
+
+    const value =
+      document.createElement('strong');
+
+    if (
+      rawValue &&
+      typeof rawValue === 'object'
+    ) {
+      try {
+        value.textContent =
+          JSON.stringify(rawValue);
+      } catch {
+        value.textContent =
+          '[Complex value]';
+      }
+    } else {
+      value.textContent =
+        rawValue === undefined ||
+        rawValue === null
+          ? '—'
+          : String(rawValue);
+    }
+
+    card.appendChild(label);
+    card.appendChild(value);
+    container.appendChild(card);
+  });
+}
+
+async function refreshNexusOperatorDashboard() {
+  const overallStatus =
+    document.getElementById(
+      'nexus-node-status'
+    );
 
   const linkedAddress =
     getLinkedNexusAddress();
 
   if (!linkedAddress) {
-    statusEl.textContent = 'No Nexus wallet linked.';
+    if (overallStatus) {
+      overallStatus.textContent =
+        'No Nexus wallet linked.';
+    }
+
+    setNexusNodeDashboardText(
+      'nexus-node-registration-status',
+      'No Wallet'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-node-tier',
+      '—'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-node-stake',
+      '—'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-node-pending',
+      '—'
+    );
+
+    setNexusNodeDashboardVisible(
+      'nexus-register-operator-btn',
+      false
+    );
+
+    setNexusNodeDashboardVisible(
+      'nexus-register-validator-btn',
+      false
+    );
+
+    setNexusNodeDashboardVisible(
+      'nexus-claim-node-rewards-btn',
+      false
+    );
+
+    setNexusNodeDashboardVisible(
+      'nexus-unregister-node-btn',
+      false
+    );
+
     return;
   }
 
-  try {
-    const result = await window.crylo.nexusNodeStatus(linkedAddress);
+  if (overallStatus) {
+    overallStatus.textContent =
+      'Loading Nexus operator dashboard...';
+  }
 
-    if (!result.ok) {
-      statusEl.textContent = result.error || 'Unable to load node status.';
+  try {
+    const result =
+      await window.crylo
+        .nexusOperatorDashboard(
+          linkedAddress
+        );
+
+    if (!result || result.ok === false) {
+      if (overallStatus) {
+        overallStatus.textContent =
+          result?.error ||
+          'Unable to load the Nexus operator dashboard.';
+      }
+
       return;
     }
 
-    const tierName =
-      result.tier === '2' ? 'Validator' :
-      result.tier === '1' ? 'Operator' :
-      'None';
+    const registration =
+      result.registration || {};
 
-    statusEl.innerHTML =
-      `Tier: <strong>${tierName}</strong> · ` +
-      `Stake: <strong>${Number(result.stake).toFixed(4)} wCryLo</strong> · ` +
-      `Pending: <strong>${Number(result.pending).toFixed(6)} wCryLo</strong>`;
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = 'Unable to load node status.';
+    const registered =
+      registration.registered === true;
+
+    const tierValue =
+      String(registration.tier || '0');
+
+    const operatorRegistrationStatus =
+      registration.available === false
+        ? 'Unavailable'
+        : registered && tierValue === '1'
+          ? 'Registered'
+          : 'Not Registered';
+
+    const validatorRegistrationStatus =
+      registration.available === false
+        ? 'Unavailable'
+        : registered && tierValue === '2'
+          ? 'Registered'
+          : 'Not Registered';
+
+    setNexusNodeDashboardText(
+      'nexus-node-registration-status',
+      operatorRegistrationStatus
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-node-tier',
+      validatorRegistrationStatus
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-node-stake',
+      `${registration.stake || '0'} wCryLo`
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-node-pending',
+      `${registration.pending || '0'} wCryLo`
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-node-operator-required',
+      `${registration.operatorStake || '300'} wCryLo`
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-node-validator-required',
+      `${registration.validatorStake || '750'} wCryLo`
+    );
+
+    setNexusNodeDashboardVisible(
+      'nexus-register-operator-btn',
+      !registered
+    );
+
+    setNexusNodeDashboardVisible(
+      'nexus-register-validator-btn',
+      !registered
+    );
+
+    setNexusNodeDashboardVisible(
+      'nexus-claim-node-rewards-btn',
+      registered
+    );
+
+    setNexusNodeDashboardVisible(
+      'nexus-unregister-node-btn',
+      registered
+    );
+
+    const configuration =
+      result.configuration || {};
+
+    const service =
+      result.service || {};
+
+    const runtime =
+      result.runtime || {};
+
+    setNexusNodeDashboardText(
+      'nexus-operator-installed',
+      service.installed ? 'Yes' : 'No'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-operator-running',
+      service.running
+        ? 'Running'
+        : service.installed
+          ? service.activeState || 'Stopped'
+          : 'Not Installed'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-operator-service-scope',
+      service.serviceScope || '—'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-operator-config-loaded',
+      configuration.loaded
+        ? 'Loaded'
+        : configuration.exists
+          ? 'Invalid'
+          : 'Not Found'
+    );
+
+    const configuredAddress =
+      getConfiguredNexusOperatorAddress(
+        configuration.data
+      );
+
+    let walletMatch = 'Unknown';
+
+    if (configuredAddress) {
+      walletMatch =
+        String(configuredAddress).toLowerCase() ===
+        String(linkedAddress).toLowerCase()
+          ? 'Matched'
+          : 'Mismatch';
+    } else if (configuration.loaded) {
+      walletMatch = 'Address Missing';
+    }
+
+    setNexusNodeDashboardText(
+      'nexus-operator-wallet-match',
+      walletMatch
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-operator-node-id',
+      runtime.nodeId || '—'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-operator-updated-at',
+      formatNexusOperatorTimestamp(
+        runtime.updatedAt
+      )
+    );
+
+    const ageText =
+      formatNexusOperatorStatusAge(
+        runtime.ageSeconds
+      );
+
+    setNexusNodeDashboardText(
+      'nexus-operator-status-age',
+      runtime.stale === true
+        ? `${ageText} · Stale`
+        : ageText
+    );
+
+    const serviceMessage =
+      document.getElementById(
+        'nexus-operator-service-message'
+      );
+
+    if (serviceMessage) {
+      const messages = [];
+
+      if (service.message) {
+        messages.push(service.message);
+      }
+
+      if (configuration.error) {
+        messages.push(
+          `Configuration: ${configuration.error}`
+        );
+      }
+
+      if (runtime.statusError) {
+        messages.push(
+          `Runtime status: ${runtime.statusError}`
+        );
+      }
+
+      if (runtime.stale === true) {
+        messages.push(
+          'The saved operator status is stale.'
+        );
+      }
+
+      if (messages.length === 0) {
+        messages.push(
+          service.running
+            ? 'The operator service is running.'
+            : 'The operator service is not running.'
+        );
+      }
+
+      serviceMessage.textContent =
+        messages.join(' ');
+    }
+
+    const verification =
+      result.rewardVerification || {};
+
+    setNexusNodeDashboardText(
+      'nexus-reward-verification-status',
+      verification.status ||
+      'Not Connected'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-reward-eligibility',
+      verification.connected
+        ? registered
+          ? 'Pending Verification'
+          : 'Not Registered'
+        : 'Unavailable'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-reward-verification-message',
+      verification.message ||
+      'Uptime verification and operator reward validation are not connected yet.'
+    );
+
+    renderNexusOperatorWorkers(
+      result.workers,
+      result.workerSummary
+    );
+
+    renderNexusOperatorMetrics(
+      result.metrics
+    );
+
+    if (overallStatus) {
+      if (registration.error) {
+        overallStatus.textContent =
+          `Dashboard loaded, but registration could not be verified: ` +
+          registration.error;
+      } else {
+        overallStatus.textContent =
+          `Operator: ${operatorRegistrationStatus} · ` +
+          `Validator: ${validatorRegistrationStatus} · ` +
+          `Service: ` +
+          `${service.running ? 'Running' : 'Not Running'}`;
+      }
+    }
+  } catch (error) {
+    console.error(
+      'Unable to load Nexus operator dashboard:',
+      error
+    );
+
+    if (overallStatus) {
+      overallStatus.textContent =
+        'Unable to load the Nexus operator dashboard.';
+    }
   }
 }
 
+async function refreshNexusNodeStatus() {
+  return refreshNexusOperatorDashboard();
+}
+
 async function registerNexusOperator() {
-  const statusEl = document.getElementById('nexus-node-action-status');
-  statusEl.textContent = 'Registering Operator node with 300 wCryLo...';
+  const statusEl =
+    document.getElementById('nexus-node-action-status');
+
+  statusEl.textContent =
+    'Checking CRYLO gas for Operator registration...';
+
+  const gasCheck = await ensureNexusGasForAction(
+    'Operator registration',
+    NEXUS_GAS_ESTIMATES.nodeRegistration
+  );
+
+  if (!gasCheck.ok) {
+    statusEl.textContent =
+      `Operator registration stopped: ${gasCheck.error}`;
+    return;
+  }
+
+  statusEl.textContent =
+    'Registering Operator node with 300 wCryLo...';
 
   try {
-    const result = await window.crylo.nexusRegisterOperator(State.walletName, State.address);
+    const result =
+      await window.crylo.nexusRegisterOperator(
+        State.walletName,
+        State.address
+      );
 
     if (!result.ok) {
-      statusEl.textContent = `Operator registration failed: ${result.error || 'Unknown error'}`;
+      const errorText =
+        String(result.error || 'Unknown error');
+
+      const lowerError = errorText.toLowerCase();
+
+      statusEl.textContent =
+        lowerError.includes('insufficient funds')
+          ? 'Operator registration stopped: Not enough CRYLO gas. ' +
+            'Use the Buy Gas button first.'
+          : `Operator registration failed: ${errorText}`;
+
       return;
     }
 
-    statusEl.textContent = 'Operator node registered successfully.';
+    statusEl.textContent =
+      'Operator node registered successfully.';
+
     await refreshNexusDashboard();
     scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
-    statusEl.textContent = 'Operator registration failed.';
+
+    const errorText =
+      String(err?.message || err || '').toLowerCase();
+
+    statusEl.textContent =
+      errorText.includes('insufficient funds')
+        ? 'Operator registration stopped: Not enough CRYLO gas. ' +
+          'Use the Buy Gas button first.'
+        : 'Operator registration failed.';
   }
 }
 
 async function registerNexusValidator() {
-  const statusEl = document.getElementById('nexus-node-action-status');
-  statusEl.textContent = 'Registering Validator node with 750 wCryLo...';
+  const statusEl =
+    document.getElementById('nexus-node-action-status');
+
+  statusEl.textContent =
+    'Checking CRYLO gas for Validator registration...';
+
+  const gasCheck = await ensureNexusGasForAction(
+    'Validator registration',
+    NEXUS_GAS_ESTIMATES.nodeRegistration
+  );
+
+  if (!gasCheck.ok) {
+    statusEl.textContent =
+      `Validator registration stopped: ${gasCheck.error}`;
+    return;
+  }
+
+  statusEl.textContent =
+    'Registering Validator node with 750 wCryLo...';
 
   try {
-    const result = await window.crylo.nexusRegisterValidator(State.walletName, State.address);
+    const result =
+      await window.crylo.nexusRegisterValidator(
+        State.walletName,
+        State.address
+      );
 
     if (!result.ok) {
-      statusEl.textContent = `Validator registration failed: ${result.error || 'Unknown error'}`;
+      const errorText =
+        String(result.error || 'Unknown error');
+
+      const lowerError = errorText.toLowerCase();
+
+      statusEl.textContent =
+        lowerError.includes('insufficient funds')
+          ? 'Validator registration stopped: Not enough CRYLO gas. ' +
+            'Use the Buy Gas button first.'
+          : `Validator registration failed: ${errorText}`;
+
       return;
     }
 
-    statusEl.textContent = 'Validator node registered successfully.';
+    statusEl.textContent =
+      'Validator node registered successfully.';
+
     await refreshNexusDashboard();
     scheduleNexusDashboardRefresh(5000);
   } catch (err) {
     console.error(err);
-    statusEl.textContent = 'Validator registration failed.';
+
+    const errorText =
+      String(err?.message || err || '').toLowerCase();
+
+    statusEl.textContent =
+      errorText.includes('insufficient funds')
+        ? 'Validator registration stopped: Not enough CRYLO gas. ' +
+          'Use the Buy Gas button first.'
+        : 'Validator registration failed.';
   }
 }
 
@@ -3138,6 +3733,8 @@ async function refreshNexusGasStatus() {
   const starterEl = document.getElementById('nexus-gas-starter');
   const dailyEl = document.getElementById('nexus-gas-daily');
   const activityEl = document.getElementById('nexus-gas-activity');
+  const purchaseValueEl =
+    document.getElementById('nexus-gas-purchase-value');
 
   const linkedAddress = getLinkedNexusAddress();
 
@@ -3183,6 +3780,16 @@ async function refreshNexusGasStatus() {
       minimumTreasuryReserve:
         Number(result.minimumTreasuryReserve)
     };
+
+    if (purchaseValueEl) {
+      const minimumPurchaseValue =
+        NEXUS_GAS_PURCHASE_MIN_WCRYLO *
+        State.gasPolicy.purchaseRateNativePerWcrylo;
+
+      purchaseValueEl.textContent =
+        `0.5 wCryLo purchases ` +
+        `${fmtDecimalAmount(minimumPurchaseValue, 6)} CRYLO`;
+    }
 
     const now = Date.now() / 1000;
     const active = result.lastActivityAt && (now - result.lastActivityAt) <= (3 * 24 * 60 * 60);
@@ -3234,7 +3841,18 @@ async function refreshNexusGasStatus() {
         `Daily Gas: ${fmtDecimalAmount(result.dailyGasAmount, 6)} CRYLO` +
         ` · Vault: ${fmtDecimalAmount(result.vaultBalance, 4)} CRYLO`;
     }
-    if (activityEl) activityEl.textContent = `Last Activity: ${fmtUnix(result.lastActivityAt)} · Last Claim: ${fmtUnix(result.lastGasClaimAt)}`;
+    if (activityEl) {
+      activityEl.textContent =
+        `Last Activity: ${fmtUnix(result.lastActivityAt)} · Last Claim: ${fmtUnix(result.lastGasClaimAt)}`;
+    }
+
+    const refreshedEl =
+      document.getElementById('nexus-gas-last-refreshed');
+
+    if (refreshedEl) {
+      refreshedEl.textContent =
+        `Last refreshed: ${new Date().toLocaleString()}`;
+    }
   } catch (err) {
     console.error(err);
     if (statusEl) statusEl.textContent = 'Gas status: error';
@@ -3267,17 +3885,73 @@ async function claimNexusDailyGas() {
   }
 }
 
+function openNexusGasPurchase() {
+  switchTab('nexus');
+
+  setTimeout(() => {
+    const input =
+      document.getElementById('nexus-buy-gas-amount');
+
+    const statusEl =
+      document.getElementById('nexus-gas-action-status');
+
+    if (input) {
+      const currentAmount = Number(input.value || 0);
+
+      if (
+        !Number.isFinite(currentAmount) ||
+        currentAmount < NEXUS_GAS_PURCHASE_MIN_WCRYLO
+      ) {
+        input.value =
+          String(NEXUS_GAS_PURCHASE_MIN_WCRYLO);
+      }
+
+      input.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+
+      input.focus();
+      input.select();
+    }
+
+    if (statusEl) {
+      statusEl.textContent =
+        `Enter at least ` +
+        `${NEXUS_GAS_PURCHASE_MIN_WCRYLO} wCryLo, ` +
+        `then select Buy Gas.`;
+    }
+  }, 100);
+}
+
+
 async function buyNexusGasWithWcrylo() {
   const statusEl = document.getElementById('nexus-gas-action-status');
   const input = document.getElementById('nexus-buy-gas-amount');
   const amount = input ? input.value.trim() : '';
 
-  if (!amount || Number(amount) <= 0) {
-    if (statusEl) statusEl.textContent = 'Enter a valid wCryLo amount.';
+  const numericAmount = Number(amount);
+
+  if (!amount || !Number.isFinite(numericAmount) || numericAmount <= 0) {
+    if (statusEl) {
+      statusEl.textContent = 'Enter a valid wCryLo amount.';
+    }
     return;
   }
 
-  if (statusEl) statusEl.textContent = `Buying gas with ${amount} wCryLo...`;
+  if (numericAmount < NEXUS_GAS_PURCHASE_MIN_WCRYLO) {
+    if (statusEl) {
+      statusEl.textContent =
+        `The minimum gas purchase is ` +
+        `${NEXUS_GAS_PURCHASE_MIN_WCRYLO} wCryLo.`;
+    }
+    return;
+  }
+
+  if (statusEl) {
+    statusEl.textContent =
+      `Buying gas with ${amount} wCryLo...`;
+  }
 
   try {
     const result = await window.crylo.nexusBuyGasWithWcrylo(amount, State.walletName, State.address);
@@ -3467,6 +4141,7 @@ window.App = {
   toggleMining,
   refreshNexusWcryloBalance,
   refreshNexusStakedBalance,
+  openNexusGasPurchase,
   buyNexusGasWithWcrylo,
   claimNexusDailyGas,
   refreshNexusGasStatus,
@@ -3475,6 +4150,7 @@ window.App = {
   stakeNexusWcrylo,
   unstakeNexusWcrylo,
   refreshNexusNodeStatus,
+  refreshNexusOperatorDashboard,
   registerNexusOperator,
   registerNexusValidator,
   claimNexusNodeRewards,

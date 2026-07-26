@@ -180,6 +180,7 @@
       <button class="tab-btn" data-tab="vesting"      onclick="App.switchTab('vesting')">🔒 Vesting</button>
       <button class="tab-btn" data-tab="mining"      onclick="App.switchTab('mining')">⛏ Mining</button>
       <button class="tab-btn" data-tab="nexus" onclick="App.switchTab('nexus')">🌉 Nexus</button>
+      <button class="tab-btn" data-tab="nexusNodes" onclick="App.switchTab('nexusNodes')">🖥 Nexus Nodes</button>
       <button class="tab-btn" data-tab="nexusNfts" onclick="App.switchTab('nexusNfts')">🖼 Nexus NFTs</button>
       <button class="tab-btn" data-tab="nexusTx" onclick="App.switchTab('nexusTx')">🔗 Nexus Transactions</button>
     </div>
@@ -451,25 +452,6 @@
       </div>
     </div>
 
-    <div style="margin-bottom:16px">
-      <h4>🖥 Nexus Node Staking</h4>
-
-      <div style="margin-top:10px;font-size:13px;color:var(--text-dim)">
-        Node Status:
-        <span id="nexus-node-status">—</span>
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button class="btn btn-primary" onclick="App.registerNexusOperator()">Register Operator 300 wCryLo</button>
-        <button class="btn btn-primary" onclick="App.registerNexusValidator()">Register Validator 750 wCryLo</button>
-        <button class="btn btn-secondary" onclick="App.claimNexusNodeRewards()">Claim Node Rewards</button>
-      <button class="btn btn-danger" onclick="App.unregisterNexusNode()">Deregister Node</button>
-      </div>
-
-      <div id="nexus-node-action-status" style="font-size:12px;color:var(--text);margin-top:6px">
-        Register as an Operator or Validator to participate in Nexus node rewards.
-      </div>
-    </div>
 </div>
 
 <div class="card nexus-card" style="margin-top:16px">
@@ -482,14 +464,301 @@
     </div>
     <div class="muted" id="nexus-gas-daily">Daily Gas: —</div>
     <div class="muted" id="nexus-gas-activity">Activity: —</div>
+    <div class="muted" id="nexus-gas-last-refreshed">Last refreshed: Never</div>
 
-    <div class="row" style="margin-top:10px">
-      <button class="btn btn-primary" onclick="App.claimNexusDailyGas()">Claim Daily Gas</button>
+    <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap">
+      <button
+        class="btn btn-primary"
+        onclick="App.claimNexusDailyGas()"
+      >
+        Claim Daily Gas
+      </button>
     </div>
 
-    <div class="muted" id="nexus-gas-action-status" style="margin-top:8px">—</div>
+    <div
+      class="card"
+      style="margin-top:12px;padding:12px"
+    >
+      <div style="font-weight:600;margin-bottom:6px">
+        Buy CRYLO Gas
+      </div>
+
+      <div class="muted" style="margin-bottom:4px">
+        Minimum purchase: 0.5 wCryLo
+      </div>
+
+      <div
+        class="muted"
+        id="nexus-gas-purchase-value"
+        style="margin-bottom:8px"
+      >
+        0.5 wCryLo purchases — CRYLO
+      </div>
+
+      <div
+        style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"
+      >
+        <input
+          id="nexus-buy-gas-amount"
+          type="number"
+          min="0.5"
+          step="0.1"
+          value="0.5"
+          placeholder="0.5"
+          style="flex:1;min-width:140px"
+        />
+
+        <button
+          id="nexus-buy-gas-btn"
+          class="btn btn-secondary"
+          type="button"
+          onclick="App.buyNexusGasWithWcrylo()"
+        >
+          Buy Gas
+        </button>
+      </div>
+    </div>
+
+    <div
+      class="muted"
+      id="nexus-gas-action-status"
+      style="margin-top:8px"
+    >
+      —
+    </div>
   </div>
 </div>
+
+    <div class="tab-panel" id="tab-nexusNodes">
+      <h3>🖥 Nexus Nodes Dashboard</h3>
+
+      <div class="card nexus-card">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
+          <div>
+            <h4 style="margin-bottom:4px">Registration & Staking</h4>
+            <div class="muted">On-chain CryLoNexus node registration</div>
+          </div>
+
+          <button
+            class="btn btn-secondary"
+            onclick="App.refreshNexusOperatorDashboard()"
+          >
+            Refresh Dashboard
+          </button>
+        </div>
+
+        <div
+          style="
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+            gap:10px;
+            margin-top:14px
+          "
+        >
+          <div class="card">
+            <div class="muted">Operator</div>
+            <strong id="nexus-node-registration-status">—</strong>
+          </div>
+
+          <div class="card">
+            <div class="muted">Validator</div>
+            <strong id="nexus-node-tier">—</strong>
+          </div>
+
+          <div class="card">
+            <div class="muted">Locked Stake</div>
+            <strong id="nexus-node-stake">—</strong>
+          </div>
+
+          <div class="card">
+            <div class="muted">Pending Rewards</div>
+            <strong id="nexus-node-pending">—</strong>
+          </div>
+
+          <div class="card">
+            <div class="muted">Operator Requirement</div>
+            <strong id="nexus-node-operator-required">300 wCryLo</strong>
+          </div>
+
+          <div class="card">
+            <div class="muted">Validator Requirement</div>
+            <strong id="nexus-node-validator-required">750 wCryLo</strong>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+          <button
+            id="nexus-register-operator-btn"
+            class="btn btn-primary"
+            onclick="App.registerNexusOperator()"
+          >
+            Register Operator
+          </button>
+
+          <button
+            id="nexus-register-validator-btn"
+            class="btn btn-primary"
+            onclick="App.registerNexusValidator()"
+          >
+            Register Validator
+          </button>
+
+          <button
+            id="nexus-unregister-node-btn"
+            class="btn btn-danger"
+            type="button"
+            onclick="App.unregisterNexusNode()"
+          >
+            Deregister Node
+          </button>
+
+          <button
+            id="nexus-dashboard-buy-gas-btn"
+            class="btn btn-secondary"
+            type="button"
+            onclick="App.openNexusGasPurchase()"
+          >
+            Buy Gas
+          </button>
+
+          <button
+            id="nexus-claim-node-rewards-btn"
+            class="btn btn-secondary hidden"
+            onclick="App.claimNexusNodeRewards()"
+          >
+            Claim Rewards
+          </button>
+
+          <button
+            id="nexus-unregister-node-btn"
+            class="btn btn-danger hidden"
+            onclick="App.unregisterNexusNode()"
+          >
+            Deregister
+          </button>
+        </div>
+
+        <div
+          id="nexus-node-action-status"
+          style="font-size:12px;color:var(--text);margin-top:10px"
+        >
+          Register as an Operator or Validator to participate in Nexus node rewards.
+        </div>
+      </div>
+
+      <div
+        style="
+          display:grid;
+          grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+          gap:16px;
+          margin-top:16px
+        "
+      >
+        <div class="card nexus-card">
+          <h4>Operator Service</h4>
+
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px">
+            <span class="muted">Installed</span>
+            <strong id="nexus-operator-installed">—</strong>
+
+            <span class="muted">Running</span>
+            <strong id="nexus-operator-running">—</strong>
+
+            <span class="muted">Service Scope</span>
+            <strong id="nexus-operator-service-scope">—</strong>
+
+            <span class="muted">Configuration</span>
+            <strong id="nexus-operator-config-loaded">—</strong>
+
+            <span class="muted">Wallet Match</span>
+            <strong id="nexus-operator-wallet-match">—</strong>
+
+            <span class="muted">Node ID</span>
+            <strong id="nexus-operator-node-id">—</strong>
+
+            <span class="muted">Last Update</span>
+            <strong id="nexus-operator-updated-at">—</strong>
+
+            <span class="muted">Status Age</span>
+            <strong id="nexus-operator-status-age">—</strong>
+          </div>
+
+          <div
+            id="nexus-operator-service-message"
+            class="muted"
+            style="margin-top:12px"
+          >
+            Operator service status has not been loaded.
+          </div>
+        </div>
+
+        <div class="card nexus-card">
+          <h4>Reward Verification</h4>
+
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px">
+            <span class="muted">Verification Status</span>
+            <strong id="nexus-reward-verification-status">Not Connected</strong>
+
+            <span class="muted">Eligibility</span>
+            <strong id="nexus-reward-eligibility">Unavailable</strong>
+          </div>
+
+          <div
+            id="nexus-reward-verification-message"
+            class="muted"
+            style="margin-top:12px"
+          >
+            Uptime verification and operator reward validation are not connected yet.
+          </div>
+        </div>
+      </div>
+
+      <div class="card nexus-card" style="margin-top:16px">
+        <h4>Worker Health</h4>
+
+        <div
+          id="nexus-operator-worker-summary"
+          class="muted"
+          style="margin-top:8px"
+        >
+          No worker status loaded.
+        </div>
+
+        <div
+          id="nexus-operator-workers"
+          style="
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+            gap:10px;
+            margin-top:12px
+          "
+        ></div>
+      </div>
+
+      <div class="card nexus-card" style="margin-top:16px">
+        <h4>Operator Metrics</h4>
+
+        <div
+          id="nexus-operator-metrics"
+          style="
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+            gap:10px;
+            margin-top:12px
+          "
+        >
+          <div class="muted">No metrics loaded.</div>
+        </div>
+      </div>
+
+      <div
+        id="nexus-node-status"
+        class="muted"
+        style="margin-top:12px"
+      >
+        Dashboard not loaded.
+      </div>
+    </div>
 
     <div class="tab-panel" id="tab-nexusNfts">
       <h3>🖼 Nexus NFTs</h3>

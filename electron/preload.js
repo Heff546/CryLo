@@ -65,6 +65,9 @@ contextBridge.exposeInMainWorld('crylo', {
     nexusNodeStatus: (linkedAddress) =>
     ipcRenderer.invoke('nexus-node-status', linkedAddress),
 
+  nexusOperatorDashboard: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-operator-dashboard', linkedAddress),
+
   nexusRegisterOperator: (walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-register-operator', walletName, cryloAddress),
 
