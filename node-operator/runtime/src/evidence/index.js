@@ -38,3 +38,10 @@ module.exports = {
   unsignedPayloadFromHeartbeat,
   validateUnsignedHeartbeat
 };
+
+const sequenceManager = require('./sequence-manager');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...sequenceManager
+});
