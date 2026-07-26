@@ -3178,20 +3178,409 @@ function renderNexusOperatorMetrics(metrics) {
   });
 }
 
-async function refreshNexusOperatorDashboard() {
-  const overallStatus =
-    document.getElementById(
-      'nexus-node-status'
+
+function setNexusNodeSmartStatus({
+  type = 'setup',
+  eyebrow = '',
+  title = '',
+  message = '',
+  currentStep = '—'
+} = {}) {
+  const statusCard =
+    document.getElementById('nexus-node-status');
+
+  if (statusCard) {
+    statusCard.classList.remove(
+      'setup',
+      'success',
+      'warning',
+      'danger'
     );
 
+    statusCard.classList.add(type);
+  }
+
+  setNexusNodeDashboardText(
+    'nexus-node-status-eyebrow',
+    eyebrow
+  );
+
+  setNexusNodeDashboardText(
+    'nexus-node-status-title',
+    title
+  );
+
+  setNexusNodeDashboardText(
+    'nexus-node-status-message',
+    message
+  );
+
+  setNexusNodeDashboardText(
+    'nexus-node-status-current-step',
+    currentStep
+  );
+
+  const icon =
+    type === 'success'
+      ? '✓'
+      : type === 'danger'
+        ? '!'
+        : '●';
+
+  setNexusNodeDashboardText(
+    'nexus-node-status-icon',
+    icon
+  );
+}
+
+function updateNexusNodeCenterState({
+  linked = true,
+  registered = false,
+  tierValue = '0',
+  serviceInstalled = false,
+  serviceRunning = false,
+  configurationLoaded = false,
+  walletMatched = false,
+  verificationConnected = false
+} = {}) {
+  const stageIds = [
+    'register',
+    'install',
+    'connect',
+    'verify',
+    'operate'
+  ];
+
+  const stageLabels = {
+    register: 'Register Your Node',
+    install: 'Install Service',
+    connect: 'Connect Node',
+    verify: 'Verify Uptime',
+    operate: 'Earn Rewards'
+  };
+
+  const setStepCopy = (title, description) => {
+    setNexusNodeDashboardText(
+      'nexus-current-step-title',
+      title
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-current-step-description',
+      description
+    );
+  };
+
+  const setActionCopy = text => {
+    setNexusNodeDashboardText(
+      'nexus-node-action-status',
+      text
+    );
+  };
+
+  const applyProgress = (
+    activeStage,
+    completedStages = []
+  ) => {
+    stageIds.forEach((stageName, index) => {
+      const progressElement = document.getElementById(
+        `nexus-stage-${stageName}`
+      );
+
+      const cardElement = document.getElementById(
+        `nexus-step-card-${stageName}`
+      );
+
+      const completed =
+        completedStages.includes(stageName);
+
+      const active =
+        stageName === activeStage;
+
+      if (progressElement) {
+        progressElement.classList.toggle(
+          'active',
+          active
+        );
+
+        progressElement.classList.toggle(
+          'complete',
+          completed
+        );
+
+        const numberElement =
+          progressElement.querySelector(
+            '.node-stage-number'
+          );
+
+        if (numberElement) {
+          const stageNumber = String(index + 1);
+
+          numberElement.textContent =
+            completed ? '✓' : stageNumber;
+
+          numberElement.setAttribute(
+            'aria-label',
+            completed
+              ? `${stageLabels[stageName]} complete`
+              : `Step ${stageNumber}`
+          );
+        }
+      }
+
+      if (cardElement) {
+        cardElement.classList.toggle(
+          'active',
+          active
+        );
+
+        cardElement.classList.toggle(
+          'complete',
+          completed
+        );
+
+        cardElement.classList.toggle(
+          'locked',
+          !active && !completed
+        );
+
+        const cardIcon =
+          cardElement.querySelector(
+            '.node-center-step-card-icon'
+          );
+
+        if (cardIcon) {
+          cardIcon.textContent =
+            completed ? '✓' : String(index + 1);
+        }
+      }
+
+      setNexusNodeDashboardText(
+        `nexus-step-${stageName}-state`,
+        completed
+          ? 'Complete'
+          : active
+            ? 'Current'
+            : 'Locked'
+      );
+    });
+  };
+
+  const tierName =
+    String(tierValue) === '2'
+      ? 'Validator'
+      : 'Operator';
+
+  if (!linked) {
+    setStepCopy(
+      'Link a Nexus wallet',
+      'Open the Nexus tab and create or load the wallet bound to this CryLo wallet.'
+    );
+
+    setActionCopy(
+      'A linked Nexus wallet is required before node onboarding can begin.'
+    );
+
+    setNexusNodeSmartStatus({
+      type: 'warning',
+      eyebrow: 'Wallet required',
+      title: 'Link a Nexus wallet to begin',
+      message:
+        'Node onboarding cannot begin until this CryLo wallet has a linked Nexus wallet.',
+      currentStep: 'Link Nexus Wallet'
+    });
+
+    applyProgress('register');
+    return;
+  }
+
+  if (!registered) {
+    setStepCopy(
+      'Register as an Operator',
+      'Stake 300 wCryLo to register your Operator identity on CryLoNexus.'
+    );
+
+    setActionCopy(
+      'Register as an Operator to begin the node onboarding process.'
+    );
+
+    setNexusNodeSmartStatus({
+      type: 'setup',
+      eyebrow: 'Setup ready',
+      title: 'Register your node',
+      message:
+        'Start as an Operator by staking 300 wCryLo. You can upgrade to Validator later.',
+      currentStep: 'Register Your Node'
+    });
+
+    applyProgress('register');
+    return;
+  }
+
+  setNexusNodeDashboardText(
+    'nexus-step-register-summary',
+    `${tierName} registered · ${
+      tierName === 'Validator' ? '750' : '300'
+    } wCryLo locked`
+  );
+
+  if (!serviceInstalled) {
+    setStepCopy(
+      'Install the operator service',
+      `Your ${tierName} registration is active. Install the persistent Linux operator service on the node machine.`
+    );
+
+    setActionCopy(
+      `${tierName} registration is complete. The operator service must now be installed.`
+    );
+
+    setNexusNodeSmartStatus({
+      type: 'warning',
+      eyebrow: 'Setup in progress',
+      title: 'Your node is registered',
+      message:
+        'Install the operator service before this node can connect, verify uptime, and become reward eligible.',
+      currentStep: 'Install Service'
+    });
+
+    applyProgress(
+      'install',
+      ['register']
+    );
+    return;
+  }
+
+  if (
+    !configurationLoaded ||
+    !walletMatched ||
+    !serviceRunning
+  ) {
+    let connectionMessage =
+      'Connect the installed service to this registered Nexus wallet and start the service.';
+
+    if (!configurationLoaded) {
+      connectionMessage =
+        'Load or create the operator configuration for this registered Nexus wallet.';
+    } else if (!walletMatched) {
+      connectionMessage =
+        'The operator configuration does not match this wallet. Correct the configured Nexus address.';
+    } else if (!serviceRunning) {
+      connectionMessage =
+        'The service is installed and configured. Start it to connect the node.';
+    }
+
+    setStepCopy(
+      'Connect your operator service',
+      connectionMessage
+    );
+
+    setActionCopy(connectionMessage);
+
+    setNexusNodeDashboardText(
+      'nexus-step-install-summary',
+      serviceRunning
+        ? 'Operator service installed and running'
+        : 'Operator service installed'
+    );
+
+    setNexusNodeSmartStatus({
+      type: 'warning',
+      eyebrow: 'Setup in progress',
+      title: 'Connect the operator service',
+      message: connectionMessage,
+      currentStep: 'Connect Node'
+    });
+
+    applyProgress(
+      'connect',
+      ['register', 'install']
+    );
+    return;
+  }
+
+  if (!verificationConnected) {
+    setStepCopy(
+      'Verify node operation',
+      'The operator service is connected. Complete uptime and reward verification before the node becomes reward eligible.'
+    );
+
+    setActionCopy(
+      'Service connection is healthy. Reward verification is the next required step.'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-step-install-summary',
+      'Operator service installed and running'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-step-connect-summary',
+      'Configuration loaded · Wallet matched · Service running'
+    );
+
+    setNexusNodeSmartStatus({
+      type: 'warning',
+      eyebrow: 'Almost ready',
+      title: 'Verify node uptime',
+      message:
+        'The service is connected. Complete reward verification before the node can begin earning.',
+      currentStep: 'Verify Uptime'
+    });
+
+    applyProgress(
+      'verify',
+      ['register', 'install', 'connect']
+    );
+    return;
+  }
+
+  setStepCopy(
+    `Earn rewards with your ${tierName} node`,
+    'Your node onboarding is complete. Monitor service health, uptime, workers, metrics, and pending rewards.'
+  );
+
+  setActionCopy(
+    `${tierName} onboarding is complete. Keep the operator service online to remain reward eligible and earn rewards.`
+  );
+
+  setNexusNodeDashboardText(
+    'nexus-step-install-summary',
+    'Operator service installed and running'
+  );
+
+  setNexusNodeDashboardText(
+    'nexus-step-connect-summary',
+    'Configuration loaded · Wallet matched · Service running'
+  );
+
+  setNexusNodeDashboardText(
+    'nexus-step-verify-summary',
+    'Uptime and reward verification connected'
+  );
+
+  setSmartStatus({
+    type: 'success',
+    eyebrow: 'Node online',
+    title: `${tierName} node is operational`,
+    message:
+      'Uptime verification is connected and this node can participate in reward eligibility.',
+    currentStep: 'Earn Rewards'
+  });
+
+  applyProgress(
+    'operate',
+    ['register', 'install', 'connect', 'verify']
+  );
+}
+
+async function refreshNexusOperatorDashboard() {
   const linkedAddress =
     getLinkedNexusAddress();
 
   if (!linkedAddress) {
-    if (overallStatus) {
-      overallStatus.textContent =
-        'No Nexus wallet linked.';
-    }
+    updateNexusNodeCenterState({
+      linked: false
+    });
 
     setNexusNodeDashboardText(
       'nexus-node-registration-status',
@@ -3233,13 +3622,21 @@ async function refreshNexusOperatorDashboard() {
       false
     );
 
+    updateNexusNodeCenterState({
+      linked: false
+    });
+
     return;
   }
 
-  if (overallStatus) {
-    overallStatus.textContent =
-      'Loading Nexus operator dashboard...';
-  }
+  setNexusNodeSmartStatus({
+    type: 'setup',
+    eyebrow: 'Refreshing status',
+    title: 'Loading Node Center',
+    message:
+      'Checking registration, operator service, connection, uptime, and reward eligibility.',
+    currentStep: 'Checking Node'
+  });
 
   try {
     const result =
@@ -3249,11 +3646,19 @@ async function refreshNexusOperatorDashboard() {
         );
 
     if (!result || result.ok === false) {
-      if (overallStatus) {
-        overallStatus.textContent =
-          result?.error ||
-          'Unable to load the Nexus operator dashboard.';
-      }
+      console.error(
+        'Nexus operator dashboard request failed:',
+        result?.error || 'Unknown dashboard error'
+      );
+
+      setNexusNodeSmartStatus({
+        type: 'danger',
+        eyebrow: 'Connection error',
+        title: 'Node Center status unavailable',
+        message:
+          'The wallet could not securely load the current node status. Check the Nexus connection and operator service, then refresh.',
+        currentStep: 'Refresh Node Center'
+      });
 
       return;
     }
@@ -3286,9 +3691,18 @@ async function refreshNexusOperatorDashboard() {
       operatorRegistrationStatus
     );
 
+    const currentTierLabel =
+      registration.available === false
+        ? 'Unavailable'
+        : !registered
+          ? 'Not Registered'
+          : tierValue === '2'
+            ? 'Validator'
+            : 'Operator';
+
     setNexusNodeDashboardText(
       'nexus-node-tier',
-      validatorRegistrationStatus
+      currentTierLabel
     );
 
     setNexusNodeDashboardText(
@@ -3318,7 +3732,7 @@ async function refreshNexusOperatorDashboard() {
 
     setNexusNodeDashboardVisible(
       'nexus-register-validator-btn',
-      !registered
+      registered && tierValue === '1'
     );
 
     setNexusNodeDashboardVisible(
@@ -3489,18 +3903,32 @@ async function refreshNexusOperatorDashboard() {
       result.metrics
     );
 
-    if (overallStatus) {
-      if (registration.error) {
-        overallStatus.textContent =
-          `Dashboard loaded, but registration could not be verified: ` +
-          registration.error;
-      } else {
-        overallStatus.textContent =
-          `Operator: ${operatorRegistrationStatus} · ` +
-          `Validator: ${validatorRegistrationStatus} · ` +
-          `Service: ` +
-          `${service.running ? 'Running' : 'Not Running'}`;
-      }
+    updateNexusNodeCenterState({
+      linked: true,
+      registered,
+      tierValue,
+      serviceInstalled: service.installed === true,
+      serviceRunning: service.running === true,
+      configurationLoaded: configuration.loaded === true,
+      walletMatched: walletMatch === 'Matched',
+      verificationConnected:
+        verification.connected === true
+    });
+
+    if (registration.error) {
+      console.error(
+        'Nexus registration verification failed:',
+        registration.error
+      );
+
+      setNexusNodeSmartStatus({
+        type: 'danger',
+        eyebrow: 'Verification unavailable',
+        title: 'Registration could not be verified',
+        message:
+          'The wallet could not securely verify the current node registration. Check the Nexus connection and refresh the Node Center.',
+        currentStep: 'Retry Verification'
+      });
     }
   } catch (error) {
     console.error(
@@ -3508,10 +3936,14 @@ async function refreshNexusOperatorDashboard() {
       error
     );
 
-    if (overallStatus) {
-      overallStatus.textContent =
-        'Unable to load the Nexus operator dashboard.';
-    }
+    setNexusNodeSmartStatus({
+      type: 'danger',
+      eyebrow: 'Connection error',
+      title: 'Node Center status unavailable',
+      message:
+        'The wallet could not securely load the current node status. Check the Nexus connection and try again.',
+      currentStep: 'Refresh Node Center'
+    });
   }
 }
 
