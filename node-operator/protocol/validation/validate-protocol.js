@@ -25,6 +25,21 @@ const SCHEMAS = {
     ROOT,
     'schemas',
     'operator-status.schema.json'
+  ),
+  heartbeatEnvelope: path.join(
+    ROOT,
+    'schemas',
+    'heartbeat-envelope.schema.json'
+  ),
+  verifierObservation: path.join(
+    ROOT,
+    'schemas',
+    'verifier-observation.schema.json'
+  ),
+  verificationWindow: path.join(
+    ROOT,
+    'schemas',
+    'verification-window.schema.json'
   )
 };
 
@@ -40,6 +55,18 @@ const VALID_FIXTURES = [
   {
     schema: 'operatorStatus',
     file: 'examples/operator-status.valid.json'
+  },
+  {
+    schema: 'heartbeatEnvelope',
+    file: 'examples/heartbeat-envelope.valid.json'
+  },
+  {
+    schema: 'verifierObservation',
+    file: 'examples/verifier-observation.valid.json'
+  },
+  {
+    schema: 'verificationWindow',
+    file: 'examples/verification-window.valid.json'
   }
 ];
 
@@ -59,6 +86,14 @@ const INVALID_FIXTURES = [
   {
     schema: 'operatorStatus',
     file: 'tests/invalid/operator-status.future.json'
+  },
+  {
+    schema: 'heartbeatEnvelope',
+    file: 'tests/invalid/heartbeat-envelope.bad-chain.json'
+  },
+  {
+    schema: 'verifierObservation',
+    file: 'tests/invalid/verifier-observation.pass-with-failure-code.json'
   }
 ];
 
@@ -84,7 +119,12 @@ const TIMESTAMP_KEYS = new Set([
   'lastHeartbeatAt',
   'verifiedAt',
   'lastRunAt',
-  'firstSeenAt'
+  'firstSeenAt',
+  'issuedAt',
+  'expiresAt',
+  'observedAt',
+  'windowStartedAt',
+  'windowEndedAt'
 ]);
 
 function readJson(relativePath) {
