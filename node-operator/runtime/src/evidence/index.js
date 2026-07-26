@@ -52,3 +52,10 @@ module.exports = Object.freeze({
   ...module.exports,
   ...nonceProvider
 });
+
+const detachedSigning = require('./detached-signing');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...detachedSigning
+});
