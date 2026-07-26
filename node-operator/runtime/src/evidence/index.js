@@ -45,3 +45,10 @@ module.exports = Object.freeze({
   ...module.exports,
   ...sequenceManager
 });
+
+const nonceProvider = require('./nonce-provider');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...nonceProvider
+});
