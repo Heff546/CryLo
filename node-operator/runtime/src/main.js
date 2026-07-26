@@ -42,6 +42,10 @@ const {
   log
 } = require('./logger');
 
+const {
+  createLocalHeartbeatRuntime
+} = require('./evidence');
+
 let stopping = false;
 let timer = null;
 
@@ -119,11 +123,14 @@ async function run() {
 
   const startedAt = nowIso();
 
+  const nodeId =
+    resolveNodeId(config);
+
   const status = createInitialStatus({
     serviceVersion: packageJson.version,
     operatorAddress:
       config.operatorAddress,
-    nodeId: resolveNodeId(config),
+    nodeId,
     startedAt
   });
 
@@ -174,13 +181,60 @@ async function run() {
     );
   }
 
+  const localHeartbeatSetting =
+    process.env
+      .CRYLONEXUS_LOCAL_HEARTBEATS;
+
+  if (
+    localHeartbeatSetting !== undefined &&
+    localHeartbeatSetting !== '' &&
+    localHeartbeatSetting !== '0' &&
+    localHeartbeatSetting !== '1'
+  ) {
+    throw new Error(
+      'CRYLONEXUS_LOCAL_HEARTBEATS must be 0 or 1'
+    );
+  }
+
+  let localHeartbeatRuntime = null;
+
+  if (localHeartbeatSetting === '1') {
+    localHeartbeatRuntime =
+      await createLocalHeartbeatRuntime({
+        operatorAddress:
+          config.operatorAddress,
+        nodeId
+      });
+
+    log(
+      'info',
+      'local-heartbeat-runtime-enabled',
+      {
+        keyPath:
+          localHeartbeatRuntime.keyPath,
+        outputPath:
+          localHeartbeatRuntime.outputPath,
+        sequenceStatePath:
+          localHeartbeatRuntime
+            .sequenceStatePath
+      }
+    );
+  } else {
+    log(
+      'info',
+      'local-heartbeat-runtime-disabled'
+    );
+  }
+
   log('info', 'operator-started', {
     version: packageJson.version,
     configPath,
     operatorAddress:
       config.operatorAddress,
     tier: config.tier,
-    intervalMs
+    intervalMs,
+    localHeartbeatsEnabled:
+      localHeartbeatRuntime !== null
   });
 
   let contractClient = null;
@@ -509,6 +563,43 @@ async function run() {
         primaryStatusPath,
         electronStatusPath
       });
+    }
+
+    if (localHeartbeatRuntime) {
+      try {
+        const signedHeartbeat =
+          await localHeartbeatRuntime
+            .writeHeartbeat(status);
+
+        log(
+          'info',
+          'local-heartbeat-written',
+          {
+            outputPath:
+              localHeartbeatRuntime
+                .outputPath,
+            sequence:
+              signedHeartbeat.sequence,
+            issuedAt:
+              signedHeartbeat.issuedAt,
+            expiresAt:
+              signedHeartbeat.expiresAt,
+            payloadHash:
+              signedHeartbeat.payloadHash
+          }
+        );
+      } catch (error) {
+        log(
+          'error',
+          'local-heartbeat-write-failed',
+          {
+            error: error.message,
+            outputPath:
+              localHeartbeatRuntime
+                .outputPath
+          }
+        );
+      }
     }
   }
 

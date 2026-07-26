@@ -67,3 +67,43 @@ module.exports = Object.freeze({
   ...module.exports,
   ...signedHeartbeatBuilder
 });
+
+const statusCollector =
+  require('./status-collector');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...statusCollector
+});
+
+const heartbeatPipeline =
+  require('./heartbeat-pipeline');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...heartbeatPipeline
+});
+
+const localHeartbeatWriter =
+  require('./local-heartbeat-writer');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...localHeartbeatWriter
+});
+
+const signingKeyLoader =
+  require('./signing-key-loader');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...signingKeyLoader
+});
+
+const localHeartbeatRuntime =
+  require('./local-heartbeat-runtime');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...localHeartbeatRuntime
+});
