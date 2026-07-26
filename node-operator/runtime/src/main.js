@@ -7,7 +7,6 @@ const packageJson =
   require('../package.json');
 
 const {
-  CHAIN_ID,
   DEFAULT_INTERVAL_MS
 } = require('./constants');
 
@@ -16,8 +15,12 @@ const {
 } = require('./config');
 
 const {
-  checkRpc
-} = require('./rpc');
+  createReadOnlyContractClient
+} = require('./contracts');
+
+const {
+  evaluateRegistration
+} = require('./contracts/verification');
 
 const {
   writeJsonAtomic
@@ -180,6 +183,8 @@ async function run() {
     intervalMs
   });
 
+  let contractClient = null;
+
   async function heartbeat() {
     if (stopping) return;
 
@@ -207,11 +212,30 @@ async function run() {
       );
     status.errors = [];
 
+    let connection = null;
+
     try {
-      const rpc = await checkRpc(
-        config.rpcUrl,
-        CHAIN_ID
-      );
+      if (!contractClient) {
+        contractClient =
+          await createReadOnlyContractClient(
+            config
+          );
+
+        connection =
+          contractClient.initialConnection;
+
+        log(
+          'info',
+          'contract-client-created',
+          {
+            addresses:
+              contractClient.addresses
+          }
+        );
+      } else {
+        connection =
+          await contractClient.verifyConnection();
+      }
 
       status.connected = true;
       status.rpcHealthy = true;
@@ -225,22 +249,48 @@ async function run() {
       );
 
       log('info', 'rpc-check-succeeded', {
-        chainId: rpc.chainId,
-        blockNumber: rpc.blockNumber
+        chainId: connection.chainId,
+        blockNumber:
+          connection.blockNumber
       });
     } catch (error) {
+      contractClient = null;
+
       status.connected = false;
       status.rpcHealthy = false;
       status.registered = false;
       status.tier = null;
       status.rewardEligible = false;
+      status.metrics.pendingRewardsBaseUnits =
+        '0';
       status.metrics.failedChecks += 1;
+
+      status.verification = {
+        connected: false,
+        verified: false,
+        verifiedAt: null,
+        reasonCode: 'RPC_UNAVAILABLE'
+      };
 
       markWorkerFailure(
         status,
         'rpc-health',
         timestamp,
         'RPC_CHECK_FAILED'
+      );
+
+      markWorkerFailure(
+        status,
+        'registration',
+        timestamp,
+        'RPC_UNAVAILABLE'
+      );
+
+      markWorkerFailure(
+        status,
+        'reward-eligibility',
+        timestamp,
+        'RPC_UNAVAILABLE'
       );
 
       status.errors.push(
@@ -256,54 +306,188 @@ async function run() {
       });
     }
 
-    /*
-     * Registration and rewards deliberately remain
-     * unverified until the deployed contract ABI and
-     * authoritative view functions are inspected.
-     */
-    status.registered = false;
-    status.tier = null;
-    status.rewardEligible = false;
+    if (status.rpcHealthy && contractClient) {
+      try {
+        const snapshot =
+          await contractClient.readOperator(
+            config.operatorAddress
+          );
 
-    status.verification = {
-      connected: status.connected,
-      verified: false,
-      verifiedAt: null,
-      reasonCode:
-        status.connected
-          ? 'CONTRACT_VERIFICATION_PENDING'
-          : 'RPC_UNAVAILABLE'
-    };
+        status.registered =
+          snapshot.node.registered;
 
-    markWorkerFailure(
-      status,
-      'registration',
-      timestamp,
-      'CONTRACT_VERIFICATION_PENDING'
-    );
+        status.tier =
+          snapshot.node.registered
+            ? snapshot.node.tierLabel
+            : null;
 
-    markWorkerFailure(
-      status,
-      'reward-eligibility',
-      timestamp,
-      'CONTRACT_VERIFICATION_PENDING'
-    );
+        status.metrics.pendingRewardsBaseUnits =
+          snapshot.rewards.pendingRewardsAtomic;
 
-    status.warnings.push(
-      statusMessage(
-        'CONTRACT_VERIFICATION_PENDING',
-        'Registration and reward eligibility are not asserted until the deployed contract ABI is connected.',
-        timestamp
-      )
-    );
+        const registration =
+          evaluateRegistration(
+            snapshot.node,
+            config.tier
+          );
+
+        const registrationVerified =
+          registration.verified;
+
+        if (registrationVerified) {
+          markWorkerSuccess(
+            status,
+            'registration',
+            timestamp,
+            registration.messageCode
+          );
+        } else {
+          markWorkerFailure(
+            status,
+            'registration',
+            timestamp,
+            registration.messageCode
+          );
+        }
+
+        /*
+         * Contract registration is now authoritative.
+         * Reward eligibility remains false until the
+         * separate uptime-verification protocol exists.
+         */
+        status.rewardEligible = false;
+
+        status.verification = {
+          connected: true,
+          verified: false,
+          verifiedAt: null,
+          reasonCode:
+            registrationVerified
+              ? 'UPTIME_VERIFICATION_PENDING'
+              : snapshot.node.registered
+                ? 'REGISTRATION_MISMATCH'
+                : 'NOT_REGISTERED'
+        };
+
+        if (registrationVerified) {
+          markWorkerFailure(
+            status,
+            'reward-eligibility',
+            timestamp,
+            'UPTIME_VERIFICATION_PENDING'
+          );
+
+          status.warnings.push(
+            statusMessage(
+              'UPTIME_VERIFICATION_PENDING',
+              'Contract registration is verified. Reward eligibility awaits the uptime-verification protocol.',
+              timestamp
+            )
+          );
+        } else {
+          markWorkerFailure(
+            status,
+            'reward-eligibility',
+            timestamp,
+            snapshot.node.registered
+              ? 'REGISTRATION_MISMATCH'
+              : 'NOT_REGISTERED'
+          );
+
+          status.warnings.push(
+            statusMessage(
+              snapshot.node.registered
+                ? 'REGISTRATION_MISMATCH'
+                : 'NOT_REGISTERED',
+              snapshot.node.registered
+                ? 'On-chain registration does not match the configured tier, node-wallet membership, or required stake.'
+                : 'The configured operator wallet is not registered in NodeStaking.',
+              timestamp
+            )
+          );
+        }
+
+        log(
+          'info',
+          'contract-verification-succeeded',
+          {
+            registered:
+              snapshot.node.registered,
+            tier:
+              snapshot.node.tierLabel,
+            isNodeWallet:
+              snapshot.node.isNodeWallet,
+            stakeAtomic:
+              snapshot.node.stakeAtomic,
+            pendingRewardsAtomic:
+              snapshot.rewards
+                .pendingRewardsAtomic,
+            registrationVerified
+          }
+        );
+      } catch (error) {
+        status.registered = false;
+        status.tier = null;
+        status.rewardEligible = false;
+        status.metrics.pendingRewardsBaseUnits =
+          '0';
+
+        status.verification = {
+          connected: true,
+          verified: false,
+          verifiedAt: null,
+          reasonCode:
+            'CONTRACT_READ_FAILED'
+        };
+
+        markWorkerFailure(
+          status,
+          'registration',
+          timestamp,
+          'CONTRACT_READ_FAILED'
+        );
+
+        markWorkerFailure(
+          status,
+          'reward-eligibility',
+          timestamp,
+          'CONTRACT_READ_FAILED'
+        );
+
+        status.errors.push(
+          statusMessage(
+            'CONTRACT_READ_FAILED',
+            error.message,
+            timestamp
+          )
+        );
+
+        log(
+          'error',
+          'contract-verification-failed',
+          {
+            error: error.message
+          }
+        );
+      }
+    }
 
     try {
-      markWorkerSuccess(
-        status,
-        'status-writer',
-        timestamp,
-        'STATUS_WRITE_PENDING'
-      );
+      const statusWriter =
+        status.workers.find(
+          worker =>
+            worker.name === 'status-writer'
+        );
+
+      if (!statusWriter) {
+        throw new Error(
+          'Status writer worker is missing'
+        );
+      }
+
+      statusWriter.healthy = true;
+      statusWriter.lastRunAt = timestamp;
+      statusWriter.messageCode =
+        'STATUS_WRITTEN';
 
       await writeValidatedStatus(
         status,
@@ -311,18 +495,7 @@ async function run() {
         electronStatusPath
       );
 
-      markWorkerSuccess(
-        status,
-        'status-writer',
-        timestamp,
-        'STATUS_WRITTEN'
-      );
-
-      await writeValidatedStatus(
-        status,
-        primaryStatusPath,
-        electronStatusPath
-      );
+      statusWriter.successes += 1;
     } catch (error) {
       markWorkerFailure(
         status,

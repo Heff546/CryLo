@@ -215,3 +215,47 @@ test('production ABIs expose required read-only methods', () => {
     );
   }
 });
+
+test('contract client rejects mismatched manager links', async () => {
+  const {
+    createReadOnlyContractClient
+  } = require('../src/contracts');
+
+  const provider = {
+    getNetwork: async () => ({
+      chainId: 5546n
+    }),
+    getBlockNumber: async () => 123
+  };
+
+  const config = {
+    rpcUrl: 'https://example.invalid',
+    chainId: 5546,
+    contracts: {
+      nodeStaking:
+        '0x1111111111111111111111111111111111111111',
+      rewardManager:
+        '0x2222222222222222222222222222222222222222'
+    }
+  };
+
+  await assert.rejects(
+    () =>
+      createReadOnlyContractClient(
+        config,
+        {
+          provider,
+          rewardManagerContract: {},
+          managerLinks: {
+            nodeStaking:
+              '0x3333333333333333333333333333333333333333',
+            rewardVault:
+              '0x4444444444444444444444444444444444444444',
+            staking:
+              '0x5555555555555555555555555555555555555555'
+          }
+        }
+      ),
+    /does not match operator configuration/
+  );
+});

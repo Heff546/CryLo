@@ -1,5 +1,7 @@
 'use strict';
 
+const { ethers } = require('ethers');
+
 const {
   createProvider,
   verifyProvider
@@ -7,7 +9,8 @@ const {
 
 const {
   createNodeStakingContract,
-  readNodeStatus
+  readNodeStatus,
+  normalizeAddress
 } = require('./node');
 
 const {
@@ -15,9 +18,32 @@ const {
   readRewardStatus
 } = require('./rewards');
 
-async function createReadOnlyContractClient(config, options = {}) {
+const {
+  createRewardManagerContract,
+  readRewardManagerLinks
+} = require('./manager');
+
+function addressesEqual(left, right) {
+  return (
+    ethers.getAddress(left) ===
+    ethers.getAddress(right)
+  );
+}
+
+async function createReadOnlyContractClient(
+  config,
+  options = {}
+) {
   if (!config || typeof config !== 'object') {
-    throw new TypeError('Contract client configuration is required');
+    throw new TypeError(
+      'Contract client configuration is required'
+    );
+  }
+
+  if (!config.contracts) {
+    throw new TypeError(
+      'Contract configuration is required'
+    );
   }
 
   const provider =
@@ -31,11 +57,46 @@ async function createReadOnlyContractClient(config, options = {}) {
     expectedChainId: config.chainId
   });
 
+  const configuredNodeStaking =
+    normalizeAddress(
+      config.contracts.nodeStaking
+    );
+
+  const configuredRewardManager =
+    normalizeAddress(
+      config.contracts.rewardManager
+    );
+
+  const rewardManager =
+    options.rewardManagerContract ||
+    createRewardManagerContract(
+      provider,
+      configuredRewardManager,
+      options
+    );
+
+  const managerLinks =
+    options.managerLinks ||
+    await readRewardManagerLinks(
+      rewardManager
+    );
+
+  if (
+    !addressesEqual(
+      managerLinks.nodeStaking,
+      configuredNodeStaking
+    )
+  ) {
+    throw new Error(
+      'RewardManager nodeStaking address does not match operator configuration'
+    );
+  }
+
   const nodeStaking =
     options.nodeStakingContract ||
     createNodeStakingContract(
       provider,
-      config.nodeStakingAddress,
+      configuredNodeStaking,
       options
     );
 
@@ -43,22 +104,41 @@ async function createReadOnlyContractClient(config, options = {}) {
     options.rewardVaultContract ||
     createRewardVaultContract(
       provider,
-      config.rewardVaultAddress,
+      managerLinks.rewardVault,
       options
     );
 
   return {
     provider,
-    connection,
+
+    addresses: {
+      nodeStaking: configuredNodeStaking,
+      rewardManager: configuredRewardManager,
+      rewardVault: managerLinks.rewardVault,
+      staking: managerLinks.staking
+    },
+
+    initialConnection: connection,
+
+    async verifyConnection() {
+      return verifyProvider(provider, {
+        expectedChainId: config.chainId
+      });
+    },
 
     async readOperator(walletAddress) {
       const [node, rewards] = await Promise.all([
-        readNodeStatus(nodeStaking, walletAddress),
-        readRewardStatus(rewardVault, walletAddress)
+        readNodeStatus(
+          nodeStaking,
+          walletAddress
+        ),
+        readRewardStatus(
+          rewardVault,
+          walletAddress
+        )
       ]);
 
       return {
-        connection,
         node,
         rewards
       };
@@ -67,11 +147,14 @@ async function createReadOnlyContractClient(config, options = {}) {
 }
 
 module.exports = {
+  addressesEqual,
   createReadOnlyContractClient,
   createProvider,
   verifyProvider,
   createNodeStakingContract,
   readNodeStatus,
+  createRewardManagerContract,
+  readRewardManagerLinks,
   createRewardVaultContract,
   readRewardStatus
 };
