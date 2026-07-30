@@ -3878,6 +3878,75 @@ async function refreshNexusOperatorDashboard() {
       registered
     );
 
+    const authorization =
+      result.authorization || {};
+
+    const operatorServiceRunning =
+      result.service?.installed === true &&
+      (
+        result.service?.active === true ||
+        result.service?.running === true ||
+        result.service?.status === 'active' ||
+        result.service?.state === 'active' ||
+        result.service?.activeState === 'active'
+      );
+
+    setNexusNodeDashboardVisible(
+      'nexus-operator-authorization-panel',
+      registered && operatorServiceRunning
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-operator-authorization-status',
+      authorization.status ||
+        'Not Authorized'
+    );
+
+    setNexusNodeDashboardText(
+      'nexus-operator-authorization-expires',
+      authorization.expiresAt
+        ? new Date(
+            authorization.expiresAt
+          ).toLocaleString()
+        : '—'
+    );
+
+    const remainingSeconds =
+      Number(
+        authorization.remainingSeconds || 0
+      );
+
+    const remainingHours =
+      Math.floor(
+        remainingSeconds / 3600
+      );
+
+    const remainingMinutes =
+      Math.floor(
+        (remainingSeconds % 3600) / 60
+      );
+
+    setNexusNodeDashboardText(
+      'nexus-operator-authorization-remaining',
+      authorization.valid
+        ? `${remainingHours}h ${remainingMinutes}m`
+        : authorization.expired
+          ? 'Expired'
+          : '—'
+    );
+
+    const authorizationButton =
+      document.getElementById(
+        'nexus-authorize-operator-btn'
+      );
+
+    if (authorizationButton) {
+      authorizationButton.textContent =
+        authorization.valid
+          ? 'Renew 72-Hour Authorization'
+          : 'Authorize Node for 72 Hours';
+    }
+
     const configuration =
       result.configuration || {};
 
@@ -4082,6 +4151,69 @@ async function refreshNexusOperatorDashboard() {
 
 async function refreshNexusNodeStatus() {
   return refreshNexusOperatorDashboard();
+}
+
+
+async function authorizeNexusOperator() {
+  try {
+    const button =
+      document.getElementById(
+        'nexus-authorize-operator-btn'
+      );
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Authorizing...';
+    }
+
+    const result =
+      await window.crylo
+        .nexusAuthorizeOperator(
+          State.walletName,
+        State.address
+        );
+
+    if (!result?.ok) {
+      if (!result?.cancelled) {
+        alert(
+          result?.error ||
+          'Unable to authorize this node'
+        );
+      }
+
+      return;
+    }
+
+    alert(
+      'Node authorized for 72 hours.\n\n' +
+      `Expires: ${new Date(
+        result.expiresAt
+      ).toLocaleString()}`
+    );
+
+    await refreshNexusOperatorDashboard();
+  } catch (error) {
+    console.error(
+      'Operator authorization failed:',
+      error
+    );
+
+    alert(
+      error?.message ||
+      'Unable to authorize this node'
+    );
+  } finally {
+    const button =
+      document.getElementById(
+        'nexus-authorize-operator-btn'
+      );
+
+    if (button) {
+      button.disabled = false;
+      button.textContent =
+        'Authorize Node for 72 Hours';
+    }
+  }
 }
 
 async function registerNexusOperator() {
@@ -4760,6 +4892,7 @@ if (document.readyState === 'loading') {
 
 
 window.App = {
+  authorizeNexusOperator,
   sendMax,
   toggleAdvanced,
   showSetupForm,

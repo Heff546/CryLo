@@ -708,6 +708,47 @@
                 </div>
               </div>
 
+              <div
+                id="nexus-operator-authorization-panel"
+                class="node-center-card hidden"
+              >
+                <div class="node-center-card-header">
+                  <div>
+                    <div class="node-center-label">
+                      Operator Authorization
+                    </div>
+                    <strong id="nexus-operator-authorization-status">
+                      Not Authorized
+                    </strong>
+                  </div>
+                </div>
+
+                <div class="node-center-detail-grid">
+                  <div>
+                    <span>Expires</span>
+                    <strong id="nexus-operator-authorization-expires">
+                      —
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Time Remaining</span>
+                    <strong id="nexus-operator-authorization-remaining">
+                      —
+                    </strong>
+                  </div>
+                </div>
+
+                <button
+                  id="nexus-authorize-operator-btn"
+                  class="btn btn-primary"
+                  type="button"
+                  onclick="App.authorizeNexusOperator()"
+                >
+                  Authorize Node for 72 Hours
+                </button>
+              </div>
+
               <div class="node-center-actions">
                 <button
                   id="nexus-register-operator-btn"
