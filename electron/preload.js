@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('crylo', {
   nexusGasStatus: (linkedAddress) =>
     ipcRenderer.invoke('nexus-gas-status', linkedAddress),
 
+  nexusNativeGasBalance: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-native-gas-balance', linkedAddress),
+
   nexusTransactions: (linkedAddress) =>
     ipcRenderer.invoke('nexus-transactions', linkedAddress),
 
@@ -96,6 +99,13 @@ contextBridge.exposeInMainWorld('crylo', {
   onLog:           (cb)          => ipcRenderer.on('log',            (_, data) => cb(data)),
   onDaemonExit:    (cb)          => ipcRenderer.on('daemon-exit',    (_, code) => cb(code)),
   onWalletRpcExit: (cb)          => ipcRenderer.on('wallet-rpc-exit',(_, code) => cb(code)),
+
+  onNexusWalletOnboardingResult: (cb) =>
+    ipcRenderer.on(
+      'nexus-wallet-onboarding-result',
+      (_, data) => cb(data)
+    ),
+
   // ── Cleanup ───────────────────────────────────────────────────────────
   removeAllListeners: (channel)  => ipcRenderer.removeAllListeners(channel)
 });

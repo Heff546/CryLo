@@ -2520,6 +2520,51 @@ async function getClaimableGasEpoch(gm, walletAddress) {
   return null;
 }
 
+/*
+ * Lightweight native-gas balance lookup.
+ *
+ * This intentionally performs only provider.getBalance(). The complete
+ * nexus-gas-status handler also queries registry state, GasManager policy,
+ * treasury state, and gas epochs, so it is too slow for post-onboarding
+ * balance detection.
+ */
+ipcMain.handle('nexus-native-gas-balance', async (_, linkedAddress) => {
+  try {
+    if (!ethers.isAddress(linkedAddress)) {
+      return {
+        ok: false,
+        error: 'Invalid Nexus address'
+      };
+    }
+
+    const runtime = await getNexusRuntimeConfig();
+    const nativeBalance =
+      await runtime.provider.getBalance(linkedAddress);
+
+    return {
+      ok: true,
+      nativeGas: formatNexusGasUnits(nativeBalance)
+    };
+  } catch (e) {
+    console.error('[nexus-native-gas-balance] failed', {
+      message: e?.message,
+      shortMessage: e?.shortMessage,
+      reason: e?.reason,
+      code: e?.code
+    });
+
+    return {
+      ok: false,
+      error:
+        e?.shortMessage ||
+        e?.reason ||
+        e?.message ||
+        String(e)
+    };
+  }
+});
+
+
 ipcMain.handle('nexus-gas-status', async (_, linkedAddress) => {
   try {
     if (!ethers.isAddress(linkedAddress)) {

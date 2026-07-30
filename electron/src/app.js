@@ -1731,48 +1731,157 @@ function setNexusUiAddress(addr) {
   }
 }
 
-let nexusPostCreateRefreshTimer = null;
 
-function startNexusPostCreateRefresh() {
+/*
+ * The main process saves a newly bound Nexus wallet immediately and
+ * completes Foundation registration/starter-gas onboarding in the
+ * background. Refresh the currently open Nexus UI when that work
+ * actually finishes instead of relying on timer-based guesses.
+ */
+if (
+  window.crylo &&
+  typeof window.crylo.onNexusWalletOnboardingResult === 'function'
+) {
+  window.crylo.onNexusWalletOnboardingResult(async result => {
+    if (
+      result?.nexusAddress &&
+      State.nexusAddress &&
+      String(result.nexusAddress).toLowerCase() !==
+        String(State.nexusAddress).toLowerCase()
+    ) {
+      return;
+    }
+
+    if (!result?.ok) {
+      console.error(
+        'Nexus wallet onboarding result:',
+        result?.error || 'Onboarding failed'
+      );
+
+      /*
+       * A duplicate registration attempt may revert after onboarding
+       * has already succeeded. Refresh anyway so on-chain truth is
+       * displayed instead of leaving the interface stale.
+       */
+    }
+
+    try {
+      await loadSavedNexusLinkedAddress();
+
+      /*
+       * Paint the funded balance through the direct RPC path first.
+       * The full dashboard can finish its slower contract queries later.
+       */
+      await refreshNexusNativeGasBalance();
+
+      if (typeof refreshBridgeAddressFields === 'function') {
+        await refreshBridgeAddressFields();
+      }
+
+      await refreshNexusDashboard();
+
+      if (typeof loadNexusTransactions === 'function') {
+        await loadNexusTransactions();
+      }
+
+      /*
+       * The onboarding response may arrive before the starter-gas
+       * transaction is visible through the Nexus RPC. Keep the
+       * lightweight direct-balance watcher running until it observes
+       * nativeGas > 0, at which point it stops itself.
+       */
+      startNexusPostCreateRefresh();
+    } catch (error) {
+      console.error(
+        'Failed to refresh Nexus UI after onboarding:',
+        error
+      );
+    }
+  });
+}
+
+let nexusPostCreateRefreshTimer = null;
+let nexusPostCreateRefreshRunning = false;
+
+function stopNexusPostCreateRefresh() {
   if (nexusPostCreateRefreshTimer) {
     clearInterval(nexusPostCreateRefreshTimer);
+    nexusPostCreateRefreshTimer = null;
   }
 
+  nexusPostCreateRefreshRunning = false;
+}
+
+function startNexusPostCreateRefresh() {
+  stopNexusPostCreateRefresh();
+
   let attempts = 0;
-  const maximumAttempts = 15;
+  const maximumAttempts = 60;
 
   const refresh = async () => {
+    // Prevent overlapping RPC calls when one request takes longer
+    // than the two-second polling interval.
+    if (nexusPostCreateRefreshRunning) {
+      return;
+    }
+
+    nexusPostCreateRefreshRunning = true;
     attempts += 1;
 
     try {
-      await refreshNexusDashboard();
+      /*
+       * Use the unified Nexus dashboard refresh.
+       *
+       * Its first task is refreshNexusGasStatus(), which paints the
+       * bottom Native Gas scorecard and the header Gas balance from
+       * the exact same status response.
+       */
+      /*
+       * Check the native balance directly. Do not wait for the full gas
+       * dashboard, which also performs registry, treasury, policy, and
+       * epoch queries.
+       */
+      const balanceResult =
+        await refreshNexusNativeGasBalance();
 
-      const starterText =
-        document
-          .getElementById('nexus-gas-starter')
-          ?.textContent || '';
+      const nativeGas =
+        Number(balanceResult?.nativeGas || 0);
 
       if (
-        starterText.includes('Sent') &&
-        starterText.includes('Registered')
+        Number.isFinite(nativeGas) &&
+        nativeGas > 0
       ) {
-        clearInterval(nexusPostCreateRefreshTimer);
-        nexusPostCreateRefreshTimer = null;
+        stopNexusPostCreateRefresh();
+
+        /*
+         * The visible balance is now correct. Refresh the complete
+         * dashboard once in the background so registration, starter-gas,
+         * activity, vault, and claim information can catch up.
+         */
+        refreshNexusDashboard().catch(error => {
+          console.error(
+            'Final Nexus dashboard refresh failed:',
+            error
+          );
+        });
+
         return;
       }
     } catch (error) {
       console.error(
-        'Post-create Nexus refresh failed:',
+        'Post-create Nexus gas refresh failed:',
         error
       );
+    } finally {
+      nexusPostCreateRefreshRunning = false;
     }
 
     if (attempts >= maximumAttempts) {
-      clearInterval(nexusPostCreateRefreshTimer);
-      nexusPostCreateRefreshTimer = null;
+      stopNexusPostCreateRefresh();
     }
   };
 
+  // Check immediately, then every two seconds for up to two minutes.
   refresh();
 
   nexusPostCreateRefreshTimer =
@@ -1805,13 +1914,37 @@ async function createBoundNexusWallet() {
     });
   });
 
-  startNexusPostCreateRefresh();
-
-  // Reload the persisted binding, then refresh every Nexus panel
-  // so the newly created address appears immediately.
+  // Reload the persisted binding before making Nexus status calls.
   await loadSavedNexusLinkedAddress();
 
-  await refreshNexusDashboard();
+  /*
+   * Perform one unified refresh immediately. This paints the Native
+   * Gas scorecard and header Gas balance together from one response.
+   */
+  const initialDashboardResult =
+    await refreshNexusDashboard();
+
+  const initialGasTask =
+    initialDashboardResult?.results?.[0];
+
+  const initialGasStatus =
+    initialGasTask?.status === 'fulfilled'
+      ? initialGasTask.value
+      : null;
+
+  const initialNativeGas =
+    Number(initialGasStatus?.nativeGas || 0);
+
+  /*
+   * Starter gas may still be confirming. Continue unified dashboard
+   * refreshes only while the bound wallet has no native gas.
+   */
+  if (
+    !Number.isFinite(initialNativeGas) ||
+    initialNativeGas <= 0
+  ) {
+    startNexusPostCreateRefresh();
+  }
 
   if (typeof loadNexusTransactions === 'function') {
     await loadNexusTransactions();
@@ -4159,6 +4292,66 @@ function fmtUnix(ts) {
   return new Date(Number(ts) * 1000).toLocaleString();
 }
 
+async function refreshNexusNativeGasBalance() {
+  const linkedAddress = getLinkedNexusAddress();
+
+  if (
+    !linkedAddress ||
+    !window.crylo ||
+    typeof window.crylo.nexusNativeGasBalance !== 'function'
+  ) {
+    return null;
+  }
+
+  try {
+    const result =
+      await window.crylo.nexusNativeGasBalance(linkedAddress);
+
+    if (!result?.ok) {
+      return null;
+    }
+
+    const nativeGas = Number(result.nativeGas || 0);
+
+    if (!Number.isFinite(nativeGas)) {
+      return null;
+    }
+
+    const formattedNativeGas =
+      fmtDecimalAmount(nativeGas, 6);
+
+    const nativeEl =
+      document.getElementById('nexus-gas-native');
+
+    if (nativeEl) {
+      nativeEl.textContent =
+        `Native Gas: ${formattedNativeGas} CRYLO`;
+    }
+
+    const headerGasEl =
+      document.getElementById('bal-crylo-gas');
+
+    if (headerGasEl) {
+      headerGasEl.innerHTML =
+        `${formattedNativeGas}` +
+        `<span class="balance-unit"> CRYLO</span>`;
+    }
+
+    return {
+      ok: true,
+      nativeGas
+    };
+  } catch (error) {
+    console.error(
+      'Fast Nexus native-gas refresh failed:',
+      error
+    );
+
+    return null;
+  }
+}
+
+
 async function refreshNexusGasStatus() {
   const statusEl = document.getElementById('nexus-gas-status');
   const nativeEl = document.getElementById('nexus-gas-native');
@@ -4198,8 +4391,12 @@ async function refreshNexusGasStatus() {
     const result = await window.crylo.nexusGasStatus(linkedAddress);
 
     if (!result.ok) {
-      if (statusEl) statusEl.textContent = `Gas status: ${result.error || 'Unavailable'}`;
-      return;
+      if (statusEl) {
+        statusEl.textContent =
+          `Gas status: ${result.error || 'Unavailable'}`;
+      }
+
+      return null;
     }
 
     State.gasPolicy = {
@@ -4285,9 +4482,18 @@ async function refreshNexusGasStatus() {
       refreshedEl.textContent =
         `Last refreshed: ${new Date().toLocaleString()}`;
     }
+
+    // Return the same status used to paint the UI so callers can
+    // determine whether starter gas has actually reached the wallet.
+    return result;
   } catch (err) {
     console.error(err);
-    if (statusEl) statusEl.textContent = 'Gas status: error';
+
+    if (statusEl) {
+      statusEl.textContent = 'Gas status: error';
+    }
+
+    return null;
   }
 }
 
