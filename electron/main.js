@@ -1581,12 +1581,13 @@ ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
 
 
 function saveOperatorConfig({
-  cryloAddress,
-  nexusAddress,
+  operatorAddress,
   tier,
-  nodeRpc,
+  rpcUrl,
   chainId,
-  nodeStakingContract
+  wrappedCryLoContract,
+  nodeStakingContract,
+  rewardManagerContract
 }) {
   const dir = path.join(
     os.homedir(),
@@ -1595,38 +1596,103 @@ function saveOperatorConfig({
     'operator'
   );
 
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, {
+    recursive: true,
+    mode: 0o700
+  });
 
   const file = path.join(dir, 'operator.json');
-  const now = new Date().toISOString();
 
-  let createdAt = now;
+  const requireEvmAddress = (value, fieldName) => {
+    if (
+      typeof value !== 'string' ||
+      !/^0x[0-9a-fA-F]{40}$/.test(value)
+    ) {
+      throw new Error(
+        `Invalid operator configuration ${fieldName}`
+      );
+    }
 
-  if (fs.existsSync(file)) {
-    try {
-      createdAt =
-        JSON.parse(fs.readFileSync(file, 'utf8')).createdAt ||
-        now;
-    } catch (_) {}
-  }
-
-  const config = {
-    version: 1,
-    cryloAddress,
-    nexusAddress,
-    tier,
-    nodeRpc,
-    chainId: Number(chainId),
-    nodeStakingContract,
-    createdAt,
-    updatedAt: now
+    return value;
   };
 
+  if (!['Operator', 'Validator'].includes(tier)) {
+    throw new Error(
+      `Invalid operator tier: ${tier}`
+    );
+  }
+
+  if (Number(chainId) !== 5546) {
+    throw new Error(
+      `Invalid CryLoNexus chain ID: ${chainId}`
+    );
+  }
+
+  const normalizedOperatorAddress =
+    requireEvmAddress(
+      operatorAddress,
+      'operatorAddress'
+    );
+
+  const config = {
+    schemaVersion: 1,
+    protocolVersion: 1,
+    network: 'CryLoNexus Mainnet',
+    chainId: 5546,
+    operatorAddress: normalizedOperatorAddress,
+    tier,
+    rpcUrl,
+    contracts: {
+      wrappedCryLo: requireEvmAddress(
+        wrappedCryLoContract,
+        'contracts.wrappedCryLo'
+      ),
+      nodeStaking: requireEvmAddress(
+        nodeStakingContract,
+        'contracts.nodeStaking'
+      ),
+      rewardManager: requireEvmAddress(
+        rewardManagerContract,
+        'contracts.rewardManager'
+      )
+    },
+    service: {
+      serviceName:
+        'crylo-nexus-operator.service',
+      statusPath:
+        '/var/lib/crylonexus-operator/status.json',
+      dataDirectory:
+        '/var/lib/crylonexus-operator',
+      logDirectory:
+        '/var/log/crylonexus-operator'
+    },
+    nodeIdentity: {
+      publicId:
+        `operator-${normalizedOperatorAddress
+          .slice(2)
+          .toLowerCase()}`,
+      pairingRequired: true
+    },
+    generatedAt: new Date().toISOString(),
+    expiresAt: null
+  };
+
+  const temporaryFile =
+    `${file}.${process.pid}.${Date.now()}.tmp`;
+
   fs.writeFileSync(
-    file,
-    JSON.stringify(config, null, 2) + '\n',
-    { mode: 0o600 }
+    temporaryFile,
+    `${JSON.stringify(config, null, 2)}\n`,
+    {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'w'
+    }
   );
+
+  fs.chmodSync(temporaryFile, 0o600);
+  fs.renameSync(temporaryFile, file);
+  fs.chmodSync(file, 0o600);
 
   return config;
 }
@@ -1679,13 +1745,16 @@ ipcMain.handle('nexus-register-operator', async (_, walletName, cryloAddress) =>
     const receipt = await tx.wait();
 
     const operatorConfig = saveOperatorConfig({
-      cryloAddress,
-      nexusAddress: wallet.address,
+      operatorAddress: wallet.address,
       tier: 'Operator',
-      nodeRpc: runtime.rpc,
+      rpcUrl: runtime.rpc,
       chainId: runtime.chainId,
+      wrappedCryLoContract:
+        runtime.contracts.wCryLo,
       nodeStakingContract:
-        runtime.contracts.NodeStaking
+        runtime.contracts.NodeStaking,
+      rewardManagerContract:
+        runtime.contracts.RewardManager
     });
 
     return {
@@ -1750,13 +1819,16 @@ ipcMain.handle('nexus-register-validator', async (_, walletName, cryloAddress) =
     const receipt = await tx.wait();
 
     const operatorConfig = saveOperatorConfig({
-      cryloAddress,
-      nexusAddress: wallet.address,
+      operatorAddress: wallet.address,
       tier: 'Validator',
-      nodeRpc: runtime.rpc,
+      rpcUrl: runtime.rpc,
       chainId: runtime.chainId,
+      wrappedCryLoContract:
+        runtime.contracts.wCryLo,
       nodeStakingContract:
-        runtime.contracts.NodeStaking
+        runtime.contracts.NodeStaking,
+      rewardManagerContract:
+        runtime.contracts.RewardManager
     });
 
     return {
@@ -1901,6 +1973,10 @@ function getOperatorPaths() {
   return {
     directory: operatorDir,
     config: path.join(operatorDir, 'operator.json'),
+    authorization: path.join(
+      operatorDir,
+      'authorization.json'
+    ),
     statusCandidates: [
       path.join(operatorDir, 'status.json'),
       path.join(operatorDir, 'operator-status.json'),
@@ -2114,12 +2190,387 @@ function normalizeOperatorWorkers(statusData) {
     }));
 }
 
+
+// CRYLONEXUS_OPERATOR_AUTHORIZATION_V1
+const OPERATOR_AUTHORIZATION_LIFETIME_MS =
+  72 * 60 * 60 * 1000;
+
+function writePrivateJsonAtomic(filePath, value) {
+  const directory = path.dirname(filePath);
+  const temporaryPath =
+    `${filePath}.${process.pid}.${Date.now()}.tmp`;
+
+  fs.mkdirSync(directory, {
+    recursive: true,
+    mode: 0o700
+  });
+
+  fs.writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(value, null, 2)}\n`,
+    {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'w'
+    }
+  );
+
+  fs.chmodSync(temporaryPath, 0o600);
+  fs.renameSync(temporaryPath, filePath);
+  fs.chmodSync(filePath, 0o600);
+}
+
+function readOperatorAuthorization(filePath, expectedAddress) {
+  const result = readJsonFileSafe(filePath);
+
+  if (!result.exists) {
+    return {
+      exists: false,
+      valid: false,
+      expired: false,
+      status: 'Not Authorized',
+      expiresAt: null,
+      remainingSeconds: 0,
+      sessionAddress: null,
+      error: null
+    };
+  }
+
+  if (!result.data) {
+    return {
+      exists: true,
+      valid: false,
+      expired: false,
+      status: 'Invalid Authorization',
+      expiresAt: null,
+      remainingSeconds: 0,
+      sessionAddress: null,
+      error: result.error || 'Authorization file is invalid'
+    };
+  }
+
+  const authorization = result.data;
+  const expiresMs =
+    Date.parse(authorization.delegation?.expiresAt || '');
+
+  const addressMatches =
+    ethers.isAddress(expectedAddress) &&
+    ethers.isAddress(
+      authorization.delegation?.operatorAddress
+    ) &&
+    ethers.getAddress(
+      authorization.delegation.operatorAddress
+    ) === ethers.getAddress(expectedAddress);
+
+  const validExpiration =
+    Number.isFinite(expiresMs);
+
+  const remainingSeconds =
+    validExpiration
+      ? Math.max(
+          0,
+          Math.floor((expiresMs - Date.now()) / 1000)
+        )
+      : 0;
+
+  const expired =
+    validExpiration && remainingSeconds === 0;
+
+  const structurallyValid =
+    authorization.version === 1 &&
+    authorization.delegation?.purpose ===
+      'operator-heartbeat' &&
+    authorization.delegation?.chainId === 5546 &&
+    ethers.isAddress(
+      authorization.delegation?.sessionAddress
+    ) &&
+    typeof authorization.sessionPrivateKey ===
+      'string' &&
+    typeof authorization.delegationSignature ===
+      'string';
+
+  const valid =
+    structurallyValid &&
+    addressMatches &&
+    validExpiration &&
+    !expired;
+
+  return {
+    exists: true,
+    valid,
+    expired,
+    status: valid
+      ? 'Authorized'
+      : expired
+        ? 'Authorization Expired'
+        : 'Invalid Authorization',
+    issuedAt:
+      authorization.delegation?.issuedAt || null,
+    expiresAt:
+      authorization.delegation?.expiresAt || null,
+    remainingSeconds,
+    sessionAddress:
+      authorization.delegation?.sessionAddress ||
+      null,
+    sessionId:
+      authorization.delegation?.sessionId || null,
+    error:
+      valid || expired
+        ? null
+        : 'Authorization does not match this registered operator'
+  };
+}
+
+ipcMain.handle(
+  'nexus-authorize-operator',
+  async (_, walletName, cryloAddress) => {
+    try {
+      const paths = getOperatorPaths();
+      const configResult =
+        readJsonFileSafe(paths.config);
+
+      if (!configResult.data) {
+        throw new Error(
+          'Install and configure the node operator service first'
+        );
+      }
+
+      const service =
+        await readOperatorServiceStatus();
+
+      if (!service.installed) {
+        throw new Error(
+          'Install the CryLoNexus operator service before authorizing this node'
+        );
+      }
+
+      const serviceRunning =
+        service.active === true ||
+        service.running === true ||
+        service.status === 'active' ||
+        service.state === 'active' ||
+        service.activeState === 'active';
+
+      if (!serviceRunning) {
+        throw new Error(
+          'Start the CryLoNexus operator service before authorizing this node'
+        );
+      }
+
+      const runtime =
+        await getNexusRuntimeConfig();
+
+      const wallet =
+        loadBoundNexusWallet(
+          walletName,
+          cryloAddress
+        ).connect(runtime.provider);
+
+      const configuredAddress =
+        configResult.data.operatorAddress;
+
+      if (
+        !ethers.isAddress(configuredAddress) ||
+        ethers.getAddress(configuredAddress) !==
+          ethers.getAddress(wallet.address)
+      ) {
+        throw new Error(
+          'The operator configuration does not match the bound Nexus wallet'
+        );
+      }
+
+      const nodeStakingAddress =
+        ethers.isAddress(
+          configResult.data.nodeStakingContract
+        )
+          ? ethers.getAddress(
+              configResult.data.nodeStakingContract
+            )
+          : runtime.contracts.NodeStaking;
+
+      const nodeArtifact =
+        require('./src/abis/CryLoNodeStaking.json');
+
+      const node =
+        new ethers.Contract(
+          nodeStakingAddress,
+          nodeArtifact.abi,
+          runtime.provider
+        );
+
+      const [
+        tier,
+        network
+      ] = await Promise.all([
+        node.nodeTier(wallet.address),
+        runtime.provider.getNetwork()
+      ]);
+
+      const tierText = tier.toString();
+
+      if (
+        tierText !== '1' &&
+        tierText !== '2'
+      ) {
+        throw new Error(
+          'Only registered Operators and Validators can authorize a node'
+        );
+      }
+
+      if (network.chainId !== 5546n) {
+        throw new Error(
+          `Unexpected CryLoNexus chain ID: ${network.chainId}`
+        );
+      }
+
+      const nodeId =
+        configResult.data.nodeIdentity?.publicId ||
+        `operator-${wallet.address.slice(2)}`;
+
+      const confirmation =
+        await dialog.showMessageBox(mainWindow, {
+          type: 'question',
+          buttons: [
+            'Authorize Node',
+            'Cancel'
+          ],
+          defaultId: 0,
+          cancelId: 1,
+          title: 'Authorize CryLoNexus Node',
+          message:
+            'Authorize this registered node for 72 hours?',
+          detail:
+            'Electron will create a temporary session key. ' +
+            'Your bound Nexus wallet private key remains inside Electron ' +
+            'and is not stored in the operator service.'
+        });
+
+      if (confirmation.response !== 0) {
+        return {
+          ok: false,
+          cancelled: true,
+          error: 'Authorization cancelled'
+        };
+      }
+
+      const sessionWallet =
+        ethers.Wallet.createRandom();
+
+      const issuedAt =
+        new Date().toISOString();
+
+      const expiresAt =
+        new Date(
+          Date.now() +
+          OPERATOR_AUTHORIZATION_LIFETIME_MS
+        ).toISOString();
+
+      const delegation = {
+        version: 1,
+        purpose: 'operator-heartbeat',
+        chainId: 5546,
+        operatorAddress:
+          ethers.getAddress(wallet.address),
+        nodeId,
+        sessionAddress:
+          ethers.getAddress(
+            sessionWallet.address
+          ),
+        issuedAt,
+        expiresAt,
+        sessionId:
+          ethers.hexlify(
+            ethers.randomBytes(32)
+          ),
+        nonce:
+          ethers.hexlify(
+            ethers.randomBytes(32)
+          )
+      };
+
+      /*
+       * JSON insertion order is intentionally fixed.
+       * The runtime verifier will use the same canonical field order.
+       */
+      const delegationMessage =
+        JSON.stringify(delegation);
+
+      const delegationSignature =
+        await wallet.signMessage(
+          delegationMessage
+        );
+
+      const recoveredAddress =
+        ethers.verifyMessage(
+          delegationMessage,
+          delegationSignature
+        );
+
+      if (
+        ethers.getAddress(recoveredAddress) !==
+        ethers.getAddress(wallet.address)
+      ) {
+        throw new Error(
+          'Delegation signature self-verification failed'
+        );
+      }
+
+      const authorization = {
+        version: 1,
+        delegation,
+        delegationSignature,
+        sessionPrivateKey:
+          sessionWallet.privateKey,
+        createdBy: 'CryLo Electron',
+        createdAt: issuedAt
+      };
+
+      writePrivateJsonAtomic(
+        paths.authorization,
+        authorization
+      );
+
+      return {
+        ok: true,
+        status: 'Authorized',
+        operatorAddress:
+          delegation.operatorAddress,
+        sessionAddress:
+          delegation.sessionAddress,
+        issuedAt,
+        expiresAt,
+        remainingSeconds:
+          Math.floor(
+            OPERATOR_AUTHORIZATION_LIFETIME_MS /
+            1000
+          ),
+        authorizationPath:
+          paths.authorization
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error.shortMessage ||
+          error.reason ||
+          error.message
+      };
+    }
+  }
+);
+
 ipcMain.handle('nexus-operator-dashboard', async (_, linkedAddress) => {
   const paths = getOperatorPaths();
   const configResult = readJsonFileSafe(paths.config);
   const statusFile = findOperatorStatusFile(paths.statusCandidates);
   const statusResult = readJsonFileSafe(statusFile);
   const service = await readOperatorServiceStatus();
+
+  const authorization =
+    readOperatorAuthorization(
+      paths.authorization,
+      linkedAddress
+    );
 
   const now = Date.now();
   const statusUpdatedAt =
@@ -2181,6 +2632,8 @@ ipcMain.handle('nexus-operator-dashboard', async (_, linkedAddress) => {
     },
 
     service,
+
+    authorization,
 
     runtime: {
       statusExists: statusResult.exists,
