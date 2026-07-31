@@ -2069,6 +2069,714 @@ function runLocalCommand(command, args, timeoutMs = 5000) {
   });
 }
 
+
+function getOperatorInstallPaths() {
+  const os = require('node:os');
+  const path = require('node:path');
+
+  const operatorDirectory = path.join(
+    os.homedir(),
+    '.config',
+    'crylo-wallet',
+    'operator'
+  );
+
+  return {
+    operatorDirectory,
+    configPath: path.join(
+      operatorDirectory,
+      'operator.json'
+    ),
+    authorizationPath: path.join(
+      operatorDirectory,
+      'authorization.json'
+    ),
+    statusPath: path.join(
+      operatorDirectory,
+      'status.json'
+    ),
+    runtimesDirectory: path.join(
+      operatorDirectory,
+      'runtimes'
+    ),
+    currentRuntimePath: path.join(
+      operatorDirectory,
+      'runtime-current'
+    ),
+    userSystemdDirectory: path.join(
+      os.homedir(),
+      '.config',
+      'systemd',
+      'user'
+    ),
+    servicePath: path.join(
+      os.homedir(),
+      '.config',
+      'systemd',
+      'user',
+      'crylo-nexus-operator.service'
+    )
+  };
+}
+
+async function pathExists(candidatePath) {
+  const fs = require('node:fs');
+
+  try {
+    await fs.promises.access(candidatePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonFileStrict(filePath) {
+  const fs = require('node:fs');
+
+  const text = await fs.promises.readFile(
+    filePath,
+    'utf8'
+  );
+
+  return JSON.parse(text);
+}
+
+async function resolveBundledOperatorRuntimePath() {
+  const path = require('node:path');
+
+  const candidates = [
+    path.join(
+      process.resourcesPath || '',
+      'operator-runtime'
+    ),
+    path.join(
+      app.getAppPath(),
+      'operator-runtime'
+    ),
+    path.join(
+      app.getAppPath(),
+      'node-operator',
+      'runtime'
+    ),
+    path.resolve(
+      __dirname,
+      '..',
+      'node-operator',
+      'runtime'
+    )
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+
+    const packagePath = path.join(
+      candidate,
+      'package.json'
+    );
+
+    const mainPath = path.join(
+      candidate,
+      'src',
+      'main.js'
+    );
+
+    if (
+      await pathExists(packagePath) &&
+      await pathExists(mainPath)
+    ) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    'The bundled CryLoNexus operator runtime could not be found.'
+  );
+}
+
+async function resolveSystemNodeBinary() {
+  const configured =
+    process.env.CRYLONEXUS_NODE_BINARY;
+
+  if (
+    configured &&
+    await pathExists(configured)
+  ) {
+    return configured;
+  }
+
+  const whichResult = await runLocalCommand(
+    'which',
+    ['node']
+  );
+
+  if (
+    whichResult.ok &&
+    whichResult.stdout &&
+    await pathExists(whichResult.stdout)
+  ) {
+    return whichResult.stdout;
+  }
+
+  const commonPaths = [
+    '/usr/bin/node',
+    '/usr/local/bin/node'
+  ];
+
+  for (const candidate of commonPaths) {
+    if (await pathExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    'Node.js 18 or newer is required to run the operator service.'
+  );
+}
+
+async function copyBundledRuntime(
+  sourceDirectory,
+  destinationDirectory
+) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  await fs.promises.cp(
+    sourceDirectory,
+    destinationDirectory,
+    {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      filter(sourcePath) {
+        const relative = path.relative(
+          sourceDirectory,
+          sourcePath
+        );
+
+        if (!relative) return true;
+
+        const firstPart =
+          relative.split(path.sep)[0];
+
+        return ![
+          'test',
+          '.git',
+          '.github'
+        ].includes(firstPart);
+      }
+    }
+  );
+}
+
+async function replaceRuntimeSymlink(
+  targetDirectory,
+  symlinkPath
+) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  const temporaryLink =
+    `${symlinkPath}.next-${process.pid}`;
+
+  await fs.promises.rm(
+    temporaryLink,
+    {
+      force: true,
+      recursive: true
+    }
+  );
+
+  await fs.promises.symlink(
+    targetDirectory,
+    temporaryLink,
+    'dir'
+  );
+
+  await fs.promises.rename(
+    temporaryLink,
+    symlinkPath
+  ).catch(async error => {
+    if (
+      error.code !== 'EEXIST' &&
+      error.code !== 'ENOTEMPTY'
+    ) {
+      throw error;
+    }
+
+    const previousLink =
+      `${symlinkPath}.previous-${process.pid}`;
+
+    await fs.promises.rm(
+      previousLink,
+      {
+        force: true,
+        recursive: true
+      }
+    );
+
+    if (await pathExists(symlinkPath)) {
+      await fs.promises.rename(
+        symlinkPath,
+        previousLink
+      );
+    }
+
+    try {
+      await fs.promises.rename(
+        temporaryLink,
+        symlinkPath
+      );
+
+      await fs.promises.rm(
+        previousLink,
+        {
+          force: true,
+          recursive: true
+        }
+      );
+    } catch (replaceError) {
+      if (await pathExists(previousLink)) {
+        await fs.promises.rename(
+          previousLink,
+          symlinkPath
+        );
+      }
+
+      throw replaceError;
+    }
+  });
+
+  const resolved = await fs.promises.realpath(
+    symlinkPath
+  );
+
+  if (
+    path.resolve(resolved) !==
+    path.resolve(targetDirectory)
+  ) {
+    throw new Error(
+      'The active runtime link does not point to the installed runtime.'
+    );
+  }
+}
+
+function buildOperatorServiceUnit({
+  nodeBinary,
+  currentRuntimePath,
+  operatorDirectory,
+  operatorAddress
+}) {
+  return [
+    '[Unit]',
+    'Description=CryLoNexus Operator Service',
+    'Documentation=https://crylonexus.com',
+    'After=network-online.target',
+    'Wants=network-online.target',
+    '',
+    '[Service]',
+    'Type=simple',
+    `WorkingDirectory=${currentRuntimePath}`,
+    `ExecStart=${nodeBinary} ${currentRuntimePath}/src/main.js`,
+    `Environment=CRYLONEXUS_LINKED_ADDRESS=${operatorAddress}`,
+    'Environment=CRYLONEXUS_LOCAL_HEARTBEATS=1',
+    `Environment=CRYLONEXUS_ELECTRON_STATUS_PATH=${operatorDirectory}/status.json`,
+    'Restart=always',
+    'RestartSec=5',
+    'TimeoutStopSec=30',
+    'KillSignal=SIGTERM',
+    'NoNewPrivileges=true',
+    'PrivateTmp=true',
+    'ProtectSystem=strict',
+    'ProtectHome=read-only',
+    `ReadWritePaths=${operatorDirectory}`,
+    '',
+    '[Install]',
+    'WantedBy=default.target',
+    ''
+  ].join('\n');
+}
+
+async function writeOperatorServiceUnit({
+  servicePath,
+  serviceText
+}) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  await fs.promises.mkdir(
+    path.dirname(servicePath),
+    {
+      recursive: true,
+      mode: 0o700
+    }
+  );
+
+  const temporaryPath =
+    `${servicePath}.tmp-${process.pid}`;
+
+  await fs.promises.writeFile(
+    temporaryPath,
+    serviceText,
+    {
+      encoding: 'utf8',
+      mode: 0o600
+    }
+  );
+
+  await fs.promises.chmod(
+    temporaryPath,
+    0o600
+  );
+
+  await fs.promises.rename(
+    temporaryPath,
+    servicePath
+  );
+}
+
+async function installBundledOperatorRuntime() {
+  if (!IS_LINUX) {
+    throw new Error(
+      'The CryLoNexus operator service installer currently supports Linux only.'
+    );
+  }
+
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  const paths = getOperatorInstallPaths();
+
+  if (!(await pathExists(paths.configPath))) {
+    throw new Error(
+      'Register the Operator or Validator before installing the service.'
+    );
+  }
+
+  const operatorConfig =
+    await readJsonFileStrict(
+      paths.configPath
+    );
+
+  if (
+    !operatorConfig ||
+    typeof operatorConfig !== 'object' ||
+    !ethers.isAddress(
+      operatorConfig.operatorAddress
+    )
+  ) {
+    throw new Error(
+      'operator.json does not contain a valid operatorAddress.'
+    );
+  }
+
+  const sourceDirectory =
+    await resolveBundledOperatorRuntimePath();
+
+  const sourcePackage =
+    await readJsonFileStrict(
+      path.join(
+        sourceDirectory,
+        'package.json'
+      )
+    );
+
+  const runtimeVersion =
+    typeof sourcePackage.version === 'string' &&
+    sourcePackage.version.trim()
+      ? sourcePackage.version.trim()
+      : '0.0.0';
+
+  const releaseId = [
+    runtimeVersion,
+    new Date()
+      .toISOString()
+      .replace(/[-:.TZ]/g, '')
+  ].join('-');
+
+  const destinationDirectory =
+    path.join(
+      paths.runtimesDirectory,
+      releaseId
+    );
+
+  await fs.promises.mkdir(
+    paths.operatorDirectory,
+    {
+      recursive: true,
+      mode: 0o700
+    }
+  );
+
+  await fs.promises.mkdir(
+    paths.runtimesDirectory,
+    {
+      recursive: true,
+      mode: 0o700
+    }
+  );
+
+  await copyBundledRuntime(
+    sourceDirectory,
+    destinationDirectory
+  );
+
+  const installedMainPath =
+    path.join(
+      destinationDirectory,
+      'src',
+      'main.js'
+    );
+
+  const installedPackagePath =
+    path.join(
+      destinationDirectory,
+      'package.json'
+    );
+
+  if (
+    !(await pathExists(installedMainPath)) ||
+    !(await pathExists(installedPackagePath))
+  ) {
+    await fs.promises.rm(
+      destinationDirectory,
+      {
+        force: true,
+        recursive: true
+      }
+    );
+
+    throw new Error(
+      'The bundled operator runtime failed installation validation.'
+    );
+  }
+
+  const nodeBinary =
+    await resolveSystemNodeBinary();
+
+  const nodeVersionResult =
+    await runLocalCommand(
+      nodeBinary,
+      ['--version']
+    );
+
+  if (!nodeVersionResult.ok) {
+    throw new Error(
+      nodeVersionResult.stderr ||
+      'Unable to validate the system Node.js installation.'
+    );
+  }
+
+  const majorVersion =
+    Number.parseInt(
+      String(nodeVersionResult.stdout)
+        .replace(/^v/, '')
+        .split('.')[0],
+      10
+    );
+
+  if (
+    !Number.isInteger(majorVersion) ||
+    majorVersion < 18
+  ) {
+    throw new Error(
+      `Node.js 18 or newer is required. Found ${nodeVersionResult.stdout}.`
+    );
+  }
+
+  await replaceRuntimeSymlink(
+    destinationDirectory,
+    paths.currentRuntimePath
+  );
+
+  const serviceText =
+    buildOperatorServiceUnit({
+      nodeBinary,
+      currentRuntimePath:
+        paths.currentRuntimePath,
+      operatorDirectory:
+        paths.operatorDirectory,
+      operatorAddress:
+        operatorConfig.operatorAddress
+    });
+
+  await writeOperatorServiceUnit({
+    servicePath: paths.servicePath,
+    serviceText
+  });
+
+  const daemonReload =
+    await runLocalCommand(
+      'systemctl',
+      [
+        '--user',
+        'daemon-reload'
+      ]
+    );
+
+  if (!daemonReload.ok) {
+    throw new Error(
+      daemonReload.stderr ||
+      'systemctl --user daemon-reload failed.'
+    );
+  }
+
+  const enableResult =
+    await runLocalCommand(
+      'systemctl',
+      [
+        '--user',
+        'enable',
+        '--now',
+        'crylo-nexus-operator.service'
+      ]
+    );
+
+  if (!enableResult.ok) {
+    throw new Error(
+      enableResult.stderr ||
+      'The operator service could not be enabled and started.'
+    );
+  }
+
+  const warnings = [];
+
+  const lingerResult =
+    await runLocalCommand(
+      'loginctl',
+      [
+        'enable-linger',
+        process.env.USER ||
+          require('node:os').userInfo().username
+      ]
+    );
+
+  if (!lingerResult.ok) {
+    warnings.push(
+      'The service is running, but Linux lingering could not be enabled automatically. It may require administrator approval to start before login.'
+    );
+  }
+
+  await new Promise(resolve => {
+    setTimeout(resolve, 1500);
+  });
+
+  const service =
+    await readOperatorServiceStatus();
+
+  if (!service.running) {
+    throw new Error(
+      service.message ||
+      `The service was installed but did not become active (${service.activeState}/${service.subState}).`
+    );
+  }
+
+  const installedManifest = {
+    schemaVersion: 1,
+    runtimeVersion,
+    releaseId,
+    sourcePackage:
+      sourcePackage.name || null,
+    installedAt:
+      new Date().toISOString(),
+    runtimePath:
+      destinationDirectory,
+    activeRuntimePath:
+      paths.currentRuntimePath,
+    nodeBinary,
+    serviceName:
+      'crylo-nexus-operator.service'
+  };
+
+  const manifestPath =
+    path.join(
+      paths.operatorDirectory,
+      'runtime-installation.json'
+    );
+
+  const temporaryManifest =
+    `${manifestPath}.tmp-${process.pid}`;
+
+  await fs.promises.writeFile(
+    temporaryManifest,
+    JSON.stringify(
+      installedManifest,
+      null,
+      2
+    ) + '\n',
+    {
+      encoding: 'utf8',
+      mode: 0o600
+    }
+  );
+
+  await fs.promises.rename(
+    temporaryManifest,
+    manifestPath
+  );
+
+  return {
+    ok: true,
+    installed: true,
+    updated: true,
+    runtimeVersion,
+    releaseId,
+    runtimePath:
+      destinationDirectory,
+    activeRuntimePath:
+      paths.currentRuntimePath,
+    service,
+    warnings
+  };
+}
+
+async function controlOperatorService(action) {
+  if (!IS_LINUX) {
+    throw new Error(
+      'Operator service controls are currently available on Linux only.'
+    );
+  }
+
+  const supportedActions = new Set([
+    'start',
+    'stop',
+    'restart'
+  ]);
+
+  if (!supportedActions.has(action)) {
+    throw new Error(
+      'Unsupported operator service action.'
+    );
+  }
+
+  const result = await runLocalCommand(
+    'systemctl',
+    [
+      '--user',
+      action,
+      'crylo-nexus-operator.service'
+    ]
+  );
+
+  if (!result.ok) {
+    throw new Error(
+      result.stderr ||
+      `Unable to ${action} the operator service.`
+    );
+  }
+
+  await new Promise(resolve => {
+    setTimeout(resolve, 500);
+  });
+
+  return {
+    ok: true,
+    action,
+    service:
+      await readOperatorServiceStatus()
+  };
+}
+
+
 async function readOperatorServiceStatus() {
   if (!IS_LINUX) {
     return {
@@ -2320,6 +3028,52 @@ function readOperatorAuthorization(filePath, expectedAddress) {
         : 'Authorization does not match this registered operator'
   };
 }
+
+
+ipcMain.handle(
+  'nexus-install-operator-service',
+  async () => {
+    try {
+      return await installBundledOperatorRuntime();
+    } catch (error) {
+      console.error(
+        'Operator service installation failed:',
+        error
+      );
+
+      return {
+        ok: false,
+        error:
+          error?.message ||
+          'Operator service installation failed.'
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'nexus-control-operator-service',
+  async (_event, action) => {
+    try {
+      return await controlOperatorService(
+        action
+      );
+    } catch (error) {
+      console.error(
+        'Operator service control failed:',
+        error
+      );
+
+      return {
+        ok: false,
+        action,
+        error:
+          error?.message ||
+          'Operator service control failed.'
+      };
+    }
+  }
+);
 
 ipcMain.handle(
   'nexus-authorize-operator',
