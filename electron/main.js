@@ -2141,6 +2141,63 @@ async function readJsonFileStrict(filePath) {
   return JSON.parse(text);
 }
 
+async function inspectOperatorInstallationHealth() {
+  const path = require('node:path');
+  const paths = getOperatorInstallPaths();
+
+  const runtimePackagePath = path.join(
+    paths.currentRuntimePath,
+    'package.json'
+  );
+
+  const runtimeEntryPath = path.join(
+    paths.currentRuntimePath,
+    'src',
+    'main.js'
+  );
+
+  const [
+    configured,
+    runtimePresent,
+    runtimePackagePresent,
+    runtimeEntryPresent,
+    serviceFilePresent
+  ] = await Promise.all([
+    pathExists(paths.configPath),
+    pathExists(paths.currentRuntimePath),
+    pathExists(runtimePackagePath),
+    pathExists(runtimeEntryPath),
+    pathExists(paths.servicePath)
+  ]);
+
+  const runtimeValid =
+    runtimePresent &&
+    runtimePackagePresent &&
+    runtimeEntryPresent;
+
+  const healthy =
+    configured &&
+    runtimeValid &&
+    serviceFilePresent;
+
+  return {
+    configured,
+    runtimePresent,
+    runtimePackagePresent,
+    runtimeEntryPresent,
+    runtimeValid,
+    serviceFilePresent,
+    healthy,
+    repairRequired:
+      configured && !healthy,
+    configPath: paths.configPath,
+    runtimePath: paths.currentRuntimePath,
+    runtimePackagePath,
+    runtimeEntryPath,
+    servicePath: paths.servicePath
+  };
+}
+
 async function resolveBundledOperatorRuntimePath() {
   const path = require('node:path');
 
@@ -2262,6 +2319,53 @@ async function copyBundledRuntime(
           'test',
           '.git',
           '.github'
+        ].includes(firstPart);
+      }
+    }
+  );
+
+  const protocolSourceDirectory =
+    path.resolve(
+      sourceDirectory,
+      '..',
+      'protocol'
+    );
+
+  const protocolDestinationDirectory =
+    path.join(
+      destinationDirectory,
+      'protocol'
+    );
+
+  if (!(await pathExists(protocolSourceDirectory))) {
+    throw new Error(
+      `Bundled operator protocol directory was not found: ${protocolSourceDirectory}`
+    );
+  }
+
+  await fs.promises.cp(
+    protocolSourceDirectory,
+    protocolDestinationDirectory,
+    {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      filter(sourcePath) {
+        const relative = path.relative(
+          protocolSourceDirectory,
+          sourcePath
+        );
+
+        if (!relative) return true;
+
+        const firstPart =
+          relative.split(path.sep)[0];
+
+        return ![
+          'tests',
+          '.git',
+          '.github',
+          'node_modules'
         ].includes(firstPart);
       }
     }
@@ -2533,9 +2637,27 @@ async function installBundledOperatorRuntime() {
       'package.json'
     );
 
+  const installedConfigSchemaPath =
+    path.join(
+      destinationDirectory,
+      'protocol',
+      'schemas',
+      'operator-config.schema.json'
+    );
+
+  const installedStatusSchemaPath =
+    path.join(
+      destinationDirectory,
+      'protocol',
+      'schemas',
+      'operator-status.schema.json'
+    );
+
   if (
     !(await pathExists(installedMainPath)) ||
-    !(await pathExists(installedPackagePath))
+    !(await pathExists(installedPackagePath)) ||
+    !(await pathExists(installedConfigSchemaPath)) ||
+    !(await pathExists(installedStatusSchemaPath))
   ) {
     await fs.promises.rm(
       destinationDirectory,
@@ -2792,6 +2914,8 @@ async function readOperatorServiceStatus() {
   }
 
   const serviceName = 'crylo-nexus-operator.service';
+  const installation =
+    await inspectOperatorInstallationHealth();
 
   const checks = [
     {
@@ -2834,15 +2958,21 @@ async function readOperatorServiceStatus() {
     if (values.LoadState && values.LoadState !== 'not-found') {
       return {
         supported: true,
-        installed: true,
-        running: values.ActiveState === 'active',
+        installed: installation.healthy,
+        running:
+          installation.healthy &&
+          values.ActiveState === 'active',
         activeState: values.ActiveState || 'unknown',
         subState: values.SubState || 'unknown',
         mainPid: values.MainPID || '0',
         startedAt: values.ExecMainStartTimestamp || null,
         serviceScope: check.scope,
         serviceName,
-        message: result.stderr || null
+        ...installation,
+        message:
+          installation.healthy
+            ? result.stderr || null
+            : 'The operator service installation is incomplete and must be repaired.'
       };
     }
   }
@@ -2857,7 +2987,11 @@ async function readOperatorServiceStatus() {
     startedAt: null,
     serviceScope: null,
     serviceName,
-    message: 'Operator service is not installed.'
+    ...installation,
+    message:
+      installation.repairRequired
+        ? 'The operator service installation is incomplete and must be repaired.'
+        : 'Operator service is not installed.'
   };
 }
 
@@ -3029,6 +3163,127 @@ function readOperatorAuthorization(filePath, expectedAddress) {
   };
 }
 
+
+
+ipcMain.handle(
+  'nexus-operator-installation-status',
+  async () => {
+    try {
+      const path = require('node:path');
+
+      if (!IS_LINUX) {
+        return {
+          ok: true,
+          supported: false,
+          installed: false,
+          updateAvailable: false,
+          bundledVersion: null,
+          installedVersion: null
+        };
+      }
+
+      const paths =
+        getOperatorInstallPaths();
+
+      const health =
+        await inspectOperatorInstallationHealth();
+
+      const sourceDirectory =
+        await resolveBundledOperatorRuntimePath();
+
+      const bundledPackage =
+        await readJsonFileStrict(
+          path.join(
+            sourceDirectory,
+            'package.json'
+          )
+        );
+
+      const bundledVersion =
+        typeof bundledPackage.version === 'string'
+          ? bundledPackage.version
+          : null;
+
+      const manifestPath =
+        path.join(
+          paths.operatorDirectory,
+          'runtime-installation.json'
+        );
+
+      let installation = null;
+
+      if (await pathExists(manifestPath)) {
+        try {
+          installation =
+            await readJsonFileStrict(
+              manifestPath
+            );
+        } catch (error) {
+          return {
+            ok: false,
+            supported: true,
+            installed: health.healthy,
+            healthy: health.healthy,
+            repairRequired:
+              health.repairRequired,
+            ...health,
+            bundledVersion,
+            installedVersion: null,
+            updateAvailable: false,
+            error:
+              `Unable to read the installed runtime manifest: ${error.message}`
+          };
+        }
+      }
+
+      const installedVersion =
+        typeof installation?.runtimeVersion ===
+          'string'
+          ? installation.runtimeVersion
+          : null;
+
+      return {
+        ok: true,
+        supported: true,
+        installed: health.healthy,
+        healthy: health.healthy,
+        repairRequired:
+          health.repairRequired,
+        ...health,
+        bundledVersion,
+        installedVersion,
+        updateAvailable:
+          Boolean(
+            bundledVersion &&
+            installedVersion &&
+            bundledVersion !==
+              installedVersion
+          ),
+        installedAt:
+          installation?.installedAt ||
+          null,
+        releaseId:
+          installation?.releaseId ||
+          null,
+        runtimePath:
+          installation?.runtimePath ||
+          null
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        supported: IS_LINUX,
+        installed: false,
+        updateAvailable: false,
+        bundledVersion: null,
+        installedVersion: null,
+        error:
+          error?.message ||
+          'Unable to inspect the operator installation.'
+      };
+    }
+  }
+);
 
 ipcMain.handle(
   'nexus-install-operator-service',

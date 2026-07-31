@@ -71,6 +71,11 @@ contextBridge.exposeInMainWorld('crylo', {
   nexusOperatorDashboard: (linkedAddress) =>
     ipcRenderer.invoke('nexus-operator-dashboard', linkedAddress),
 
+  nexusOperatorInstallationStatus: () =>
+    ipcRenderer.invoke(
+      'nexus-operator-installation-status'
+    ),
+
   nexusInstallOperatorService: () =>
     ipcRenderer.invoke(
       'nexus-install-operator-service'

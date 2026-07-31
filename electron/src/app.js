@@ -3970,6 +3970,15 @@ async function refreshNexusOperatorDashboard() {
           : 'Not Installed'
     );
 
+    refreshNexusOperatorInstallationControls(
+      service
+    ).catch(error => {
+      console.error(
+        'Unable to refresh operator installation controls:',
+        error
+      );
+    });
+
     setNexusNodeDashboardText(
       'nexus-operator-service-scope',
       service.serviceScope || '—'
@@ -4151,6 +4160,316 @@ async function refreshNexusOperatorDashboard() {
 
 async function refreshNexusNodeStatus() {
   return refreshNexusOperatorDashboard();
+}
+
+
+
+let nexusOperatorServiceActionRunning = false;
+
+function setNexusOperatorButtonState(
+  elementId,
+  {
+    hidden = false,
+    disabled = false,
+    text = null
+  } = {}
+) {
+  const element =
+    document.getElementById(elementId);
+
+  if (!element) return;
+
+  element.style.display =
+    hidden ? 'none' : '';
+
+  element.disabled = disabled;
+
+  if (text != null) {
+    element.textContent = text;
+  }
+}
+
+async function refreshNexusOperatorInstallationControls(
+  serviceOverride = null
+) {
+  const messageElement =
+    document.getElementById(
+      'nexus-operator-install-action-message'
+    );
+
+  let installation;
+
+  try {
+    installation =
+      await window.crylo
+        .nexusOperatorInstallationStatus();
+  } catch (error) {
+    installation = {
+      ok: false,
+      error:
+        error?.message ||
+        'Unable to inspect the operator installation.'
+    };
+  }
+
+  const bundledVersion =
+    installation?.bundledVersion ||
+    '—';
+
+  const installedVersion =
+    installation?.installedVersion ||
+    '—';
+
+  setNexusNodeDashboardText(
+    'nexus-operator-bundled-version',
+    bundledVersion
+  );
+
+  setNexusNodeDashboardText(
+    'nexus-operator-installed-version',
+    installedVersion
+  );
+
+  const service =
+    serviceOverride || {};
+
+  const installed =
+    installation?.healthy === true;
+
+  const repairRequired =
+    installation?.repairRequired === true;
+
+  const running =
+    installed &&
+    service.running === true;
+
+  const updateAvailable =
+    installed &&
+    installation?.updateAvailable === true;
+
+  setNexusOperatorButtonState(
+    'nexus-install-operator-btn',
+    {
+      hidden: installed,
+      disabled:
+        nexusOperatorServiceActionRunning,
+      text:
+        repairRequired
+          ? 'Repair Installation'
+          : 'Install Operator'
+    }
+  );
+
+  setNexusOperatorButtonState(
+    'nexus-update-operator-btn',
+    {
+      hidden:
+        !installed ||
+        !updateAvailable,
+      disabled:
+        nexusOperatorServiceActionRunning,
+      text: 'Update Operator'
+    }
+  );
+
+  setNexusOperatorButtonState(
+    'nexus-operator-up-to-date-btn',
+    {
+      hidden:
+        !installed ||
+        updateAvailable,
+      disabled: true,
+      text: 'Operator Up to Date'
+    }
+  );
+
+  setNexusOperatorButtonState(
+    'nexus-start-operator-btn',
+    {
+      hidden:
+        !installed ||
+        running,
+      disabled:
+        nexusOperatorServiceActionRunning
+    }
+  );
+
+  setNexusOperatorButtonState(
+    'nexus-restart-operator-btn',
+    {
+      hidden:
+        !installed ||
+        !running,
+      disabled:
+        nexusOperatorServiceActionRunning
+    }
+  );
+
+  setNexusOperatorButtonState(
+    'nexus-stop-operator-btn',
+    {
+      hidden:
+        !installed ||
+        !running,
+      disabled:
+        nexusOperatorServiceActionRunning
+    }
+  );
+
+  if (messageElement) {
+    if (!installation?.ok) {
+      messageElement.textContent =
+        installation?.error ||
+        'Unable to inspect the operator installation.';
+    } else if (repairRequired) {
+      messageElement.textContent =
+        'The operator configuration is preserved, but required runtime files are missing or incomplete. Repair the installation to continue.';
+    } else if (!installed) {
+      messageElement.textContent =
+        'Install the operator once. It will continue running when Electron is closed.';
+    } else if (updateAvailable) {
+      messageElement.textContent =
+        `Operator ${installedVersion} is installed. Version ${bundledVersion} is ready to update.`;
+    } else if (running) {
+      messageElement.textContent =
+        `Operator ${installedVersion} is installed, current, and running.`;
+    } else {
+      messageElement.textContent =
+        `Operator ${installedVersion} is installed but currently stopped.`;
+    }
+  }
+
+  return installation;
+}
+
+async function installOrUpdateNexusOperator() {
+  if (nexusOperatorServiceActionRunning) {
+    return;
+  }
+
+  const messageElement =
+    document.getElementById(
+      'nexus-operator-install-action-message'
+    );
+
+  nexusOperatorServiceActionRunning = true;
+
+  await refreshNexusOperatorInstallationControls();
+
+  if (messageElement) {
+    messageElement.textContent =
+      'Installing and starting the CryLoNexus operator service...';
+  }
+
+  try {
+    const result =
+      await window.crylo
+        .nexusInstallOperatorService();
+
+    if (!result?.ok) {
+      throw new Error(
+        result?.error ||
+        'Operator installation failed.'
+      );
+    }
+
+    const warnings =
+      Array.isArray(result.warnings)
+        ? result.warnings.filter(Boolean)
+        : [];
+
+    if (messageElement) {
+      messageElement.textContent =
+        warnings.length
+          ? `Operator ${result.runtimeVersion || ''} installed and running. ${warnings.join(' ')}`
+          : `Operator ${result.runtimeVersion || ''} installed and running.`;
+    }
+
+    await refreshNexusOperatorDashboard();
+  } catch (error) {
+    console.error(
+      'Operator installation failed:',
+      error
+    );
+
+    if (messageElement) {
+      messageElement.textContent =
+        error?.message ||
+        'Operator installation failed.';
+    }
+  } finally {
+    nexusOperatorServiceActionRunning = false;
+
+    await refreshNexusOperatorInstallationControls();
+  }
+}
+
+async function controlNexusOperatorService(action) {
+  if (nexusOperatorServiceActionRunning) {
+    return;
+  }
+
+  const supported =
+    new Set([
+      'start',
+      'stop',
+      'restart'
+    ]);
+
+  if (!supported.has(action)) {
+    return;
+  }
+
+  const messageElement =
+    document.getElementById(
+      'nexus-operator-install-action-message'
+    );
+
+  nexusOperatorServiceActionRunning = true;
+
+  await refreshNexusOperatorInstallationControls();
+
+  if (messageElement) {
+    messageElement.textContent =
+      `${action[0].toUpperCase()}${action.slice(1)}ing the operator service...`;
+  }
+
+  try {
+    const result =
+      await window.crylo
+        .nexusControlOperatorService(
+          action
+        );
+
+    if (!result?.ok) {
+      throw new Error(
+        result?.error ||
+        `Unable to ${action} the operator service.`
+      );
+    }
+
+    if (messageElement) {
+      messageElement.textContent =
+        `Operator service ${action} completed.`;
+    }
+
+    await refreshNexusOperatorDashboard();
+  } catch (error) {
+    console.error(
+      'Operator service control failed:',
+      error
+    );
+
+    if (messageElement) {
+      messageElement.textContent =
+        error?.message ||
+        `Unable to ${action} the operator service.`;
+    }
+  } finally {
+    nexusOperatorServiceActionRunning = false;
+
+    await refreshNexusOperatorInstallationControls();
+  }
 }
 
 
@@ -4892,6 +5211,8 @@ if (document.readyState === 'loading') {
 
 
 window.App = {
+  installOrUpdateNexusOperator,
+  controlNexusOperatorService,
   authorizeNexusOperator,
   sendMax,
   toggleAdvanced,
