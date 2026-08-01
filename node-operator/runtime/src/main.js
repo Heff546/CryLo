@@ -613,7 +613,11 @@ async function run() {
     });
   }, intervalMs);
 
-  timer.unref();
+  /*
+   * Keep this timer referenced. It is the persistent lifecycle
+   * handle for the operator daemon. Calling unref() here allows
+   * Node.js to exit immediately after the initial heartbeat.
+   */
 }
 
 async function shutdown(signal) {
