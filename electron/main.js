@@ -1660,11 +1660,20 @@ function saveOperatorConfig({
       serviceName:
         'crylo-nexus-operator.service',
       statusPath:
-        '/var/lib/crylonexus-operator/status.json',
+        path.join(
+          dir,
+          'status.json'
+        ),
       dataDirectory:
-        '/var/lib/crylonexus-operator',
+        path.join(
+          dir,
+          'data'
+        ),
       logDirectory:
-        '/var/log/crylonexus-operator'
+        path.join(
+          dir,
+          'logs'
+        )
     },
     nodeIdentity: {
       publicId:
