@@ -3366,353 +3366,166 @@ function setNexusNodeSmartStatus({
   );
 }
 
-function updateNexusNodeCenterState({
-  linked = true,
-  registered = false,
-  tierValue = '0',
-  serviceInstalled = false,
-  serviceRunning = false,
-  configurationLoaded = false,
-  walletMatched = false,
-  verificationConnected = false
-} = {}) {
-  const stageIds = [
-    'register',
-    'install',
-    'connect',
-    'verify',
-    'operate'
-  ];
+let currentNexusNodeCenterState = null;
+let nexusNodeCenterRefreshPromise = null;
 
-  const stageLabels = {
-    register: 'Register Your Node',
-    install: 'Install Service',
-    connect: 'Connect Node',
-    verify: 'Verify Uptime',
-    operate: 'Earn Rewards'
-  };
+function requireNexusNodeCenterModules() {
+  const factsApi =
+    window.CryLoNodeCenterFacts;
 
-  const setStepCopy = (title, description) => {
-    setNexusNodeDashboardText(
-      'nexus-current-step-title',
-      title
-    );
+  const stateApi =
+    window.CryLoNodeCenterState;
 
-    setNexusNodeDashboardText(
-      'nexus-current-step-description',
-      description
-    );
-  };
-
-  const setActionCopy = text => {
-    setNexusNodeDashboardText(
-      'nexus-node-action-status',
-      text
-    );
-  };
-
-  const applyProgress = (
-    activeStage,
-    completedStages = []
-  ) => {
-    stageIds.forEach((stageName, index) => {
-      const progressElement = document.getElementById(
-        `nexus-stage-${stageName}`
-      );
-
-      const cardElement = document.getElementById(
-        `nexus-step-card-${stageName}`
-      );
-
-      const completed =
-        completedStages.includes(stageName);
-
-      const active =
-        stageName === activeStage;
-
-      if (progressElement) {
-        progressElement.classList.toggle(
-          'active',
-          active
-        );
-
-        progressElement.classList.toggle(
-          'complete',
-          completed
-        );
-
-        const numberElement =
-          progressElement.querySelector(
-            '.node-stage-number'
-          );
-
-        if (numberElement) {
-          const stageNumber = String(index + 1);
-
-          numberElement.textContent =
-            completed ? '✓' : stageNumber;
-
-          numberElement.setAttribute(
-            'aria-label',
-            completed
-              ? `${stageLabels[stageName]} complete`
-              : `Step ${stageNumber}`
-          );
-        }
-      }
-
-      if (cardElement) {
-        cardElement.classList.toggle(
-          'active',
-          active
-        );
-
-        cardElement.classList.toggle(
-          'complete',
-          completed
-        );
-
-        cardElement.classList.toggle(
-          'locked',
-          !active && !completed
-        );
-
-        const cardIcon =
-          cardElement.querySelector(
-            '.node-center-step-card-icon'
-          );
-
-        if (cardIcon) {
-          cardIcon.textContent =
-            completed ? '✓' : String(index + 1);
-        }
-      }
-
-      setNexusNodeDashboardText(
-        `nexus-step-${stageName}-state`,
-        completed
-          ? 'Complete'
-          : active
-            ? 'Current'
-            : 'Locked'
-      );
-    });
-  };
-
-  const tierName =
-    String(tierValue) === '2'
-      ? 'Validator'
-      : 'Operator';
-
-  if (!linked) {
-    setStepCopy(
-      'Link a Nexus wallet',
-      'Open the Nexus tab and create or load the wallet bound to this CryLo wallet.'
-    );
-
-    setActionCopy(
-      'A linked Nexus wallet is required before node onboarding can begin.'
-    );
-
-    setNexusNodeSmartStatus({
-      type: 'warning',
-      eyebrow: 'Wallet required',
-      title: 'Link a Nexus wallet to begin',
-      message:
-        'Node onboarding cannot begin until this CryLo wallet has a linked Nexus wallet.',
-      currentStep: 'Link Nexus Wallet'
-    });
-
-    applyProgress('register');
-    return;
-  }
-
-  if (!registered) {
-    setStepCopy(
-      'Register as an Operator',
-      'Stake 300 wCryLo to register your Operator identity on CryLoNexus.'
-    );
-
-    setActionCopy(
-      'Register as an Operator to begin the node onboarding process.'
-    );
-
-    setNexusNodeSmartStatus({
-      type: 'setup',
-      eyebrow: 'Setup ready',
-      title: 'Register your node',
-      message:
-        'Start as an Operator by staking 300 wCryLo. You can upgrade to Validator later.',
-      currentStep: 'Register Your Node'
-    });
-
-    applyProgress('register');
-    return;
-  }
-
-  setNexusNodeDashboardText(
-    'nexus-step-register-summary',
-    `${tierName} registered · ${
-      tierName === 'Validator' ? '750' : '300'
-    } wCryLo locked`
-  );
-
-  if (!serviceInstalled) {
-    setStepCopy(
-      'Install the operator service',
-      `Your ${tierName} registration is active. Install the persistent Linux operator service on the node machine.`
-    );
-
-    setActionCopy(
-      `${tierName} registration is complete. The operator service must now be installed.`
-    );
-
-    setNexusNodeSmartStatus({
-      type: 'warning',
-      eyebrow: 'Setup in progress',
-      title: 'Your node is registered',
-      message:
-        'Install the operator service before this node can connect, verify uptime, and become reward eligible.',
-      currentStep: 'Install Service'
-    });
-
-    applyProgress(
-      'install',
-      ['register']
-    );
-    return;
-  }
+  const rendererApi =
+    window.CryLoNodeCenterRenderer;
 
   if (
-    !configurationLoaded ||
-    !walletMatched ||
-    !serviceRunning
+    !factsApi ||
+    !stateApi ||
+    !rendererApi
   ) {
-    let connectionMessage =
-      'Connect the installed service to this registered Nexus wallet and start the service.';
+    throw new Error(
+      'The Node Center production modules were not loaded.'
+    );
+  }
 
-    if (!configurationLoaded) {
-      connectionMessage =
-        'Load or create the operator configuration for this registered Nexus wallet.';
-    } else if (!walletMatched) {
-      connectionMessage =
-        'The operator configuration does not match this wallet. Correct the configured Nexus address.';
-    } else if (!serviceRunning) {
-      connectionMessage =
-        'The service is installed and configured. Start it to connect the node.';
+  return {
+    factsApi,
+    stateApi,
+    rendererApi
+  };
+}
+
+function renderNexusNodeCenterSnapshot({
+  linkedAddress = null,
+  dashboardResult = null,
+  installationResult = null
+} = {}) {
+  const {
+    factsApi,
+    stateApi,
+    rendererApi
+  } = requireNexusNodeCenterModules();
+
+  const facts =
+    factsApi.buildNodeCenterFacts({
+      linkedAddress,
+      dashboardResult,
+      installationResult
+    });
+
+  const nextState =
+    stateApi.buildNodeCenterState(
+      facts
+    );
+
+  rendererApi.renderNodeCenter(
+    document,
+    nextState,
+    {
+      actionRunning:
+        nexusOperatorServiceActionRunning
     }
+  );
 
-    setStepCopy(
-      'Connect your operator service',
-      connectionMessage
-    );
+  currentNexusNodeCenterState =
+    nextState;
 
-    setActionCopy(connectionMessage);
+  return nextState;
+}
 
-    setNexusNodeDashboardText(
-      'nexus-step-install-summary',
-      serviceRunning
-        ? 'Operator service installed and running'
-        : 'Operator service installed'
-    );
-
-    setNexusNodeSmartStatus({
-      type: 'warning',
-      eyebrow: 'Setup in progress',
-      title: 'Connect the operator service',
-      message: connectionMessage,
-      currentStep: 'Connect Node'
-    });
-
-    applyProgress(
-      'connect',
-      ['register', 'install']
-    );
-    return;
+function rerenderCurrentNexusNodeCenter() {
+  if (!currentNexusNodeCenterState) {
+    return null;
   }
 
-  if (!verificationConnected) {
-    setStepCopy(
-      'Verify node operation',
-      'The operator service is connected. Complete uptime and reward verification before the node becomes reward eligible.'
-    );
+  const {
+    rendererApi
+  } = requireNexusNodeCenterModules();
 
-    setActionCopy(
-      'Service connection is healthy. Reward verification is the next required step.'
-    );
-
-    setNexusNodeDashboardText(
-      'nexus-step-install-summary',
-      'Operator service installed and running'
-    );
-
-    setNexusNodeDashboardText(
-      'nexus-step-connect-summary',
-      'Configuration loaded · Wallet matched · Service running'
-    );
-
-    setNexusNodeSmartStatus({
-      type: 'warning',
-      eyebrow: 'Almost ready',
-      title: 'Verify node uptime',
-      message:
-        'The service is connected. Complete reward verification before the node can begin earning.',
-      currentStep: 'Verify Uptime'
-    });
-
-    applyProgress(
-      'verify',
-      ['register', 'install', 'connect']
-    );
-    return;
-  }
-
-  setStepCopy(
-    `Earn rewards with your ${tierName} node`,
-    'Your node onboarding is complete. Monitor service health, uptime, workers, metrics, and pending rewards.'
-  );
-
-  setActionCopy(
-    `${tierName} onboarding is complete. Keep the operator service online to remain reward eligible and earn rewards.`
-  );
-
-  setNexusNodeDashboardText(
-    'nexus-step-install-summary',
-    'Operator service installed and running'
-  );
-
-  setNexusNodeDashboardText(
-    'nexus-step-connect-summary',
-    'Configuration loaded · Wallet matched · Service running'
-  );
-
-  setNexusNodeDashboardText(
-    'nexus-step-verify-summary',
-    'Uptime and reward verification connected'
-  );
-
-  setSmartStatus({
-    type: 'success',
-    eyebrow: 'Node online',
-    title: `${tierName} node is operational`,
-    message:
-      'Uptime verification is connected and this node can participate in reward eligibility.',
-    currentStep: 'Earn Rewards'
-  });
-
-  applyProgress(
-    'operate',
-    ['register', 'install', 'connect', 'verify']
+  return rendererApi.renderNodeCenter(
+    document,
+    currentNexusNodeCenterState,
+    {
+      actionRunning:
+        nexusOperatorServiceActionRunning
+    }
   );
 }
+
+function renderNexusInstallationDetails(
+  installation,
+  state
+) {
+  const result =
+    installation || {};
+
+  setNexusNodeDashboardText(
+    'nexus-operator-installed-version',
+    result.installedVersion || '—'
+  );
+
+  setNexusNodeDashboardText(
+    'nexus-operator-bundled-version',
+    result.bundledVersion || '—'
+  );
+
+  const messageElement =
+    document.getElementById(
+      'nexus-operator-install-action-message'
+    );
+
+  if (!messageElement) {
+    return;
+  }
+
+  if (result.ok === false) {
+    messageElement.textContent =
+      result.error ||
+      'Unable to inspect the operator installation.';
+    return;
+  }
+
+  const action =
+    state?.action;
+
+  if (action === 'REPAIR') {
+    messageElement.textContent =
+      'Required runtime files are missing or incomplete. Repair the operator node to continue.';
+  } else if (action === 'INSTALL') {
+    messageElement.textContent =
+      'Install the operator node once. The background service remains independent of Electron.';
+  } else if (action === 'UPDATE') {
+    messageElement.textContent =
+      `Operator ${result.installedVersion || 'runtime'} is installed. Version ${result.bundledVersion || 'the latest release'} is ready.`;
+  } else if (action === 'AUTHORIZE') {
+    messageElement.textContent =
+      `Operator ${result.installedVersion || ''} is installed and current. Authorize the node to continue.`;
+  } else if (action === 'START') {
+    messageElement.textContent =
+      `Operator ${result.installedVersion || ''} is installed, current, and authorized. Start the background service.`;
+  } else if (
+    action === 'VERIFY' ||
+    action === 'OPERATE'
+  ) {
+    messageElement.textContent =
+      `Operator ${result.installedVersion || ''} is installed, current, and running.`;
+  } else {
+    messageElement.textContent =
+      'Operator installation status loaded.';
+  }
+}
+
 
 async function refreshNexusOperatorDashboard() {
   const linkedAddress =
     getLinkedNexusAddress();
 
   if (!linkedAddress) {
-    updateNexusNodeCenterState({
-      linked: false
+    renderNexusNodeCenterSnapshot({
+      linkedAddress: null,
+      dashboardResult: {},
+      installationResult: {}
     });
 
     setNexusNodeDashboardText(
@@ -3755,8 +3568,10 @@ async function refreshNexusOperatorDashboard() {
       false
     );
 
-    updateNexusNodeCenterState({
-      linked: false
+    renderNexusNodeCenterSnapshot({
+      linkedAddress: null,
+      dashboardResult: {},
+      installationResult: {}
     });
 
     return;
@@ -3772,11 +3587,17 @@ async function refreshNexusOperatorDashboard() {
   });
 
   try {
-    const result =
-      await window.crylo
+    const [
+      result,
+      installation
+    ] = await Promise.all([
+      window.crylo
         .nexusOperatorDashboard(
           linkedAddress
-        );
+        ),
+      window.crylo
+        .nexusOperatorInstallationStatus()
+    ]);
 
     if (!result || result.ok === false) {
       console.error(
@@ -3784,14 +3605,24 @@ async function refreshNexusOperatorDashboard() {
         result?.error || 'Unknown dashboard error'
       );
 
-      setNexusNodeSmartStatus({
-        type: 'danger',
-        eyebrow: 'Connection error',
-        title: 'Node Center status unavailable',
-        message:
-          'The wallet could not securely load the current node status. Check the Nexus connection and operator service, then refresh.',
-        currentStep: 'Refresh Node Center'
-      });
+      const errorState =
+        renderNexusNodeCenterSnapshot({
+          linkedAddress,
+          dashboardResult: {
+            registration: {
+              available: false,
+              error:
+                result?.error ||
+                'The current node status could not be loaded.'
+            }
+          },
+          installationResult: {}
+        });
+
+      renderNexusInstallationDetails(
+        {},
+        errorState
+      );
 
       return;
     }
@@ -3970,15 +3801,6 @@ async function refreshNexusOperatorDashboard() {
           : 'Not Installed'
     );
 
-    refreshNexusOperatorInstallationControls(
-      service
-    ).catch(error => {
-      console.error(
-        'Unable to refresh operator installation controls:',
-        error
-      );
-    });
-
     setNexusNodeDashboardText(
       'nexus-operator-service-scope',
       service.serviceScope || '—'
@@ -4114,17 +3936,18 @@ async function refreshNexusOperatorDashboard() {
       result.metrics
     );
 
-    updateNexusNodeCenterState({
-      linked: true,
-      registered,
-      tierValue,
-      serviceInstalled: service.installed === true,
-      serviceRunning: service.running === true,
-      configurationLoaded: configuration.loaded === true,
-      walletMatched: walletMatch === 'Matched',
-      verificationConnected:
-        verification.connected === true
-    });
+    const nodeCenterState =
+      renderNexusNodeCenterSnapshot({
+        linkedAddress,
+        dashboardResult: result,
+        installationResult:
+          installation
+      });
+
+    renderNexusInstallationDetails(
+      installation,
+      nodeCenterState
+    );
 
     if (registration.error) {
       console.error(
@@ -4147,14 +3970,24 @@ async function refreshNexusOperatorDashboard() {
       error
     );
 
-    setNexusNodeSmartStatus({
-      type: 'danger',
-      eyebrow: 'Connection error',
-      title: 'Node Center status unavailable',
-      message:
-        'The wallet could not securely load the current node status. Check the Nexus connection and try again.',
-      currentStep: 'Refresh Node Center'
-    });
+    const errorState =
+      renderNexusNodeCenterSnapshot({
+        linkedAddress,
+        dashboardResult: {
+          registration: {
+            available: false,
+            error:
+              error?.message ||
+              'The current node status could not be loaded.'
+          }
+        },
+        installationResult: {}
+      });
+
+    renderNexusInstallationDetails(
+      {},
+      errorState
+    );
   }
 }
 
@@ -4166,181 +3999,11 @@ async function refreshNexusNodeStatus() {
 
 let nexusOperatorServiceActionRunning = false;
 
-function setNexusOperatorButtonState(
-  elementId,
-  {
-    hidden = false,
-    disabled = false,
-    text = null
-  } = {}
-) {
-  const element =
-    document.getElementById(elementId);
-
-  if (!element) return;
-
-  element.style.display =
-    hidden ? 'none' : '';
-
-  element.disabled = disabled;
-
-  if (text != null) {
-    element.textContent = text;
-  }
+async function refreshNexusOperatorInstallationControls() {
+  rerenderCurrentNexusNodeCenter();
+  return currentNexusNodeCenterState;
 }
 
-async function refreshNexusOperatorInstallationControls(
-  serviceOverride = null
-) {
-  const messageElement =
-    document.getElementById(
-      'nexus-operator-install-action-message'
-    );
-
-  let installation;
-
-  try {
-    installation =
-      await window.crylo
-        .nexusOperatorInstallationStatus();
-  } catch (error) {
-    installation = {
-      ok: false,
-      error:
-        error?.message ||
-        'Unable to inspect the operator installation.'
-    };
-  }
-
-  const bundledVersion =
-    installation?.bundledVersion ||
-    '—';
-
-  const installedVersion =
-    installation?.installedVersion ||
-    '—';
-
-  setNexusNodeDashboardText(
-    'nexus-operator-bundled-version',
-    bundledVersion
-  );
-
-  setNexusNodeDashboardText(
-    'nexus-operator-installed-version',
-    installedVersion
-  );
-
-  const service =
-    serviceOverride || {};
-
-  const installed =
-    installation?.healthy === true;
-
-  const repairRequired =
-    installation?.repairRequired === true;
-
-  const running =
-    installed &&
-    service.running === true;
-
-  const updateAvailable =
-    installed &&
-    installation?.updateAvailable === true;
-
-  setNexusOperatorButtonState(
-    'nexus-install-operator-btn',
-    {
-      hidden: installed,
-      disabled:
-        nexusOperatorServiceActionRunning,
-      text:
-        repairRequired
-          ? 'Repair Installation'
-          : 'Install Operator'
-    }
-  );
-
-  setNexusOperatorButtonState(
-    'nexus-update-operator-btn',
-    {
-      hidden:
-        !installed ||
-        !updateAvailable,
-      disabled:
-        nexusOperatorServiceActionRunning,
-      text: 'Update Operator'
-    }
-  );
-
-  setNexusOperatorButtonState(
-    'nexus-operator-up-to-date-btn',
-    {
-      hidden:
-        !installed ||
-        updateAvailable,
-      disabled: true,
-      text: 'Operator Up to Date'
-    }
-  );
-
-  setNexusOperatorButtonState(
-    'nexus-start-operator-btn',
-    {
-      hidden:
-        !installed ||
-        running,
-      disabled:
-        nexusOperatorServiceActionRunning
-    }
-  );
-
-  setNexusOperatorButtonState(
-    'nexus-restart-operator-btn',
-    {
-      hidden:
-        !installed ||
-        !running,
-      disabled:
-        nexusOperatorServiceActionRunning
-    }
-  );
-
-  setNexusOperatorButtonState(
-    'nexus-stop-operator-btn',
-    {
-      hidden:
-        !installed ||
-        !running,
-      disabled:
-        nexusOperatorServiceActionRunning
-    }
-  );
-
-  if (messageElement) {
-    if (!installation?.ok) {
-      messageElement.textContent =
-        installation?.error ||
-        'Unable to inspect the operator installation.';
-    } else if (repairRequired) {
-      messageElement.textContent =
-        'The operator configuration is preserved, but required runtime files are missing or incomplete. Repair the installation to continue.';
-    } else if (!installed) {
-      messageElement.textContent =
-        'Install the operator once. It will continue running when Electron is closed.';
-    } else if (updateAvailable) {
-      messageElement.textContent =
-        `Operator ${installedVersion} is installed. Version ${bundledVersion} is ready to update.`;
-    } else if (running) {
-      messageElement.textContent =
-        `Operator ${installedVersion} is installed, current, and running.`;
-    } else {
-      messageElement.textContent =
-        `Operator ${installedVersion} is installed but currently stopped.`;
-    }
-  }
-
-  return installation;
-}
 
 async function installOrUpdateNexusOperator() {
   if (nexusOperatorServiceActionRunning) {
@@ -4354,11 +4017,11 @@ async function installOrUpdateNexusOperator() {
 
   nexusOperatorServiceActionRunning = true;
 
-  await refreshNexusOperatorInstallationControls();
+  rerenderCurrentNexusNodeCenter();
 
   if (messageElement) {
     messageElement.textContent =
-      'Installing and starting the CryLoNexus operator service...';
+      'Installing the CryLoNexus operator runtime...';
   }
 
   try {
@@ -4400,7 +4063,7 @@ async function installOrUpdateNexusOperator() {
   } finally {
     nexusOperatorServiceActionRunning = false;
 
-    await refreshNexusOperatorInstallationControls();
+    rerenderCurrentNexusNodeCenter();
   }
 }
 
@@ -4427,7 +4090,7 @@ async function controlNexusOperatorService(action) {
 
   nexusOperatorServiceActionRunning = true;
 
-  await refreshNexusOperatorInstallationControls();
+  rerenderCurrentNexusNodeCenter();
 
   if (messageElement) {
     messageElement.textContent =
@@ -4468,7 +4131,7 @@ async function controlNexusOperatorService(action) {
   } finally {
     nexusOperatorServiceActionRunning = false;
 
-    await refreshNexusOperatorInstallationControls();
+    rerenderCurrentNexusNodeCenter();
   }
 }
 
