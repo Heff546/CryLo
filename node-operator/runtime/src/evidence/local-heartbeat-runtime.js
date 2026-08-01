@@ -23,6 +23,10 @@ const {
   loadSigningKey
 } = require('./signing-key-loader');
 
+const {
+  loadAuthorization
+} = require('./authorization-loader');
+
 function requirePlainObject(
   value,
   name
@@ -134,6 +138,14 @@ async function createLocalHeartbeatRuntime(
           )
     );
 
+  const loadAuthorizationFile =
+    options.loadAuthorization === undefined
+      ? loadAuthorization
+      : requireFunction(
+          options.loadAuthorization,
+          'Local heartbeat authorization loader'
+        );
+
   const loadKey =
     options.loadSigningKey === undefined
       ? loadSigningKey
@@ -178,11 +190,32 @@ async function createLocalHeartbeatRuntime(
           'Local heartbeat writer factory'
         );
 
+  const authorization =
+    await loadAuthorizationFile({
+      authorizationPath:
+        options.authorizationPath,
+      expectedOperatorAddress:
+        operatorAddress,
+      expectedNodeId:
+        nodeId
+    });
+
+  requirePlainObject(
+    authorization,
+    'Loaded operator authorization'
+  );
+
+  const sessionAddress =
+    requireNonEmptyString(
+      authorization.sessionAddress,
+      'Authorized session address'
+    );
+
   const signingKey =
     await loadKey({
       keyPath: options.keyPath,
-      expectedOperatorAddress:
-        operatorAddress
+      expectedSignerAddress:
+        sessionAddress
     });
 
   requirePlainObject(
@@ -208,6 +241,13 @@ async function createLocalHeartbeatRuntime(
   const pipeline =
     makePipeline({
       operatorAddress,
+      sessionAddress,
+      authorizationExpiresAt:
+        authorization.expiresAt,
+      delegation:
+        authorization.delegation,
+      delegationSignature:
+        authorization.delegationSignature,
       nodeId,
       privateKey,
       sequenceManager,

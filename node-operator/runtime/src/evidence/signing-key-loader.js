@@ -105,9 +105,11 @@ async function loadSigningKey(options) {
     );
   }
 
-  const expectedOperatorAddress =
+  const expectedSignerAddress =
     normalizeExpectedAddress(
-      options.expectedOperatorAddress
+      options.expectedSignerAddress === undefined
+        ? options.expectedOperatorAddress
+        : options.expectedSignerAddress
     );
 
   const configuredPath =
@@ -180,11 +182,11 @@ async function loadSigningKey(options) {
 
   if (
     wallet.address !==
-    expectedOperatorAddress
+    expectedSignerAddress
   ) {
     throw new Error(
       `Operator signing key address mismatch: expected ` +
-      `${expectedOperatorAddress}, derived ${wallet.address}`
+      `${expectedSignerAddress}, derived ${wallet.address}`
     );
   }
 

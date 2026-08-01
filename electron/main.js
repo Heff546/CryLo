@@ -1977,6 +1977,10 @@ function getOperatorPaths() {
       operatorDir,
       'authorization.json'
     ),
+    signingKey: path.join(
+      operatorDir,
+      'signing-key'
+    ),
     statusCandidates: [
       path.join(operatorDir, 'status.json'),
       path.join(operatorDir, 'operator-status.json'),
@@ -2090,6 +2094,10 @@ function getOperatorInstallPaths() {
     authorizationPath: path.join(
       operatorDirectory,
       'authorization.json'
+    ),
+    signingKeyPath: path.join(
+      operatorDirectory,
+      'signing-key'
     ),
     statusPath: path.join(
       operatorDirectory,
@@ -2748,7 +2756,6 @@ async function installBundledOperatorRuntime() {
       [
         '--user',
         'enable',
-        '--now',
         'crylo-nexus-operator.service'
       ]
     );
@@ -2775,20 +2782,6 @@ async function installBundledOperatorRuntime() {
   if (!lingerResult.ok) {
     warnings.push(
       'The service is running, but Linux lingering could not be enabled automatically. It may require administrator approval to start before login.'
-    );
-  }
-
-  await new Promise(resolve => {
-    setTimeout(resolve, 1500);
-  });
-
-  const service =
-    await readOperatorServiceStatus();
-
-  if (!service.running) {
-    throw new Error(
-      service.message ||
-      `The service was installed but did not become active (${service.activeState}/${service.subState}).`
     );
   }
 
@@ -3062,6 +3055,31 @@ function writePrivateJsonAtomic(filePath, value) {
   fs.chmodSync(filePath, 0o600);
 }
 
+function writePrivateTextAtomic(filePath, value) {
+  const directory = path.dirname(filePath);
+  const temporaryPath =
+    `${filePath}.${process.pid}.${Date.now()}.tmp`;
+
+  fs.mkdirSync(directory, {
+    recursive: true,
+    mode: 0o700
+  });
+
+  fs.writeFileSync(
+    temporaryPath,
+    `${String(value).trim()}\n`,
+    {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'w'
+    }
+  );
+
+  fs.chmodSync(temporaryPath, 0o600);
+  fs.renameSync(temporaryPath, filePath);
+  fs.chmodSync(filePath, 0o600);
+}
+
 function readOperatorAuthorization(filePath, expectedAddress) {
   const result = readJsonFileSafe(filePath);
 
@@ -3126,8 +3144,10 @@ function readOperatorAuthorization(filePath, expectedAddress) {
     ethers.isAddress(
       authorization.delegation?.sessionAddress
     ) &&
-    typeof authorization.sessionPrivateKey ===
-      'string' &&
+    !Object.prototype.hasOwnProperty.call(
+      authorization,
+      'sessionPrivateKey'
+    ) &&
     typeof authorization.delegationSignature ===
       'string';
 
@@ -3353,19 +3373,6 @@ ipcMain.handle(
         );
       }
 
-      const serviceRunning =
-        service.active === true ||
-        service.running === true ||
-        service.status === 'active' ||
-        service.state === 'active' ||
-        service.activeState === 'active';
-
-      if (!serviceRunning) {
-        throw new Error(
-          'Start the CryLoNexus operator service before authorizing this node'
-        );
-      }
-
       const runtime =
         await getNexusRuntimeConfig();
 
@@ -3528,16 +3535,70 @@ ipcMain.handle(
         version: 1,
         delegation,
         delegationSignature,
-        sessionPrivateKey:
-          sessionWallet.privateKey,
         createdBy: 'CryLo Electron',
         createdAt: issuedAt
       };
 
-      writePrivateJsonAtomic(
-        paths.authorization,
-        authorization
+      /*
+       * Write the session private key separately from the public
+       * authorization document. The bound Nexus wallet key remains
+       * inside Electron and is never written to the operator service.
+       */
+      writePrivateTextAtomic(
+        paths.signingKey,
+        sessionWallet.privateKey
       );
+
+      try {
+        writePrivateJsonAtomic(
+          paths.authorization,
+          authorization
+        );
+      } catch (writeError) {
+        try {
+          fs.rmSync(
+            paths.signingKey,
+            {
+              force: true
+            }
+          );
+        } catch (_) {}
+
+        throw writeError;
+      }
+
+      const restartResult =
+        await runLocalCommand(
+          'systemctl',
+          [
+            '--user',
+            'restart',
+            'crylo-nexus-operator.service'
+          ],
+          15000
+        );
+
+      if (!restartResult.ok) {
+        throw new Error(
+          restartResult.stderr ||
+          'The authorized operator service could not be started'
+        );
+      }
+
+      await new Promise(resolve => {
+        setTimeout(resolve, 1500);
+      });
+
+      const authorizedService =
+        await readOperatorServiceStatus();
+
+      if (!authorizedService.running) {
+        throw new Error(
+          authorizedService.message ||
+          `The authorized service did not become active ` +
+          `(${authorizedService.activeState}/${authorizedService.subState})`
+        );
+      }
 
       return {
         ok: true,

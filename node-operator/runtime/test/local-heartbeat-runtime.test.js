@@ -20,8 +20,39 @@ const OPERATOR_ADDRESS =
 const PRIVATE_KEY =
   `0x${'11'.repeat(32)}`;
 
+const SESSION_ADDRESS =
+  '0x2222222222222222222222222222222222222222';
+
+const TEST_AUTHORIZATION =
+  Object.freeze({
+    sessionAddress:
+      SESSION_ADDRESS,
+    expiresAt:
+      '2099-01-01T00:00:00.000Z',
+    delegation:
+      Object.freeze({
+        version: 1,
+        purpose:
+          'operator-heartbeat',
+        chainId: 5546,
+        operatorAddress:
+          OPERATOR_ADDRESS,
+        nodeId:
+          'operator-node-001',
+        sessionAddress:
+          SESSION_ADDRESS,
+        issuedAt:
+          '2026-07-31T00:00:00.000Z',
+        expiresAt:
+          '2099-01-01T00:00:00.000Z'
+      }),
+    delegationSignature:
+      'unit-test-delegation'
+  });
+
 function dependencies(overrides = {}) {
   const calls = {
+    authorization: null,
     key: null,
     sequence: null,
     pipeline: null,
@@ -35,6 +66,12 @@ function dependencies(overrides = {}) {
   });
 
   const deps = {
+    async loadAuthorization(options) {
+      calls.authorization = options;
+
+      return TEST_AUTHORIZATION;
+    },
+
     async loadSigningKey(options) {
       calls.key = options;
 
@@ -118,12 +155,24 @@ test(
       });
 
     assert.deepEqual(
+      calls.authorization,
+      {
+        authorizationPath:
+          undefined,
+        expectedOperatorAddress:
+          OPERATOR_ADDRESS,
+        expectedNodeId:
+          'operator-node-001'
+      }
+    );
+
+    assert.deepEqual(
       calls.key,
       {
         keyPath:
           '/secure/signing-key',
-        expectedOperatorAddress:
-          OPERATOR_ADDRESS
+        expectedSignerAddress:
+          SESSION_ADDRESS
       }
     );
 
@@ -407,6 +456,7 @@ test(
     };
 
     for (const field of [
+      'loadAuthorization',
       'loadSigningKey',
       'createSequenceManager',
       'createNonceProvider',

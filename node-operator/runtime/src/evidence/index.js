@@ -107,3 +107,12 @@ module.exports = Object.freeze({
   ...module.exports,
   ...localHeartbeatRuntime
 });
+
+
+const authorizationLoader =
+  require('./authorization-loader');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...authorizationLoader
+});
