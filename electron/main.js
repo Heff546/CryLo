@@ -2173,24 +2173,48 @@ async function inspectOperatorInstallationHealth() {
     'main.js'
   );
 
+  const requiredAbiPaths = [
+    'CryLoNodeStaking.json',
+    'RewardManager.json',
+    'RewardVault.json',
+    'CryLoStaking.json'
+  ].map(filename =>
+    path.join(
+      paths.currentRuntimePath,
+      'abis',
+      filename
+    )
+  );
+
   const [
     configured,
     runtimePresent,
     runtimePackagePresent,
     runtimeEntryPresent,
-    serviceFilePresent
+    serviceFilePresent,
+    requiredAbiPresence
   ] = await Promise.all([
     pathExists(paths.configPath),
     pathExists(paths.currentRuntimePath),
     pathExists(runtimePackagePath),
     pathExists(runtimeEntryPath),
-    pathExists(paths.servicePath)
+    pathExists(paths.servicePath),
+    Promise.all(
+      requiredAbiPaths.map(
+        abiPath =>
+          pathExists(abiPath)
+      )
+    )
   ]);
+
+  const runtimeAbisPresent =
+    requiredAbiPresence.every(Boolean);
 
   const runtimeValid =
     runtimePresent &&
     runtimePackagePresent &&
-    runtimeEntryPresent;
+    runtimeEntryPresent &&
+    runtimeAbisPresent;
 
   const healthy =
     configured &&
@@ -2202,6 +2226,7 @@ async function inspectOperatorInstallationHealth() {
     runtimePresent,
     runtimePackagePresent,
     runtimeEntryPresent,
+    runtimeAbisPresent,
     runtimeValid,
     serviceFilePresent,
     healthy,
@@ -2670,11 +2695,53 @@ async function installBundledOperatorRuntime() {
       'operator-status.schema.json'
     );
 
+  const requiredAbiPaths = [
+    'CryLoNodeStaking.json',
+    'RewardManager.json',
+    'RewardVault.json',
+    'CryLoStaking.json'
+  ].map(filename =>
+    path.join(
+      destinationDirectory,
+      'abis',
+      filename
+    )
+  );
+
+  const requiredAbiResults =
+    await Promise.all(
+      requiredAbiPaths.map(
+        async abiPath => {
+          if (!(await pathExists(abiPath))) {
+            return false;
+          }
+
+          try {
+            const artifact =
+              await readJsonFileStrict(
+                abiPath
+              );
+
+            return (
+              Array.isArray(artifact) ||
+              Array.isArray(artifact?.abi)
+            );
+          } catch {
+            return false;
+          }
+        }
+      )
+    );
+
+  const requiredAbisValid =
+    requiredAbiResults.every(Boolean);
+
   if (
     !(await pathExists(installedMainPath)) ||
     !(await pathExists(installedPackagePath)) ||
     !(await pathExists(installedConfigSchemaPath)) ||
-    !(await pathExists(installedStatusSchemaPath))
+    !(await pathExists(installedStatusSchemaPath)) ||
+    !requiredAbisValid
   ) {
     await fs.promises.rm(
       destinationDirectory,
