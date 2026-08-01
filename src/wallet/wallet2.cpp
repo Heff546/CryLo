@@ -7129,7 +7129,9 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
       {
         effective_unlock = 0;
       }
-if (effective_unlock < CRYPTONOTE_MAX_BLOCK_NUMBER && effective_unlock > unlock_height)
+    }
+
+        if (effective_unlock < CRYPTONOTE_MAX_BLOCK_NUMBER && effective_unlock > unlock_height)
           unlock_height = effective_unlock;
         uint64_t unlock_time = effective_unlock >= CRYPTONOTE_MAX_BLOCK_NUMBER ? effective_unlock : 0;
         blocks_to_unlock = unlock_height > blockchain_height ? unlock_height - blockchain_height : 0;
