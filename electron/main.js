@@ -2829,6 +2829,9 @@ async function installBundledOperatorRuntime() {
     manifestPath
   );
 
+  const service =
+    await readOperatorServiceStatus();
+
   return {
     ok: true,
     installed: true,

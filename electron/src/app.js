@@ -4381,8 +4381,8 @@ async function installOrUpdateNexusOperator() {
     if (messageElement) {
       messageElement.textContent =
         warnings.length
-          ? `Operator ${result.runtimeVersion || ''} installed and running. ${warnings.join(' ')}`
-          : `Operator ${result.runtimeVersion || ''} installed and running.`;
+          ? `Operator ${result.runtimeVersion || ''} installed. Authorize the node to start the service. ${warnings.join(' ')}`
+          : `Operator ${result.runtimeVersion || ''} installed. Authorize the node to start the service.`;
     }
 
     await refreshNexusOperatorDashboard();
