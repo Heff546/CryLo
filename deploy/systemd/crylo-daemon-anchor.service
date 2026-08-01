@@ -1,0 +1,41 @@
+[Unit]
+Description=CryLo Public L1 Canonical Anchor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=heff546
+WorkingDirectory=/home/heff546/CryLo
+
+Environment=TERM=dumb
+
+ExecStart=/home/heff546/CryLo/build/bin/CryLo-daemon \
+  --testnet \
+  --non-interactive \
+  --data-dir /opt/crylo/l1 \
+  --p2p-bind-ip 0.0.0.0 \
+  --p2p-bind-port 22640 \
+  --rpc-bind-ip 0.0.0.0 \
+  --rpc-bind-port 22641 \
+  --zmq-rpc-bind-port 22642 \
+  --confirm-external-bind \
+  --out-peers 0 \
+  --in-peers 128 \
+  --max-connections-per-ip 16
+
+StandardInput=null
+StandardOutput=journal
+StandardError=journal
+
+Restart=always
+RestartSec=10
+TimeoutStopSec=60
+KillSignal=SIGINT
+
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
