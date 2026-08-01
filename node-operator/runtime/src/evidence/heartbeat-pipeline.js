@@ -86,6 +86,24 @@ function createHeartbeatPipeline(options) {
       'Heartbeat operatorAddress'
     );
 
+  const sessionAddress =
+    requireNonEmptyString(
+      options.sessionAddress,
+      'Heartbeat sessionAddress'
+    );
+
+  const delegationHash =
+    requireNonEmptyString(
+      options.delegationHash,
+      'Heartbeat delegationHash'
+    );
+
+  const authorizationExpiresAt =
+    requireNonEmptyString(
+      options.authorizationExpiresAt,
+      'Heartbeat authorizationExpiresAt'
+    );
+
   const nodeId =
     requireNonEmptyString(
       options.nodeId,
@@ -178,8 +196,12 @@ function createHeartbeatPipeline(options) {
 
     return buildSignedHeartbeat({
       privateKey,
+      protocolVersion: '2.0.0',
       chainId: statusEvidence.chainId,
       operatorAddress,
+      sessionAddress,
+      delegationHash,
+      authorizationExpiresAt,
       nodeId,
       sequence,
       issuedAt,

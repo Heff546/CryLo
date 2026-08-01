@@ -10,10 +10,16 @@ const {
 
 function heartbeat() {
   return buildUnsignedHeartbeat({
-    protocolVersion: '1.0.0',
+    protocolVersion: '2.0.0',
     chainId: 5546,
     operatorAddress:
       '0x1111111111111111111111111111111111111111',
+    sessionAddress:
+      '0x2222222222222222222222222222222222222222',
+    delegationHash:
+      '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    authorizationExpiresAt:
+      '2099-01-01T00:00:00.000Z',
     nodeId: 'operator-node-001',
     sequence: 1,
     issuedAt: '2026-07-26T20:00:00.000Z',

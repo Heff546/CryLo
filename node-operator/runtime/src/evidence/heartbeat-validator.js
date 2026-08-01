@@ -9,13 +9,16 @@ const {
   isCanonicalHash
 } = require('./hashing');
 
-const SUPPORTED_PROTOCOL_VERSION = '1.0.0';
+const SUPPORTED_PROTOCOL_VERSION = '2.0.0';
 const CRYLONEXUS_CHAIN_ID = 5546;
 
 const REQUIRED_FIELDS = Object.freeze([
   'protocolVersion',
   'chainId',
   'operatorAddress',
+  'sessionAddress',
+  'delegationHash',
+  'authorizationExpiresAt',
   'nodeId',
   'sequence',
   'issuedAt',
@@ -106,6 +109,12 @@ function unsignedPayloadFromHeartbeat(
     chainId: heartbeat.chainId,
     operatorAddress:
       heartbeat.operatorAddress,
+    sessionAddress:
+      heartbeat.sessionAddress,
+    delegationHash:
+      heartbeat.delegationHash,
+    authorizationExpiresAt:
+      heartbeat.authorizationExpiresAt,
     nodeId: heartbeat.nodeId,
     sequence: heartbeat.sequence,
     issuedAt: heartbeat.issuedAt,
@@ -185,6 +194,32 @@ function validateUnsignedHeartbeat(
   }
 
   if (
+    typeof heartbeat.sessionAddress !==
+      'string' ||
+    !isAddress(heartbeat.sessionAddress)
+  ) {
+    throw new TypeError(
+      'sessionAddress must be a valid EVM address'
+    );
+  }
+
+  if (
+    !isCanonicalHash(
+      heartbeat.delegationHash
+    )
+  ) {
+    throw new TypeError(
+      'delegationHash must be a canonical hash'
+    );
+  }
+
+  const authorizationExpiresAt =
+    requireCanonicalTimestamp(
+      heartbeat.authorizationExpiresAt,
+      'authorizationExpiresAt'
+    );
+
+  if (
     typeof heartbeat.nodeId !==
       'string' ||
     heartbeat.nodeId.length === 0
@@ -218,6 +253,18 @@ function validateUnsignedHeartbeat(
   if (expiresAt <= issuedAt) {
     throw new TypeError(
       'expiresAt must be later than issuedAt'
+    );
+  }
+
+  if (authorizationExpiresAt <= issuedAt) {
+    throw new TypeError(
+      'authorizationExpiresAt must be later than issuedAt'
+    );
+  }
+
+  if (expiresAt > authorizationExpiresAt) {
+    throw new TypeError(
+      'Heartbeat expiration must not exceed authorization expiration'
     );
   }
 

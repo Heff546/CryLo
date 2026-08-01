@@ -11,10 +11,16 @@ const {
 
 function validOptions() {
   return {
-    protocolVersion: '1.0.0',
+    protocolVersion: '2.0.0',
     chainId: 5546,
     operatorAddress:
       '0x1111111111111111111111111111111111111111',
+    sessionAddress:
+      '0x2222222222222222222222222222222222222222',
+    delegationHash:
+      '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    authorizationExpiresAt:
+      '2099-01-01T00:00:00.000Z',
     nodeId: 'operator-node-001',
     sequence: 42,
     issuedAt: '2026-07-26T20:00:00.000Z',
@@ -38,6 +44,10 @@ test('builds a deterministic unsigned heartbeat', () => {
     protocolVersion: options.protocolVersion,
     chainId: options.chainId,
     operatorAddress: options.operatorAddress,
+    sessionAddress: options.sessionAddress,
+    delegationHash: options.delegationHash,
+    authorizationExpiresAt:
+      options.authorizationExpiresAt,
     nodeId: options.nodeId,
     sequence: options.sequence,
     issuedAt: options.issuedAt,
@@ -56,7 +66,7 @@ test('builds a deterministic unsigned heartbeat', () => {
   );
 });
 
-test('defaults protocolVersion to 1.0.0', () => {
+test('defaults protocolVersion to 2.0.0', () => {
   const options = validOptions();
   delete options.protocolVersion;
 
@@ -64,7 +74,7 @@ test('defaults protocolVersion to 1.0.0', () => {
 
   assert.equal(
     heartbeat.protocolVersion,
-    '1.0.0'
+    '2.0.0'
   );
 });
 
@@ -177,6 +187,9 @@ test('rejects missing string fields', () => {
   const fields = [
     'protocolVersion',
     'operatorAddress',
+    'sessionAddress',
+    'delegationHash',
+    'authorizationExpiresAt',
     'nodeId',
     'issuedAt',
     'expiresAt',

@@ -17,6 +17,15 @@ const {
   verifyHeartbeatSignature
 } = require('../src/evidence/detached-signing');
 
+const TEST_OPERATOR_ADDRESS =
+  '0x1111111111111111111111111111111111111111';
+
+const TEST_DELEGATION_HASH =
+  `0x${'b'.repeat(64)}`;
+
+const TEST_AUTHORIZATION_EXPIRES_AT =
+  '2099-01-01T00:00:00.000Z';
+
 function validStatus() {
   return {
     schemaVersion: '1.0.0',
@@ -92,7 +101,14 @@ function createFixture(overrides = {}) {
     Wallet.createRandom();
 
   const options = {
-    operatorAddress: wallet.address,
+    operatorAddress:
+      '0x1111111111111111111111111111111111111111',
+    sessionAddress:
+      wallet.address,
+    delegationHash:
+      '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    authorizationExpiresAt:
+      '2099-01-01T00:00:00.000Z',
     nodeId: 'operator-node-001',
     privateKey: wallet.privateKey,
     sequenceManager:
@@ -132,7 +148,7 @@ test(
     );
 
     assert.equal(
-      heartbeat.operatorAddress,
+      heartbeat.sessionAddress,
       wallet.address
     );
 
@@ -287,7 +303,13 @@ test(
     const pipeline =
       createHeartbeatPipeline({
         operatorAddress:
+          '0x1111111111111111111111111111111111111111',
+        sessionAddress:
           wallet.address,
+        delegationHash:
+          '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        authorizationExpiresAt:
+          '2099-01-01T00:00:00.000Z',
         nodeId: 'operator-node-001',
         privateKey:
           wallet.privateKey,
@@ -448,7 +470,7 @@ test(
     const {
       pipeline
     } = createFixture({
-      operatorAddress:
+      sessionAddress:
         wrongWallet.address,
       sequenceManager: {
         allocateNextSequence() {
@@ -517,7 +539,13 @@ test(
       () =>
         createHeartbeatPipeline({
           operatorAddress:
+            TEST_OPERATOR_ADDRESS,
+          sessionAddress:
             wallet.address,
+          delegationHash:
+            TEST_DELEGATION_HASH,
+          authorizationExpiresAt:
+            TEST_AUTHORIZATION_EXPIRES_AT,
           nodeId: 'node',
           privateKey:
             wallet.privateKey,
@@ -532,7 +560,13 @@ test(
       () =>
         createHeartbeatPipeline({
           operatorAddress:
+            TEST_OPERATOR_ADDRESS,
+          sessionAddress:
             wallet.address,
+          delegationHash:
+            TEST_DELEGATION_HASH,
+          authorizationExpiresAt:
+            TEST_AUTHORIZATION_EXPIRES_AT,
           nodeId: 'node',
           privateKey:
             wallet.privateKey,
@@ -575,7 +609,13 @@ test(
         () =>
           createHeartbeatPipeline({
             operatorAddress:
+              TEST_OPERATOR_ADDRESS,
+            sessionAddress:
               wallet.address,
+            delegationHash:
+              TEST_DELEGATION_HASH,
+            authorizationExpiresAt:
+              TEST_AUTHORIZATION_EXPIRES_AT,
             nodeId: 'node',
             privateKey:
               wallet.privateKey,

@@ -37,13 +37,16 @@ function buildUnsignedHeartbeat(options) {
   const {
     chainId,
     operatorAddress,
+    sessionAddress,
+    delegationHash,
+    authorizationExpiresAt,
     nodeId,
     sequence,
     issuedAt,
     expiresAt,
     nonce,
     status,
-    protocolVersion = '1.0.0'
+    protocolVersion = '2.0.0'
   } = options;
 
   if (
@@ -75,6 +78,21 @@ function buildUnsignedHeartbeat(options) {
   );
 
   requireString(
+    sessionAddress,
+    'sessionAddress'
+  );
+
+  requireString(
+    delegationHash,
+    'delegationHash'
+  );
+
+  requireString(
+    authorizationExpiresAt,
+    'authorizationExpiresAt'
+  );
+
+  requireString(
     nodeId,
     'nodeId'
   );
@@ -103,6 +121,9 @@ function buildUnsignedHeartbeat(options) {
     protocolVersion,
     chainId,
     operatorAddress,
+    sessionAddress,
+    delegationHash,
+    authorizationExpiresAt,
     nodeId,
     sequence,
     issuedAt,

@@ -20,9 +20,15 @@ const OPERATOR_ADDRESS =
 function validOptions() {
   return {
     privateKey: PRIVATE_KEY,
-    protocolVersion: '1.0.0',
+    protocolVersion: '2.0.0',
     chainId: 5546,
-    operatorAddress: OPERATOR_ADDRESS,
+    operatorAddress:
+      '0x1111111111111111111111111111111111111111',
+    sessionAddress: OPERATOR_ADDRESS,
+    delegationHash:
+      '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    authorizationExpiresAt:
+      '2099-01-01T00:00:00.000Z',
     nodeId: 'operator-node-001',
     sequence: 42,
     issuedAt: '2026-07-26T20:00:00.000Z',
@@ -74,7 +80,7 @@ test(
         signature:
           heartbeat.signature,
         expectedOperatorAddress:
-          heartbeat.operatorAddress
+          heartbeat.sessionAddress
       }).valid,
       true
     );
@@ -82,7 +88,7 @@ test(
 );
 
 test(
-  'recovers the heartbeat operator',
+  'recovers the heartbeat session signer',
   () => {
     const heartbeat =
       buildSignedHeartbeat(validOptions());
@@ -155,13 +161,13 @@ test(
 );
 
 test(
-  'rejects a private key that does not control the operator address',
+  'rejects a private key that does not control the session address',
   () => {
     assert.throws(
       () =>
         buildSignedHeartbeat({
           ...validOptions(),
-          operatorAddress:
+          sessionAddress:
             '0x1111111111111111111111111111111111111111'
         }),
       /signer mismatch/

@@ -1,7 +1,7 @@
 {
   "protocol": "CEP-2",
-  "protocolVersion": "1.0.0",
-  "description": "Canonical Keccak-256 commitment to an unsigned heartbeat payload.",
+  "protocolVersion": "2.0.0",
+  "description": "Canonical Keccak-256 commitment to a delegated unsigned heartbeat payload.",
   "statusInput": {
     "chainId": 5546,
     "connected": true,
@@ -15,21 +15,27 @@
     "wCryLoDecimals": 11
   },
   "heartbeat": {
-    "protocolVersion": "1.0.0",
+    "protocolVersion": "2.0.0",
     "chainId": 5546,
     "operatorAddress": "0x1111111111111111111111111111111111111111",
+    "sessionAddress": "0x2222222222222222222222222222222222222222",
+    "delegationHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "authorizationExpiresAt": "2099-01-01T00:00:00.000Z",
     "nodeId": "operator-node-001",
     "sequence": 42,
     "issuedAt": "2026-07-26T20:00:00.000Z",
     "expiresAt": "2026-07-26T20:02:00.000Z",
     "nonce": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "statusHash": "0xbd3973d745b256a63391b991fcac14191841ffd2ad7780d2bf20b4188d9676b0",
-    "payloadHash": "0x5fd69e56da48faecf228975dbaa38322143dc86e74a97caa06173929aec08c6b"
+    "payloadHash": "0x99ba8b9d770446ea08803cad81eb7b956fdcd4c93777fcaa46194c8eea2fe853"
   },
   "expectedUnsignedPayload": {
-    "protocolVersion": "1.0.0",
+    "protocolVersion": "2.0.0",
     "chainId": 5546,
     "operatorAddress": "0x1111111111111111111111111111111111111111",
+    "sessionAddress": "0x2222222222222222222222222222222222222222",
+    "delegationHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "authorizationExpiresAt": "2099-01-01T00:00:00.000Z",
     "nodeId": "operator-node-001",
     "sequence": 42,
     "issuedAt": "2026-07-26T20:00:00.000Z",
@@ -37,6 +43,6 @@
     "nonce": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "statusHash": "0xbd3973d745b256a63391b991fcac14191841ffd2ad7780d2bf20b4188d9676b0"
   },
-  "expectedCanonicalPayloadJson": "{\"chainId\":5546,\"expiresAt\":\"2026-07-26T20:02:00.000Z\",\"issuedAt\":\"2026-07-26T20:00:00.000Z\",\"nodeId\":\"operator-node-001\",\"nonce\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"operatorAddress\":\"0x1111111111111111111111111111111111111111\",\"protocolVersion\":\"1.0.0\",\"sequence\":42,\"statusHash\":\"0xbd3973d745b256a63391b991fcac14191841ffd2ad7780d2bf20b4188d9676b0\"}",
-  "expectedPayloadHash": "0x5fd69e56da48faecf228975dbaa38322143dc86e74a97caa06173929aec08c6b"
+  "expectedCanonicalPayloadJson": "{\"authorizationExpiresAt\":\"2099-01-01T00:00:00.000Z\",\"chainId\":5546,\"delegationHash\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expiresAt\":\"2026-07-26T20:02:00.000Z\",\"issuedAt\":\"2026-07-26T20:00:00.000Z\",\"nodeId\":\"operator-node-001\",\"nonce\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"operatorAddress\":\"0x1111111111111111111111111111111111111111\",\"protocolVersion\":\"2.0.0\",\"sequence\":42,\"sessionAddress\":\"0x2222222222222222222222222222222222222222\",\"statusHash\":\"0xbd3973d745b256a63391b991fcac14191841ffd2ad7780d2bf20b4188d9676b0\"}",
+  "expectedPayloadHash": "0x99ba8b9d770446ea08803cad81eb7b956fdcd4c93777fcaa46194c8eea2fe853"
 }

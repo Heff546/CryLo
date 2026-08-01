@@ -8,6 +8,10 @@ const {
 } = require('./heartbeat-pipeline');
 
 const {
+  canonicalHash
+} = require('./hashing');
+
+const {
   createLocalHeartbeatWriter
 } = require('./local-heartbeat-writer');
 
@@ -242,12 +246,12 @@ async function createLocalHeartbeatRuntime(
     makePipeline({
       operatorAddress,
       sessionAddress,
+      delegationHash:
+        canonicalHash(
+          authorization.delegation
+        ),
       authorizationExpiresAt:
         authorization.expiresAt,
-      delegation:
-        authorization.delegation,
-      delegationSignature:
-        authorization.delegationSignature,
       nodeId,
       privateKey,
       sequenceManager,

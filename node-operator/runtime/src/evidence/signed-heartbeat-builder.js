@@ -69,12 +69,12 @@ function buildSignedHeartbeat(options) {
     signature:
       signingResult.signature,
     expectedOperatorAddress:
-      unsignedHeartbeat.operatorAddress
+      unsignedHeartbeat.sessionAddress
   });
 
   return Object.freeze({
     ...unsignedHeartbeat,
-    operatorAddress:
+    sessionAddress:
       signingResult.operatorAddress,
     signature:
       signingResult.signature
