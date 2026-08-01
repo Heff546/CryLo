@@ -71,7 +71,8 @@
       "required": [
         "serviceName",
         "statusPath",
-        "dataDirectory"
+        "dataDirectory",
+        "logDirectory"
       ],
       "properties": {
         "serviceName": {
@@ -79,15 +80,18 @@
         },
         "statusPath": {
           "type": "string",
-          "const": "/var/lib/crylonexus-operator/status.json"
+          "minLength": 2,
+          "pattern": "^/"
         },
         "dataDirectory": {
           "type": "string",
-          "const": "/var/lib/crylonexus-operator"
+          "minLength": 2,
+          "pattern": "^/"
         },
         "logDirectory": {
           "type": "string",
-          "const": "/var/log/crylonexus-operator"
+          "minLength": 2,
+          "pattern": "^/"
         }
       }
     },

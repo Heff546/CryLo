@@ -13,9 +13,9 @@
   },
   "service": {
     "serviceName": "crylo-nexus-operator.service",
-    "statusPath": "/var/lib/crylonexus-operator/status.json",
-    "dataDirectory": "/var/lib/crylonexus-operator",
-    "logDirectory": "/var/log/crylonexus-operator"
+    "statusPath": "/home/example/.config/crylo-wallet/operator/status.json",
+    "dataDirectory": "/home/example/.config/crylo-wallet/operator/data",
+    "logDirectory": "/home/example/.config/crylo-wallet/operator/logs"
   },
   "nodeIdentity": {
     "publicId": "example-node-public-identity-0001",
