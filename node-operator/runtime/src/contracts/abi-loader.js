@@ -5,9 +5,8 @@ const path = require('node:path');
 
 const DEFAULT_ABI_DIRECTORY = path.resolve(
   __dirname,
-  '../../../..',
-  'electron',
-  'src',
+  '..',
+  '..',
   'abis'
 );
 

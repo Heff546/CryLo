@@ -149,7 +149,7 @@ test('read functions reject invalid wallet addresses', async () => {
   );
 });
 
-test('loads the production Electron contract ABIs', () => {
+test('loads the bundled production contract ABIs', () => {
   const {
     loadContractAbi
   } = require('../src/contracts/abi-loader');
@@ -168,7 +168,7 @@ test('loads the production Electron contract ABIs', () => {
   }
 });
 
-test('production ABIs expose required read-only methods', () => {
+test('bundled production ABIs expose required read-only methods', () => {
   const {
     loadContractAbi
   } = require('../src/contracts/abi-loader');
