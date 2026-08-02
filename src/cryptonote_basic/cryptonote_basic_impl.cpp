@@ -82,9 +82,6 @@ namespace cryptonote {
   //-----------------------------------------------------------------------------------------------
   bool get_block_reward(uint64_t height, size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, uint64_t &reward, uint8_t version) {
     static_assert(DIFFICULTY_TARGET_V2 > 0 && DIFFICULTY_TARGET_V1 > 0,  "difficulty targets must be positive");
-    const int target = version < 2 ? DIFFICULTY_TARGET_V1 : DIFFICULTY_TARGET_V2;
-    const double target_minutes = target / 60.0;
-
     // CryLo Chain: 5,000,000 main emission
     uint64_t money_supply;
     money_supply = MONEY_SUPPLY;

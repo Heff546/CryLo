@@ -1118,17 +1118,30 @@ char* Str::clearBuff(char buff[], std::size_t lim) {
 /// @brief Converst wchar* to char*
 ///        NOTE: Need to free return value after use!
 char* Str::wcharPtrToCharPtr(const wchar_t* line) {
-  std::size_t len_ = wcslen(line) + 1;
-  char* buff_ = static_cast<char*>(malloc(len_ + 1));
 #      if ELPP_OS_UNIX || (ELPP_OS_WINDOWS && !ELPP_CRT_DBG_WARNINGS)
-  std::wcstombs(buff_, line, len_);
+  const std::size_t converted_ = std::wcstombs(nullptr, line, 0);
+  if (converted_ == static_cast<std::size_t>(-1)) {
+    char* buff_ = static_cast<char*>(malloc(1));
+    if (buff_ != nullptr) {
+      buff_[0] = '\0';
+    }
+    return buff_;
+  }
+
+  char* buff_ = static_cast<char*>(malloc(converted_ + 1));
+  if (buff_ != nullptr) {
+    std::wcstombs(buff_, line, converted_ + 1);
+  }
+  return buff_;
 #      elif ELPP_OS_WINDOWS
+  const std::size_t len_ = wcslen(line) + 1;
+  char* buff_ = static_cast<char*>(malloc(len_));
   std::size_t convCount_ = 0;
   mbstate_t mbState_;
   ::memset(static_cast<void*>(&mbState_), 0, sizeof(mbState_));
   wcsrtombs_s(&convCount_, buff_, len_, &line, len_, &mbState_);
-#      endif  // ELPP_OS_UNIX || (ELPP_OS_WINDOWS && !ELPP_CRT_DBG_WARNINGS)
   return buff_;
+#      endif  // ELPP_OS_UNIX || (ELPP_OS_WINDOWS && !ELPP_CRT_DBG_WARNINGS)
 }
 
 // OS

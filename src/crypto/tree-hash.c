@@ -83,24 +83,28 @@ void tree_hash(const char (*hashes)[HASH_SIZE], size_t count, char *root_hash) {
 
     size_t cnt = tree_hash_cnt( count );
 
-    char *ints = calloc(cnt, HASH_SIZE);  // zero out as extra protection for using uninitialized mem
+    char (*ints)[HASH_SIZE] = calloc(cnt, sizeof(*ints));  // zero out as extra protection for using uninitialized mem
     assert(ints);
 
-    memcpy(ints, hashes, (2 * cnt - count) * HASH_SIZE);
+    const size_t direct_count = 2 * cnt - count;
+    assert(direct_count <= cnt);
+    for (i = 0; i < direct_count; ++i) {
+      memcpy(ints[i], hashes[i], HASH_SIZE);
+    }
 
-    for (i = 2 * cnt - count, j = 2 * cnt - count; j < cnt; i += 2, ++j) {
-      cn_fast_hash(hashes[i], 64, ints + j * HASH_SIZE);
+    for (i = direct_count, j = direct_count; j < cnt; i += 2, ++j) {
+      cn_fast_hash(hashes[i], 2 * HASH_SIZE, ints[j]);
     }
     assert(i == count);
 
     while (cnt > 2) {
       cnt >>= 1;
       for (i = 0, j = 0; j < cnt; i += 2, ++j) {
-        cn_fast_hash(ints + i * HASH_SIZE, 64, ints + j * HASH_SIZE);
+        cn_fast_hash(ints[i], 2 * HASH_SIZE, ints[j]);
       }
     }
 
-    cn_fast_hash(ints, 64, root_hash);
+    cn_fast_hash(ints, 2 * HASH_SIZE, root_hash);
     free(ints);
   }
 }
@@ -177,12 +181,16 @@ bool tree_branch(const char (*hashes)[HASH_SIZE], size_t count, const char *hash
     *path = 0;
     size_t cnt = tree_hash_cnt( count );
 
-    char *ints = calloc(cnt, HASH_SIZE);  // zero out as extra protection for using uninitialized mem
+    char (*ints)[HASH_SIZE] = calloc(cnt, sizeof(*ints));  // zero out as extra protection for using uninitialized mem
     assert(ints);
 
-    memcpy(ints, hashes, (2 * cnt - count) * HASH_SIZE);
+    const size_t direct_count = 2 * cnt - count;
+    assert(direct_count <= cnt);
+    for (i = 0; i < direct_count; ++i) {
+      memcpy(ints[i], hashes[i], HASH_SIZE);
+    }
 
-    for (i = 2 * cnt - count, j = 2 * cnt - count; j < cnt; i += 2, ++j) {
+    for (i = direct_count, j = direct_count; j < cnt; i += 2, ++j) {
       if (idx == i || idx == i+1)
       {
         memcpy(branch[*depth], hashes[idx == i ? i + 1 : i], HASH_SIZE);
@@ -190,7 +198,7 @@ bool tree_branch(const char (*hashes)[HASH_SIZE], size_t count, const char *hash
         *path = (*path << 1) | (idx == i ? 0 : 1);
         idx = j;
       }
-      cn_fast_hash(hashes[i], 64, ints + j * HASH_SIZE);
+      cn_fast_hash(hashes[i], 2 * HASH_SIZE, ints[j]);
     }
     assert(i == count);
 
@@ -199,18 +207,18 @@ bool tree_branch(const char (*hashes)[HASH_SIZE], size_t count, const char *hash
       for (i = 0, j = 0; j < cnt; i += 2, ++j) {
         if (idx == i || idx == i + 1)
         {
-          memcpy(branch[*depth], ints + (idx == i ? i + 1 : i) * HASH_SIZE, HASH_SIZE);
+          memcpy(branch[*depth], ints[idx == i ? i + 1 : i], HASH_SIZE);
           ++*depth;
           *path = (*path << 1) | (idx == i ? 0 : 1);
           idx = j;
         }
-        cn_fast_hash(ints + i * HASH_SIZE, 64, ints + j * HASH_SIZE);
+        cn_fast_hash(ints[i], 2 * HASH_SIZE, ints[j]);
       }
     }
 
     if (idx == 0 || idx == 1)
     {
-      memcpy(branch[*depth], ints + (idx == 0 ? 1 : 0) * HASH_SIZE, HASH_SIZE);
+      memcpy(branch[*depth], ints[idx == 0 ? 1 : 0], HASH_SIZE);
       ++*depth;
       *path = (*path << 1) | (idx == 0 ? 0 : 1);
       idx = 0;

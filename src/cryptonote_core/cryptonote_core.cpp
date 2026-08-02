@@ -220,6 +220,12 @@ namespace cryptonote
   };
 
   //-----------------------------------------------------------------------------------------------
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#endif
+  // tx_memory_pool and Blockchain retain mutual references. Their constructors
+  // only store those references and do not access the referenced object.
   core::core(i_cryptonote_protocol* pprotocol):
               m_mempool(m_blockchain_storage),
               m_blockchain_storage(m_mempool),
@@ -239,6 +245,10 @@ namespace cryptonote
     m_checkpoints_updating.clear();
     set_cryptonote_protocol(pprotocol);
   }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
   void core::set_cryptonote_protocol(i_cryptonote_protocol* pprotocol)
   {
     if(pprotocol)
@@ -349,8 +359,6 @@ namespace cryptonote
   {
     if (m_nettype != FAKECHAIN)
     {
-      const bool testnet = command_line::get_arg(vm, arg_testnet_on);
-      const bool stagenet = command_line::get_arg(vm, arg_stagenet_on);
       m_nettype = TESTNET;
     }
 
