@@ -734,7 +734,7 @@ namespace nodetool
     if (m_nettype == cryptonote::TESTNET)
     {
       // CryLo Testnet V4 seed nodes
-      full_addrs.insert("192.168.40.114:22640"); // CryLo V4 local seed
+      full_addrs.insert("35.230.165.164:22640"); // CryLo Testnet V4 public relay
     }
     else if (m_nettype == cryptonote::STAGENET)
     {
