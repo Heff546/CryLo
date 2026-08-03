@@ -317,7 +317,7 @@ namespace config
     uint16_t const RPC_DEFAULT_PORT = 22641;
     uint16_t const ZMQ_RPC_DEFAULT_PORT = 22642;
     boost::uuids::uuid const NETWORK_ID = { {
-        0xC6, 0x40, 0x19, 0x82, 0x64, 0xC0, 0x4D, 0x0D, 0x52, 0x45, 0x00, 0xCB, 0x4D, 0x64, 0x01, 0x01
+        0x29, 0xC1, 0x0D, 0x45, 0xE9, 0x81, 0x4F, 0xBF, 0xAE, 0xB4, 0xA5, 0xEA, 0x4F, 0x85, 0x10, 0xFD
       } }; // CryLo Testnet
     std::string const GENESIS_TX = "02a00201ff00018088a5a9a3070230825c944db1504895416775e23e3db2e62a79c03c041da5d6be77c8936e23d62101f0694c37e3ece80fd84617d0199a87a32fa46423ff23de854acf8c827aa3b50200";
     uint32_t const GENESIS_NONCE = 0;
