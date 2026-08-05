@@ -1581,12 +1581,13 @@ ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
 
 
 function saveOperatorConfig({
-  cryloAddress,
-  nexusAddress,
+  operatorAddress,
   tier,
-  nodeRpc,
+  rpcUrl,
   chainId,
-  nodeStakingContract
+  wrappedCryLoContract,
+  nodeStakingContract,
+  rewardManagerContract
 }) {
   const dir = path.join(
     os.homedir(),
@@ -1595,38 +1596,112 @@ function saveOperatorConfig({
     'operator'
   );
 
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, {
+    recursive: true,
+    mode: 0o700
+  });
 
   const file = path.join(dir, 'operator.json');
-  const now = new Date().toISOString();
 
-  let createdAt = now;
+  const requireEvmAddress = (value, fieldName) => {
+    if (
+      typeof value !== 'string' ||
+      !/^0x[0-9a-fA-F]{40}$/.test(value)
+    ) {
+      throw new Error(
+        `Invalid operator configuration ${fieldName}`
+      );
+    }
 
-  if (fs.existsSync(file)) {
-    try {
-      createdAt =
-        JSON.parse(fs.readFileSync(file, 'utf8')).createdAt ||
-        now;
-    } catch (_) {}
-  }
-
-  const config = {
-    version: 1,
-    cryloAddress,
-    nexusAddress,
-    tier,
-    nodeRpc,
-    chainId: Number(chainId),
-    nodeStakingContract,
-    createdAt,
-    updatedAt: now
+    return value;
   };
 
+  if (!['Operator', 'Validator'].includes(tier)) {
+    throw new Error(
+      `Invalid operator tier: ${tier}`
+    );
+  }
+
+  if (Number(chainId) !== 5546) {
+    throw new Error(
+      `Invalid CryLoNexus chain ID: ${chainId}`
+    );
+  }
+
+  const normalizedOperatorAddress =
+    requireEvmAddress(
+      operatorAddress,
+      'operatorAddress'
+    );
+
+  const config = {
+    schemaVersion: 1,
+    protocolVersion: 1,
+    network: 'CryLoNexus Mainnet',
+    chainId: 5546,
+    operatorAddress: normalizedOperatorAddress,
+    tier,
+    rpcUrl,
+    contracts: {
+      wrappedCryLo: requireEvmAddress(
+        wrappedCryLoContract,
+        'contracts.wrappedCryLo'
+      ),
+      nodeStaking: requireEvmAddress(
+        nodeStakingContract,
+        'contracts.nodeStaking'
+      ),
+      rewardManager: requireEvmAddress(
+        rewardManagerContract,
+        'contracts.rewardManager'
+      )
+    },
+    service: {
+      serviceName:
+        'crylo-nexus-operator.service',
+      statusPath:
+        path.join(
+          dir,
+          'status.json'
+        ),
+      dataDirectory:
+        path.join(
+          dir,
+          'data'
+        ),
+      logDirectory:
+        path.join(
+          dir,
+          'logs'
+        )
+    },
+    nodeIdentity: {
+      publicId:
+        `operator-${normalizedOperatorAddress
+          .slice(2)
+          .toLowerCase()}`,
+      pairingRequired: true
+    },
+    generatedAt: new Date().toISOString(),
+    expiresAt: null
+  };
+
+  const temporaryFile =
+    `${file}.${process.pid}.${Date.now()}.tmp`;
+
   fs.writeFileSync(
-    file,
-    JSON.stringify(config, null, 2) + '\n',
-    { mode: 0o600 }
+    temporaryFile,
+    `${JSON.stringify(config, null, 2)}\n`,
+    {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'w'
+    }
   );
+
+  fs.chmodSync(temporaryFile, 0o600);
+  fs.renameSync(temporaryFile, file);
+  fs.chmodSync(file, 0o600);
 
   return config;
 }
@@ -1679,13 +1754,16 @@ ipcMain.handle('nexus-register-operator', async (_, walletName, cryloAddress) =>
     const receipt = await tx.wait();
 
     const operatorConfig = saveOperatorConfig({
-      cryloAddress,
-      nexusAddress: wallet.address,
+      operatorAddress: wallet.address,
       tier: 'Operator',
-      nodeRpc: runtime.rpc,
+      rpcUrl: runtime.rpc,
       chainId: runtime.chainId,
+      wrappedCryLoContract:
+        runtime.contracts.wCryLo,
       nodeStakingContract:
-        runtime.contracts.NodeStaking
+        runtime.contracts.NodeStaking,
+      rewardManagerContract:
+        runtime.contracts.RewardManager
     });
 
     return {
@@ -1750,13 +1828,16 @@ ipcMain.handle('nexus-register-validator', async (_, walletName, cryloAddress) =
     const receipt = await tx.wait();
 
     const operatorConfig = saveOperatorConfig({
-      cryloAddress,
-      nexusAddress: wallet.address,
+      operatorAddress: wallet.address,
       tier: 'Validator',
-      nodeRpc: runtime.rpc,
+      rpcUrl: runtime.rpc,
       chainId: runtime.chainId,
+      wrappedCryLoContract:
+        runtime.contracts.wCryLo,
       nodeStakingContract:
-        runtime.contracts.NodeStaking
+        runtime.contracts.NodeStaking,
+      rewardManagerContract:
+        runtime.contracts.RewardManager
     });
 
     return {
@@ -1865,6 +1946,1957 @@ ipcMain.handle('nexus-claim-node-rewards', async (_, walletName, cryloAddress) =
   }
 });
 
+
+
+
+// ─── Nexus Operator Dashboard ─────────────────────────────────────────────────
+
+function readJsonFileSafe(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { exists: false, data: null, error: null };
+    }
+
+    return {
+      exists: true,
+      data: JSON.parse(fs.readFileSync(filePath, 'utf8')),
+      error: null
+    };
+  } catch (error) {
+    return {
+      exists: true,
+      data: null,
+      error: error.message
+    };
+  }
+}
+
+function getOperatorPaths() {
+  const operatorDir = path.join(
+    os.homedir(),
+    '.config',
+    'crylo-wallet',
+    'operator'
+  );
+
+  return {
+    directory: operatorDir,
+    config: path.join(operatorDir, 'operator.json'),
+    authorization: path.join(
+      operatorDir,
+      'authorization.json'
+    ),
+    signingKey: path.join(
+      operatorDir,
+      'signing-key'
+    ),
+    statusCandidates: [
+      path.join(operatorDir, 'status.json'),
+      path.join(operatorDir, 'operator-status.json'),
+      path.join(operatorDir, 'runtime', 'status.json')
+    ]
+  };
+}
+
+function findOperatorStatusFile(statusCandidates) {
+  for (const candidate of statusCandidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return statusCandidates[0];
+}
+
+function runLocalCommand(command, args, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let finished = false;
+
+    let child;
+
+    try {
+      child = spawn(command, args, {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+    } catch (error) {
+      resolve({
+        ok: false,
+        code: null,
+        stdout: '',
+        stderr: error.message
+      });
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      if (finished) return;
+
+      finished = true;
+      child.kill('SIGTERM');
+
+      resolve({
+        ok: false,
+        code: null,
+        stdout,
+        stderr: `Command timed out after ${timeoutMs}ms`
+      });
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeout);
+
+      resolve({
+        ok: false,
+        code: null,
+        stdout,
+        stderr: error.message
+      });
+    });
+
+    child.on('close', (code) => {
+      if (finished) return;
+
+      finished = true;
+      clearTimeout(timeout);
+
+      resolve({
+        ok: code === 0,
+        code,
+        stdout: stdout.trim(),
+        stderr: stderr.trim()
+      });
+    });
+  });
+}
+
+
+function getOperatorInstallPaths() {
+  const os = require('node:os');
+  const path = require('node:path');
+
+  const operatorDirectory = path.join(
+    os.homedir(),
+    '.config',
+    'crylo-wallet',
+    'operator'
+  );
+
+  return {
+    operatorDirectory,
+    configPath: path.join(
+      operatorDirectory,
+      'operator.json'
+    ),
+    authorizationPath: path.join(
+      operatorDirectory,
+      'authorization.json'
+    ),
+    signingKeyPath: path.join(
+      operatorDirectory,
+      'signing-key'
+    ),
+    statusPath: path.join(
+      operatorDirectory,
+      'status.json'
+    ),
+    runtimesDirectory: path.join(
+      operatorDirectory,
+      'runtimes'
+    ),
+    currentRuntimePath: path.join(
+      operatorDirectory,
+      'runtime-current'
+    ),
+    userSystemdDirectory: path.join(
+      os.homedir(),
+      '.config',
+      'systemd',
+      'user'
+    ),
+    servicePath: path.join(
+      os.homedir(),
+      '.config',
+      'systemd',
+      'user',
+      'crylo-nexus-operator.service'
+    )
+  };
+}
+
+async function pathExists(candidatePath) {
+  const fs = require('node:fs');
+
+  try {
+    await fs.promises.access(candidatePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonFileStrict(filePath) {
+  const fs = require('node:fs');
+
+  const text = await fs.promises.readFile(
+    filePath,
+    'utf8'
+  );
+
+  return JSON.parse(text);
+}
+
+async function inspectOperatorInstallationHealth() {
+  const path = require('node:path');
+  const paths = getOperatorInstallPaths();
+
+  const runtimePackagePath = path.join(
+    paths.currentRuntimePath,
+    'package.json'
+  );
+
+  const runtimeEntryPath = path.join(
+    paths.currentRuntimePath,
+    'src',
+    'main.js'
+  );
+
+  const requiredAbiPaths = [
+    'CryLoNodeStaking.json',
+    'RewardManager.json',
+    'RewardVault.json',
+    'CryLoStaking.json'
+  ].map(filename =>
+    path.join(
+      paths.currentRuntimePath,
+      'abis',
+      filename
+    )
+  );
+
+  const [
+    configured,
+    runtimePresent,
+    runtimePackagePresent,
+    runtimeEntryPresent,
+    serviceFilePresent,
+    requiredAbiPresence
+  ] = await Promise.all([
+    pathExists(paths.configPath),
+    pathExists(paths.currentRuntimePath),
+    pathExists(runtimePackagePath),
+    pathExists(runtimeEntryPath),
+    pathExists(paths.servicePath),
+    Promise.all(
+      requiredAbiPaths.map(
+        abiPath =>
+          pathExists(abiPath)
+      )
+    )
+  ]);
+
+  const runtimeAbisPresent =
+    requiredAbiPresence.every(Boolean);
+
+  const runtimeValid =
+    runtimePresent &&
+    runtimePackagePresent &&
+    runtimeEntryPresent &&
+    runtimeAbisPresent;
+
+  const healthy =
+    configured &&
+    runtimeValid &&
+    serviceFilePresent;
+
+  return {
+    configured,
+    runtimePresent,
+    runtimePackagePresent,
+    runtimeEntryPresent,
+    runtimeAbisPresent,
+    runtimeValid,
+    serviceFilePresent,
+    healthy,
+    repairRequired:
+      configured && !healthy,
+    configPath: paths.configPath,
+    runtimePath: paths.currentRuntimePath,
+    runtimePackagePath,
+    runtimeEntryPath,
+    servicePath: paths.servicePath
+  };
+}
+
+async function resolveBundledOperatorRuntimePath() {
+  const path = require('node:path');
+
+  const candidates = [
+    path.join(
+      process.resourcesPath || '',
+      'operator-runtime'
+    ),
+    path.join(
+      app.getAppPath(),
+      'operator-runtime'
+    ),
+    path.join(
+      app.getAppPath(),
+      'node-operator',
+      'runtime'
+    ),
+    path.resolve(
+      __dirname,
+      '..',
+      'node-operator',
+      'runtime'
+    )
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+
+    const packagePath = path.join(
+      candidate,
+      'package.json'
+    );
+
+    const mainPath = path.join(
+      candidate,
+      'src',
+      'main.js'
+    );
+
+    if (
+      await pathExists(packagePath) &&
+      await pathExists(mainPath)
+    ) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    'The bundled CryLoNexus operator runtime could not be found.'
+  );
+}
+
+async function resolveSystemNodeBinary() {
+  const configured =
+    process.env.CRYLONEXUS_NODE_BINARY;
+
+  if (
+    configured &&
+    await pathExists(configured)
+  ) {
+    return configured;
+  }
+
+  const whichResult = await runLocalCommand(
+    'which',
+    ['node']
+  );
+
+  if (
+    whichResult.ok &&
+    whichResult.stdout &&
+    await pathExists(whichResult.stdout)
+  ) {
+    return whichResult.stdout;
+  }
+
+  const commonPaths = [
+    '/usr/bin/node',
+    '/usr/local/bin/node'
+  ];
+
+  for (const candidate of commonPaths) {
+    if (await pathExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    'Node.js 18 or newer is required to run the operator service.'
+  );
+}
+
+async function copyBundledRuntime(
+  sourceDirectory,
+  destinationDirectory
+) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  await fs.promises.cp(
+    sourceDirectory,
+    destinationDirectory,
+    {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      filter(sourcePath) {
+        const relative = path.relative(
+          sourceDirectory,
+          sourcePath
+        );
+
+        if (!relative) return true;
+
+        const firstPart =
+          relative.split(path.sep)[0];
+
+        return ![
+          'test',
+          '.git',
+          '.github'
+        ].includes(firstPart);
+      }
+    }
+  );
+
+  const protocolSourceDirectory =
+    path.resolve(
+      sourceDirectory,
+      '..',
+      'protocol'
+    );
+
+  const protocolDestinationDirectory =
+    path.join(
+      destinationDirectory,
+      'protocol'
+    );
+
+  if (!(await pathExists(protocolSourceDirectory))) {
+    throw new Error(
+      `Bundled operator protocol directory was not found: ${protocolSourceDirectory}`
+    );
+  }
+
+  await fs.promises.cp(
+    protocolSourceDirectory,
+    protocolDestinationDirectory,
+    {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      filter(sourcePath) {
+        const relative = path.relative(
+          protocolSourceDirectory,
+          sourcePath
+        );
+
+        if (!relative) return true;
+
+        const firstPart =
+          relative.split(path.sep)[0];
+
+        return ![
+          'tests',
+          '.git',
+          '.github',
+          'node_modules'
+        ].includes(firstPart);
+      }
+    }
+  );
+}
+
+async function replaceRuntimeSymlink(
+  targetDirectory,
+  symlinkPath
+) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  const temporaryLink =
+    `${symlinkPath}.next-${process.pid}`;
+
+  await fs.promises.rm(
+    temporaryLink,
+    {
+      force: true,
+      recursive: true
+    }
+  );
+
+  await fs.promises.symlink(
+    targetDirectory,
+    temporaryLink,
+    'dir'
+  );
+
+  await fs.promises.rename(
+    temporaryLink,
+    symlinkPath
+  ).catch(async error => {
+    if (
+      error.code !== 'EEXIST' &&
+      error.code !== 'ENOTEMPTY'
+    ) {
+      throw error;
+    }
+
+    const previousLink =
+      `${symlinkPath}.previous-${process.pid}`;
+
+    await fs.promises.rm(
+      previousLink,
+      {
+        force: true,
+        recursive: true
+      }
+    );
+
+    if (await pathExists(symlinkPath)) {
+      await fs.promises.rename(
+        symlinkPath,
+        previousLink
+      );
+    }
+
+    try {
+      await fs.promises.rename(
+        temporaryLink,
+        symlinkPath
+      );
+
+      await fs.promises.rm(
+        previousLink,
+        {
+          force: true,
+          recursive: true
+        }
+      );
+    } catch (replaceError) {
+      if (await pathExists(previousLink)) {
+        await fs.promises.rename(
+          previousLink,
+          symlinkPath
+        );
+      }
+
+      throw replaceError;
+    }
+  });
+
+  const resolved = await fs.promises.realpath(
+    symlinkPath
+  );
+
+  if (
+    path.resolve(resolved) !==
+    path.resolve(targetDirectory)
+  ) {
+    throw new Error(
+      'The active runtime link does not point to the installed runtime.'
+    );
+  }
+}
+
+function buildOperatorServiceUnit({
+  nodeBinary,
+  currentRuntimePath,
+  operatorDirectory,
+  operatorAddress
+}) {
+  return [
+    '[Unit]',
+    'Description=CryLoNexus Operator Service',
+    'Documentation=https://crylonexus.com',
+    'After=network-online.target',
+    'Wants=network-online.target',
+    '',
+    '[Service]',
+    'Type=simple',
+    `WorkingDirectory=${currentRuntimePath}`,
+    `ExecStart=${nodeBinary} ${currentRuntimePath}/src/main.js`,
+    `Environment=CRYLONEXUS_LINKED_ADDRESS=${operatorAddress}`,
+    'Environment=CRYLONEXUS_LOCAL_HEARTBEATS=1',
+    `Environment=CRYLONEXUS_ELECTRON_STATUS_PATH=${operatorDirectory}/status.json`,
+    'Restart=always',
+    'RestartSec=5',
+    'TimeoutStopSec=30',
+    'KillSignal=SIGTERM',
+    'NoNewPrivileges=true',
+    'PrivateTmp=true',
+    'ProtectSystem=strict',
+    'ProtectHome=read-only',
+    `ReadWritePaths=${operatorDirectory}`,
+    '',
+    '[Install]',
+    'WantedBy=default.target',
+    ''
+  ].join('\n');
+}
+
+async function writeOperatorServiceUnit({
+  servicePath,
+  serviceText
+}) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  await fs.promises.mkdir(
+    path.dirname(servicePath),
+    {
+      recursive: true,
+      mode: 0o700
+    }
+  );
+
+  const temporaryPath =
+    `${servicePath}.tmp-${process.pid}`;
+
+  await fs.promises.writeFile(
+    temporaryPath,
+    serviceText,
+    {
+      encoding: 'utf8',
+      mode: 0o600
+    }
+  );
+
+  await fs.promises.chmod(
+    temporaryPath,
+    0o600
+  );
+
+  await fs.promises.rename(
+    temporaryPath,
+    servicePath
+  );
+}
+
+async function installBundledOperatorRuntime() {
+  if (!IS_LINUX) {
+    throw new Error(
+      'The CryLoNexus operator service installer currently supports Linux only.'
+    );
+  }
+
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  const paths = getOperatorInstallPaths();
+
+  if (!(await pathExists(paths.configPath))) {
+    throw new Error(
+      'Register the Operator or Validator before installing the service.'
+    );
+  }
+
+  const operatorConfig =
+    await readJsonFileStrict(
+      paths.configPath
+    );
+
+  if (
+    !operatorConfig ||
+    typeof operatorConfig !== 'object' ||
+    !ethers.isAddress(
+      operatorConfig.operatorAddress
+    )
+  ) {
+    throw new Error(
+      'operator.json does not contain a valid operatorAddress.'
+    );
+  }
+
+  const sourceDirectory =
+    await resolveBundledOperatorRuntimePath();
+
+  const sourcePackage =
+    await readJsonFileStrict(
+      path.join(
+        sourceDirectory,
+        'package.json'
+      )
+    );
+
+  const runtimeVersion =
+    typeof sourcePackage.version === 'string' &&
+    sourcePackage.version.trim()
+      ? sourcePackage.version.trim()
+      : '0.0.0';
+
+  const releaseId = [
+    runtimeVersion,
+    new Date()
+      .toISOString()
+      .replace(/[-:.TZ]/g, '')
+  ].join('-');
+
+  const destinationDirectory =
+    path.join(
+      paths.runtimesDirectory,
+      releaseId
+    );
+
+  await fs.promises.mkdir(
+    paths.operatorDirectory,
+    {
+      recursive: true,
+      mode: 0o700
+    }
+  );
+
+  await fs.promises.mkdir(
+    paths.runtimesDirectory,
+    {
+      recursive: true,
+      mode: 0o700
+    }
+  );
+
+  await copyBundledRuntime(
+    sourceDirectory,
+    destinationDirectory
+  );
+
+  const installedMainPath =
+    path.join(
+      destinationDirectory,
+      'src',
+      'main.js'
+    );
+
+  const installedPackagePath =
+    path.join(
+      destinationDirectory,
+      'package.json'
+    );
+
+  const installedConfigSchemaPath =
+    path.join(
+      destinationDirectory,
+      'protocol',
+      'schemas',
+      'operator-config.schema.json'
+    );
+
+  const installedStatusSchemaPath =
+    path.join(
+      destinationDirectory,
+      'protocol',
+      'schemas',
+      'operator-status.schema.json'
+    );
+
+  const requiredAbiPaths = [
+    'CryLoNodeStaking.json',
+    'RewardManager.json',
+    'RewardVault.json',
+    'CryLoStaking.json'
+  ].map(filename =>
+    path.join(
+      destinationDirectory,
+      'abis',
+      filename
+    )
+  );
+
+  const requiredAbiResults =
+    await Promise.all(
+      requiredAbiPaths.map(
+        async abiPath => {
+          if (!(await pathExists(abiPath))) {
+            return false;
+          }
+
+          try {
+            const artifact =
+              await readJsonFileStrict(
+                abiPath
+              );
+
+            return (
+              Array.isArray(artifact) ||
+              Array.isArray(artifact?.abi)
+            );
+          } catch {
+            return false;
+          }
+        }
+      )
+    );
+
+  const requiredAbisValid =
+    requiredAbiResults.every(Boolean);
+
+  if (
+    !(await pathExists(installedMainPath)) ||
+    !(await pathExists(installedPackagePath)) ||
+    !(await pathExists(installedConfigSchemaPath)) ||
+    !(await pathExists(installedStatusSchemaPath)) ||
+    !requiredAbisValid
+  ) {
+    await fs.promises.rm(
+      destinationDirectory,
+      {
+        force: true,
+        recursive: true
+      }
+    );
+
+    throw new Error(
+      'The bundled operator runtime failed installation validation.'
+    );
+  }
+
+  const nodeBinary =
+    await resolveSystemNodeBinary();
+
+  const nodeVersionResult =
+    await runLocalCommand(
+      nodeBinary,
+      ['--version']
+    );
+
+  if (!nodeVersionResult.ok) {
+    throw new Error(
+      nodeVersionResult.stderr ||
+      'Unable to validate the system Node.js installation.'
+    );
+  }
+
+  const majorVersion =
+    Number.parseInt(
+      String(nodeVersionResult.stdout)
+        .replace(/^v/, '')
+        .split('.')[0],
+      10
+    );
+
+  if (
+    !Number.isInteger(majorVersion) ||
+    majorVersion < 18
+  ) {
+    throw new Error(
+      `Node.js 18 or newer is required. Found ${nodeVersionResult.stdout}.`
+    );
+  }
+
+  await replaceRuntimeSymlink(
+    destinationDirectory,
+    paths.currentRuntimePath
+  );
+
+  const serviceText =
+    buildOperatorServiceUnit({
+      nodeBinary,
+      currentRuntimePath:
+        paths.currentRuntimePath,
+      operatorDirectory:
+        paths.operatorDirectory,
+      operatorAddress:
+        operatorConfig.operatorAddress
+    });
+
+  await writeOperatorServiceUnit({
+    servicePath: paths.servicePath,
+    serviceText
+  });
+
+  const daemonReload =
+    await runLocalCommand(
+      'systemctl',
+      [
+        '--user',
+        'daemon-reload'
+      ]
+    );
+
+  if (!daemonReload.ok) {
+    throw new Error(
+      daemonReload.stderr ||
+      'systemctl --user daemon-reload failed.'
+    );
+  }
+
+  const enableResult =
+    await runLocalCommand(
+      'systemctl',
+      [
+        '--user',
+        'enable',
+        'crylo-nexus-operator.service'
+      ]
+    );
+
+  if (!enableResult.ok) {
+    throw new Error(
+      enableResult.stderr ||
+      'The operator service could not be enabled and started.'
+    );
+  }
+
+  const warnings = [];
+
+  const lingerResult =
+    await runLocalCommand(
+      'loginctl',
+      [
+        'enable-linger',
+        process.env.USER ||
+          require('node:os').userInfo().username
+      ]
+    );
+
+  if (!lingerResult.ok) {
+    warnings.push(
+      'The service is running, but Linux lingering could not be enabled automatically. It may require administrator approval to start before login.'
+    );
+  }
+
+  const installedManifest = {
+    schemaVersion: 1,
+    runtimeVersion,
+    releaseId,
+    sourcePackage:
+      sourcePackage.name || null,
+    installedAt:
+      new Date().toISOString(),
+    runtimePath:
+      destinationDirectory,
+    activeRuntimePath:
+      paths.currentRuntimePath,
+    nodeBinary,
+    serviceName:
+      'crylo-nexus-operator.service'
+  };
+
+  const manifestPath =
+    path.join(
+      paths.operatorDirectory,
+      'runtime-installation.json'
+    );
+
+  const temporaryManifest =
+    `${manifestPath}.tmp-${process.pid}`;
+
+  await fs.promises.writeFile(
+    temporaryManifest,
+    JSON.stringify(
+      installedManifest,
+      null,
+      2
+    ) + '\n',
+    {
+      encoding: 'utf8',
+      mode: 0o600
+    }
+  );
+
+  await fs.promises.rename(
+    temporaryManifest,
+    manifestPath
+  );
+
+  const service =
+    await readOperatorServiceStatus();
+
+  return {
+    ok: true,
+    installed: true,
+    updated: true,
+    runtimeVersion,
+    releaseId,
+    runtimePath:
+      destinationDirectory,
+    activeRuntimePath:
+      paths.currentRuntimePath,
+    service,
+    warnings
+  };
+}
+
+async function controlOperatorService(action) {
+  if (!IS_LINUX) {
+    throw new Error(
+      'Operator service controls are currently available on Linux only.'
+    );
+  }
+
+  const supportedActions = new Set([
+    'start',
+    'stop',
+    'restart'
+  ]);
+
+  if (!supportedActions.has(action)) {
+    throw new Error(
+      'Unsupported operator service action.'
+    );
+  }
+
+  const result = await runLocalCommand(
+    'systemctl',
+    [
+      '--user',
+      action,
+      'crylo-nexus-operator.service'
+    ]
+  );
+
+  if (!result.ok) {
+    throw new Error(
+      result.stderr ||
+      `Unable to ${action} the operator service.`
+    );
+  }
+
+  await new Promise(resolve => {
+    setTimeout(resolve, 500);
+  });
+
+  return {
+    ok: true,
+    action,
+    service:
+      await readOperatorServiceStatus()
+  };
+}
+
+
+async function readOperatorServiceStatus() {
+  if (!IS_LINUX) {
+    return {
+      supported: false,
+      installed: false,
+      running: false,
+      activeState: 'unsupported',
+      subState: 'unsupported',
+      serviceScope: null,
+      serviceName: 'crylo-nexus-operator.service',
+      message: 'Operator service status is currently available on Linux only.'
+    };
+  }
+
+  const serviceName = 'crylo-nexus-operator.service';
+  const installation =
+    await inspectOperatorInstallationHealth();
+
+  const checks = [
+    {
+      scope: 'system',
+      args: [
+        'show',
+        serviceName,
+        '--no-page',
+        '--property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp'
+      ]
+    },
+    {
+      scope: 'user',
+      args: [
+        '--user',
+        'show',
+        serviceName,
+        '--no-page',
+        '--property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp'
+      ]
+    }
+  ];
+
+  for (const check of checks) {
+    const result = await runLocalCommand('systemctl', check.args);
+
+    if (!result.stdout) continue;
+
+    const values = {};
+
+    for (const line of result.stdout.split(/\r?\n/)) {
+      const separator = line.indexOf('=');
+      if (separator < 0) continue;
+
+      const key = line.slice(0, separator);
+      const value = line.slice(separator + 1);
+      values[key] = value;
+    }
+
+    if (values.LoadState && values.LoadState !== 'not-found') {
+      return {
+        supported: true,
+        installed: installation.healthy,
+        running:
+          installation.healthy &&
+          values.ActiveState === 'active',
+        activeState: values.ActiveState || 'unknown',
+        subState: values.SubState || 'unknown',
+        mainPid: values.MainPID || '0',
+        startedAt: values.ExecMainStartTimestamp || null,
+        serviceScope: check.scope,
+        serviceName,
+        ...installation,
+        message:
+          installation.healthy
+            ? result.stderr || null
+            : 'The operator service installation is incomplete and must be repaired.'
+      };
+    }
+  }
+
+  return {
+    supported: true,
+    installed: false,
+    running: false,
+    activeState: 'not-found',
+    subState: 'not-found',
+    mainPid: '0',
+    startedAt: null,
+    serviceScope: null,
+    serviceName,
+    ...installation,
+    message:
+      installation.repairRequired
+        ? 'The operator service installation is incomplete and must be repaired.'
+        : 'Operator service is not installed.'
+  };
+}
+
+function normalizeOperatorWorkers(statusData) {
+  if (!statusData || typeof statusData !== 'object') return [];
+
+  const rawWorkers =
+    statusData.health?.workers ||
+    statusData.workers ||
+    statusData.workerHealth ||
+    statusData.health ||
+    {};
+
+  if (Array.isArray(rawWorkers)) {
+    return rawWorkers.map((worker, index) => ({
+      name: worker.name || `Worker ${index + 1}`,
+      enabled: worker.enabled !== false,
+      healthy: worker.enabled === false ? null : worker.healthy === true,
+      lastRun: worker.lastRun || null,
+      lastSuccess: worker.lastSuccess || null,
+      errors: Number(worker.errors || worker.errorCount || 0),
+      message: worker.message || null
+    }));
+  }
+
+  if (!rawWorkers || typeof rawWorkers !== 'object') return [];
+
+  return Object.entries(rawWorkers)
+    .filter(([, value]) => value && typeof value === 'object')
+    .map(([name, worker]) => ({
+      name: worker.name || name,
+      enabled: worker.enabled !== false,
+      healthy: worker.enabled === false ? null : worker.healthy === true,
+      lastRun: worker.lastRun || null,
+      lastSuccess: worker.lastSuccess || null,
+      errors: Number(worker.errors || worker.errorCount || 0),
+      message: worker.message || null
+    }));
+}
+
+
+// CRYLONEXUS_OPERATOR_AUTHORIZATION_V1
+const OPERATOR_AUTHORIZATION_LIFETIME_MS =
+  72 * 60 * 60 * 1000;
+
+function writePrivateJsonAtomic(filePath, value) {
+  const directory = path.dirname(filePath);
+  const temporaryPath =
+    `${filePath}.${process.pid}.${Date.now()}.tmp`;
+
+  fs.mkdirSync(directory, {
+    recursive: true,
+    mode: 0o700
+  });
+
+  fs.writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(value, null, 2)}\n`,
+    {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'w'
+    }
+  );
+
+  fs.chmodSync(temporaryPath, 0o600);
+  fs.renameSync(temporaryPath, filePath);
+  fs.chmodSync(filePath, 0o600);
+}
+
+function writePrivateTextAtomic(filePath, value) {
+  const directory = path.dirname(filePath);
+  const temporaryPath =
+    `${filePath}.${process.pid}.${Date.now()}.tmp`;
+
+  fs.mkdirSync(directory, {
+    recursive: true,
+    mode: 0o700
+  });
+
+  fs.writeFileSync(
+    temporaryPath,
+    `${String(value).trim()}\n`,
+    {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'w'
+    }
+  );
+
+  fs.chmodSync(temporaryPath, 0o600);
+  fs.renameSync(temporaryPath, filePath);
+  fs.chmodSync(filePath, 0o600);
+}
+
+function readOperatorAuthorization(filePath, expectedAddress) {
+  const result = readJsonFileSafe(filePath);
+
+  if (!result.exists) {
+    return {
+      exists: false,
+      valid: false,
+      expired: false,
+      status: 'Not Authorized',
+      expiresAt: null,
+      remainingSeconds: 0,
+      sessionAddress: null,
+      error: null
+    };
+  }
+
+  if (!result.data) {
+    return {
+      exists: true,
+      valid: false,
+      expired: false,
+      status: 'Invalid Authorization',
+      expiresAt: null,
+      remainingSeconds: 0,
+      sessionAddress: null,
+      error: result.error || 'Authorization file is invalid'
+    };
+  }
+
+  const authorization = result.data;
+  const expiresMs =
+    Date.parse(authorization.delegation?.expiresAt || '');
+
+  const addressMatches =
+    ethers.isAddress(expectedAddress) &&
+    ethers.isAddress(
+      authorization.delegation?.operatorAddress
+    ) &&
+    ethers.getAddress(
+      authorization.delegation.operatorAddress
+    ) === ethers.getAddress(expectedAddress);
+
+  const validExpiration =
+    Number.isFinite(expiresMs);
+
+  const remainingSeconds =
+    validExpiration
+      ? Math.max(
+          0,
+          Math.floor((expiresMs - Date.now()) / 1000)
+        )
+      : 0;
+
+  const expired =
+    validExpiration && remainingSeconds === 0;
+
+  const structurallyValid =
+    authorization.version === 1 &&
+    authorization.delegation?.purpose ===
+      'operator-heartbeat' &&
+    authorization.delegation?.chainId === 5546 &&
+    ethers.isAddress(
+      authorization.delegation?.sessionAddress
+    ) &&
+    !Object.prototype.hasOwnProperty.call(
+      authorization,
+      'sessionPrivateKey'
+    ) &&
+    typeof authorization.delegationSignature ===
+      'string';
+
+  const valid =
+    structurallyValid &&
+    addressMatches &&
+    validExpiration &&
+    !expired;
+
+  return {
+    exists: true,
+    valid,
+    expired,
+    status: valid
+      ? 'Authorized'
+      : expired
+        ? 'Authorization Expired'
+        : 'Invalid Authorization',
+    issuedAt:
+      authorization.delegation?.issuedAt || null,
+    expiresAt:
+      authorization.delegation?.expiresAt || null,
+    remainingSeconds,
+    sessionAddress:
+      authorization.delegation?.sessionAddress ||
+      null,
+    sessionId:
+      authorization.delegation?.sessionId || null,
+    error:
+      valid || expired
+        ? null
+        : 'Authorization does not match this registered operator'
+  };
+}
+
+
+
+ipcMain.handle(
+  'nexus-operator-installation-status',
+  async () => {
+    try {
+      const path = require('node:path');
+
+      if (!IS_LINUX) {
+        return {
+          ok: true,
+          supported: false,
+          installed: false,
+          updateAvailable: false,
+          bundledVersion: null,
+          installedVersion: null
+        };
+      }
+
+      const paths =
+        getOperatorInstallPaths();
+
+      const health =
+        await inspectOperatorInstallationHealth();
+
+      const sourceDirectory =
+        await resolveBundledOperatorRuntimePath();
+
+      const bundledPackage =
+        await readJsonFileStrict(
+          path.join(
+            sourceDirectory,
+            'package.json'
+          )
+        );
+
+      const bundledVersion =
+        typeof bundledPackage.version === 'string'
+          ? bundledPackage.version
+          : null;
+
+      const manifestPath =
+        path.join(
+          paths.operatorDirectory,
+          'runtime-installation.json'
+        );
+
+      let installation = null;
+
+      if (await pathExists(manifestPath)) {
+        try {
+          installation =
+            await readJsonFileStrict(
+              manifestPath
+            );
+        } catch (error) {
+          return {
+            ok: false,
+            supported: true,
+            installed: health.healthy,
+            healthy: health.healthy,
+            repairRequired:
+              health.repairRequired,
+            ...health,
+            bundledVersion,
+            installedVersion: null,
+            updateAvailable: false,
+            error:
+              `Unable to read the installed runtime manifest: ${error.message}`
+          };
+        }
+      }
+
+      const installedVersion =
+        typeof installation?.runtimeVersion ===
+          'string'
+          ? installation.runtimeVersion
+          : null;
+
+      return {
+        ok: true,
+        supported: true,
+        installed: health.healthy,
+        healthy: health.healthy,
+        repairRequired:
+          health.repairRequired,
+        ...health,
+        bundledVersion,
+        installedVersion,
+        updateAvailable:
+          Boolean(
+            bundledVersion &&
+            installedVersion &&
+            bundledVersion !==
+              installedVersion
+          ),
+        installedAt:
+          installation?.installedAt ||
+          null,
+        releaseId:
+          installation?.releaseId ||
+          null,
+        runtimePath:
+          installation?.runtimePath ||
+          null
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        supported: IS_LINUX,
+        installed: false,
+        updateAvailable: false,
+        bundledVersion: null,
+        installedVersion: null,
+        error:
+          error?.message ||
+          'Unable to inspect the operator installation.'
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'nexus-install-operator-service',
+  async () => {
+    try {
+      return await installBundledOperatorRuntime();
+    } catch (error) {
+      console.error(
+        'Operator service installation failed:',
+        error
+      );
+
+      return {
+        ok: false,
+        error:
+          error?.message ||
+          'Operator service installation failed.'
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'nexus-control-operator-service',
+  async (_event, action) => {
+    try {
+      return await controlOperatorService(
+        action
+      );
+    } catch (error) {
+      console.error(
+        'Operator service control failed:',
+        error
+      );
+
+      return {
+        ok: false,
+        action,
+        error:
+          error?.message ||
+          'Operator service control failed.'
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'nexus-authorize-operator',
+  async (_, walletName, cryloAddress) => {
+    try {
+      const paths = getOperatorPaths();
+      const configResult =
+        readJsonFileSafe(paths.config);
+
+      if (!configResult.data) {
+        throw new Error(
+          'Install and configure the node operator service first'
+        );
+      }
+
+      const service =
+        await readOperatorServiceStatus();
+
+      if (!service.installed) {
+        throw new Error(
+          'Install the CryLoNexus operator service before authorizing this node'
+        );
+      }
+
+      const runtime =
+        await getNexusRuntimeConfig();
+
+      const wallet =
+        loadBoundNexusWallet(
+          walletName,
+          cryloAddress
+        ).connect(runtime.provider);
+
+      const configuredAddress =
+        configResult.data.operatorAddress;
+
+      if (
+        !ethers.isAddress(configuredAddress) ||
+        ethers.getAddress(configuredAddress) !==
+          ethers.getAddress(wallet.address)
+      ) {
+        throw new Error(
+          'The operator configuration does not match the bound Nexus wallet'
+        );
+      }
+
+      const nodeStakingAddress =
+        ethers.isAddress(
+          configResult.data.nodeStakingContract
+        )
+          ? ethers.getAddress(
+              configResult.data.nodeStakingContract
+            )
+          : runtime.contracts.NodeStaking;
+
+      const nodeArtifact =
+        require('./src/abis/CryLoNodeStaking.json');
+
+      const node =
+        new ethers.Contract(
+          nodeStakingAddress,
+          nodeArtifact.abi,
+          runtime.provider
+        );
+
+      const [
+        tier,
+        network
+      ] = await Promise.all([
+        node.nodeTier(wallet.address),
+        runtime.provider.getNetwork()
+      ]);
+
+      const tierText = tier.toString();
+
+      if (
+        tierText !== '1' &&
+        tierText !== '2'
+      ) {
+        throw new Error(
+          'Only registered Operators and Validators can authorize a node'
+        );
+      }
+
+      if (network.chainId !== 5546n) {
+        throw new Error(
+          `Unexpected CryLoNexus chain ID: ${network.chainId}`
+        );
+      }
+
+      const nodeId =
+        configResult.data.nodeIdentity?.publicId ||
+        `operator-${wallet.address.slice(2)}`;
+
+      const confirmation =
+        await dialog.showMessageBox(mainWindow, {
+          type: 'question',
+          buttons: [
+            'Authorize Node',
+            'Cancel'
+          ],
+          defaultId: 0,
+          cancelId: 1,
+          title: 'Authorize CryLoNexus Node',
+          message:
+            'Authorize this registered node for 72 hours?',
+          detail:
+            'Electron will create a temporary session key. ' +
+            'Your bound Nexus wallet private key remains inside Electron ' +
+            'and is not stored in the operator service.'
+        });
+
+      if (confirmation.response !== 0) {
+        return {
+          ok: false,
+          cancelled: true,
+          error: 'Authorization cancelled'
+        };
+      }
+
+      const sessionWallet =
+        ethers.Wallet.createRandom();
+
+      const issuedAt =
+        new Date().toISOString();
+
+      const expiresAt =
+        new Date(
+          Date.now() +
+          OPERATOR_AUTHORIZATION_LIFETIME_MS
+        ).toISOString();
+
+      const delegation = {
+        version: 1,
+        purpose: 'operator-heartbeat',
+        chainId: 5546,
+        operatorAddress:
+          ethers.getAddress(wallet.address),
+        nodeId,
+        sessionAddress:
+          ethers.getAddress(
+            sessionWallet.address
+          ),
+        issuedAt,
+        expiresAt,
+        sessionId:
+          ethers.hexlify(
+            ethers.randomBytes(32)
+          ),
+        nonce:
+          ethers.hexlify(
+            ethers.randomBytes(32)
+          )
+      };
+
+      /*
+       * JSON insertion order is intentionally fixed.
+       * The runtime verifier will use the same canonical field order.
+       */
+      const delegationMessage =
+        JSON.stringify(delegation);
+
+      const delegationSignature =
+        await wallet.signMessage(
+          delegationMessage
+        );
+
+      const recoveredAddress =
+        ethers.verifyMessage(
+          delegationMessage,
+          delegationSignature
+        );
+
+      if (
+        ethers.getAddress(recoveredAddress) !==
+        ethers.getAddress(wallet.address)
+      ) {
+        throw new Error(
+          'Delegation signature self-verification failed'
+        );
+      }
+
+      const authorization = {
+        version: 1,
+        delegation,
+        delegationSignature,
+        createdBy: 'CryLo Electron',
+        createdAt: issuedAt
+      };
+
+      /*
+       * Write the session private key separately from the public
+       * authorization document. The bound Nexus wallet key remains
+       * inside Electron and is never written to the operator service.
+       */
+      writePrivateTextAtomic(
+        paths.signingKey,
+        sessionWallet.privateKey
+      );
+
+      try {
+        writePrivateJsonAtomic(
+          paths.authorization,
+          authorization
+        );
+      } catch (writeError) {
+        try {
+          fs.rmSync(
+            paths.signingKey,
+            {
+              force: true
+            }
+          );
+        } catch (_) {}
+
+        throw writeError;
+      }
+
+      const restartResult =
+        await runLocalCommand(
+          'systemctl',
+          [
+            '--user',
+            'restart',
+            'crylo-nexus-operator.service'
+          ],
+          15000
+        );
+
+      if (!restartResult.ok) {
+        throw new Error(
+          restartResult.stderr ||
+          'The authorized operator service could not be started'
+        );
+      }
+
+      await new Promise(resolve => {
+        setTimeout(resolve, 1500);
+      });
+
+      const authorizedService =
+        await readOperatorServiceStatus();
+
+      if (!authorizedService.running) {
+        throw new Error(
+          authorizedService.message ||
+          `The authorized service did not become active ` +
+          `(${authorizedService.activeState}/${authorizedService.subState})`
+        );
+      }
+
+      return {
+        ok: true,
+        status: 'Authorized',
+        operatorAddress:
+          delegation.operatorAddress,
+        sessionAddress:
+          delegation.sessionAddress,
+        issuedAt,
+        expiresAt,
+        remainingSeconds:
+          Math.floor(
+            OPERATOR_AUTHORIZATION_LIFETIME_MS /
+            1000
+          ),
+        authorizationPath:
+          paths.authorization
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error.shortMessage ||
+          error.reason ||
+          error.message
+      };
+    }
+  }
+);
+
+ipcMain.handle('nexus-operator-dashboard', async (_, linkedAddress) => {
+  const paths = getOperatorPaths();
+  const configResult = readJsonFileSafe(paths.config);
+  const statusFile = findOperatorStatusFile(paths.statusCandidates);
+  const statusResult = readJsonFileSafe(statusFile);
+  const service = await readOperatorServiceStatus();
+
+  const authorization =
+    readOperatorAuthorization(
+      paths.authorization,
+      linkedAddress
+    );
+
+  const now = Date.now();
+  const statusUpdatedAt =
+    statusResult.data?.updatedAt ||
+    statusResult.data?.timestamp ||
+    null;
+
+  const statusUpdatedMs = statusUpdatedAt
+    ? Date.parse(statusUpdatedAt)
+    : NaN;
+
+  const statusAgeSeconds = Number.isFinite(statusUpdatedMs)
+    ? Math.max(0, Math.floor((now - statusUpdatedMs) / 1000))
+    : null;
+
+  const workers = normalizeOperatorWorkers(statusResult.data);
+
+  const workerSummary = workers.reduce(
+    (summary, worker) => {
+      if (!worker.enabled) {
+        summary.disabled += 1;
+      } else if (worker.healthy) {
+        summary.healthy += 1;
+      } else {
+        summary.unhealthy += 1;
+      }
+
+      return summary;
+    },
+    {
+      total: workers.length,
+      healthy: 0,
+      unhealthy: 0,
+      disabled: 0
+    }
+  );
+
+  const response = {
+    ok: true,
+
+    registration: {
+      available: false,
+      registered: false,
+      tier: '0',
+      tierLabel: 'Not Registered',
+      stake: '0',
+      pending: '0',
+      operatorStake: '300',
+      validatorStake: '750',
+      error: null
+    },
+
+    configuration: {
+      exists: configResult.exists,
+      loaded: Boolean(configResult.data),
+      path: paths.config,
+      error: configResult.error,
+      data: configResult.data
+    },
+
+    service,
+
+    authorization,
+
+    runtime: {
+      statusExists: statusResult.exists,
+      statusLoaded: Boolean(statusResult.data),
+      statusPath: statusFile,
+      statusError: statusResult.error,
+      nodeId: statusResult.data?.nodeId || null,
+      updatedAt: statusUpdatedAt,
+      ageSeconds: statusAgeSeconds,
+      stale: statusAgeSeconds != null ? statusAgeSeconds > 120 : null
+    },
+
+    workers,
+    workerSummary,
+
+    metrics:
+      statusResult.data?.metrics &&
+      typeof statusResult.data.metrics === 'object'
+        ? statusResult.data.metrics
+        : {},
+
+    rewardVerification: {
+      connected: false,
+      status: 'Not Connected',
+      message:
+        'Uptime verification and operator reward validation are not connected yet.'
+    }
+  };
+
+  try {
+    if (!ethers.isAddress(linkedAddress)) {
+      response.registration.error = 'Invalid Nexus address';
+      return response;
+    }
+
+    const nexusRuntime =
+      await getNexusRuntimeConfig();
+
+    const configuredNodeStakingAddress =
+      configResult.data?.nodeStakingContract;
+
+    const nodeStakingAddress =
+      ethers.isAddress(configuredNodeStakingAddress)
+        ? ethers.getAddress(configuredNodeStakingAddress)
+        : nexusRuntime.contracts.NodeStaking;
+
+    const nodeArtifact =
+      require('./src/abis/CryLoNodeStaking.json');
+
+    const rewardVaultArtifact =
+      require('./src/abis/RewardVault.json');
+
+    const provider = new ethers.JsonRpcProvider(
+      nexusRuntime.rpc
+    );
+
+    const node = new ethers.Contract(
+      nodeStakingAddress,
+      nodeArtifact.abi,
+      provider
+    );
+
+    const rewardVault = new ethers.Contract(
+      nexusRuntime.contracts.RewardVault,
+      rewardVaultArtifact.abi,
+      provider
+    );
+
+    const [
+      tier,
+      stake,
+      pending,
+      operatorStake,
+      validatorStake,
+      network
+    ] = await Promise.all([
+      node.nodeTier(linkedAddress),
+      node.nodeStake(linkedAddress),
+      rewardVault.pendingRewards(linkedAddress),
+      node.operatorStakeRequirement(),
+      node.validatorStakeRequirement(),
+      provider.getNetwork()
+    ]);
+
+    const tierText = tier.toString();
+
+    response.registration = {
+      available: true,
+      registered: tierText !== '0',
+      tier: tierText,
+      tierLabel:
+        tierText === '1'
+          ? 'Operator'
+          : tierText === '2'
+            ? 'Validator'
+            : 'Not Registered',
+      stake: formatWcryloUnits(stake),
+      pending: formatWcryloUnits(pending),
+      operatorStake: formatWcryloUnits(operatorStake),
+      validatorStake: formatWcryloUnits(validatorStake),
+      contract: nodeStakingAddress,
+      chainId: network.chainId.toString(),
+      linkedAddress,
+      error: null
+    };
+  } catch (error) {
+    response.registration.error =
+      error.shortMessage ||
+      error.reason ||
+      error.message;
+  }
+
+  return response;
+});
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 function createWindow() {
@@ -2089,6 +4121,51 @@ async function getClaimableGasEpoch(gm, walletAddress) {
 
   return null;
 }
+
+/*
+ * Lightweight native-gas balance lookup.
+ *
+ * This intentionally performs only provider.getBalance(). The complete
+ * nexus-gas-status handler also queries registry state, GasManager policy,
+ * treasury state, and gas epochs, so it is too slow for post-onboarding
+ * balance detection.
+ */
+ipcMain.handle('nexus-native-gas-balance', async (_, linkedAddress) => {
+  try {
+    if (!ethers.isAddress(linkedAddress)) {
+      return {
+        ok: false,
+        error: 'Invalid Nexus address'
+      };
+    }
+
+    const runtime = await getNexusRuntimeConfig();
+    const nativeBalance =
+      await runtime.provider.getBalance(linkedAddress);
+
+    return {
+      ok: true,
+      nativeGas: formatNexusGasUnits(nativeBalance)
+    };
+  } catch (e) {
+    console.error('[nexus-native-gas-balance] failed', {
+      message: e?.message,
+      shortMessage: e?.shortMessage,
+      reason: e?.reason,
+      code: e?.code
+    });
+
+    return {
+      ok: false,
+      error:
+        e?.shortMessage ||
+        e?.reason ||
+        e?.message ||
+        String(e)
+    };
+  }
+});
+
 
 ipcMain.handle('nexus-gas-status', async (_, linkedAddress) => {
   try {

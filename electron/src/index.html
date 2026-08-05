@@ -180,6 +180,7 @@
       <button class="tab-btn" data-tab="vesting"      onclick="App.switchTab('vesting')">🔒 Vesting</button>
       <button class="tab-btn" data-tab="mining"      onclick="App.switchTab('mining')">⛏ Mining</button>
       <button class="tab-btn" data-tab="nexus" onclick="App.switchTab('nexus')">🌉 Nexus</button>
+      <button class="tab-btn" data-tab="nexusNodes" onclick="App.switchTab('nexusNodes')">🖥 Nexus Nodes</button>
       <button class="tab-btn" data-tab="nexusNfts" onclick="App.switchTab('nexusNfts')">🖼 Nexus NFTs</button>
       <button class="tab-btn" data-tab="nexusTx" onclick="App.switchTab('nexusTx')">🔗 Nexus Transactions</button>
     </div>
@@ -451,25 +452,6 @@
       </div>
     </div>
 
-    <div style="margin-bottom:16px">
-      <h4>🖥 Nexus Node Staking</h4>
-
-      <div style="margin-top:10px;font-size:13px;color:var(--text-dim)">
-        Node Status:
-        <span id="nexus-node-status">—</span>
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button class="btn btn-primary" onclick="App.registerNexusOperator()">Register Operator 300 wCryLo</button>
-        <button class="btn btn-primary" onclick="App.registerNexusValidator()">Register Validator 750 wCryLo</button>
-        <button class="btn btn-secondary" onclick="App.claimNexusNodeRewards()">Claim Node Rewards</button>
-      <button class="btn btn-danger" onclick="App.unregisterNexusNode()">Deregister Node</button>
-      </div>
-
-      <div id="nexus-node-action-status" style="font-size:12px;color:var(--text);margin-top:6px">
-        Register as an Operator or Validator to participate in Nexus node rewards.
-      </div>
-    </div>
 </div>
 
 <div class="card nexus-card" style="margin-top:16px">
@@ -482,14 +464,753 @@
     </div>
     <div class="muted" id="nexus-gas-daily">Daily Gas: —</div>
     <div class="muted" id="nexus-gas-activity">Activity: —</div>
+    <div class="muted" id="nexus-gas-last-refreshed">Last refreshed: Never</div>
 
-    <div class="row" style="margin-top:10px">
-      <button class="btn btn-primary" onclick="App.claimNexusDailyGas()">Claim Daily Gas</button>
+    <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap">
+      <button
+        class="btn btn-primary"
+        onclick="App.claimNexusDailyGas()"
+      >
+        Claim Daily Gas
+      </button>
     </div>
 
-    <div class="muted" id="nexus-gas-action-status" style="margin-top:8px">—</div>
+    <div
+      class="card"
+      style="margin-top:12px;padding:12px"
+    >
+      <div style="font-weight:600;margin-bottom:6px">
+        Buy CRYLO Gas
+      </div>
+
+      <div class="muted" style="margin-bottom:4px">
+        Minimum purchase: 0.5 wCryLo
+      </div>
+
+      <div
+        class="muted"
+        id="nexus-gas-purchase-value"
+        style="margin-bottom:8px"
+      >
+        0.5 wCryLo purchases — CRYLO
+      </div>
+
+      <div
+        style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"
+      >
+        <input
+          id="nexus-buy-gas-amount"
+          type="number"
+          min="0.5"
+          step="0.1"
+          value="0.5"
+          placeholder="0.5"
+          style="flex:1;min-width:140px"
+        />
+
+        <button
+          id="nexus-buy-gas-btn"
+          class="btn btn-secondary"
+          type="button"
+          onclick="App.buyNexusGasWithWcrylo()"
+        >
+          Buy Gas
+        </button>
+      </div>
+    </div>
+
+    <div
+      class="muted"
+      id="nexus-gas-action-status"
+      style="margin-top:8px"
+    >
+      —
+    </div>
   </div>
 </div>
+
+    <div class="tab-panel" id="tab-nexusNodes">
+      <div class="node-center">
+
+        <header class="node-center-header">
+          <div>
+            <div class="node-center-eyebrow">CryLoNexus</div>
+            <h3>Node Center</h3>
+            <p>
+              Follow the guided setup to register, connect, verify, and operate a reward-earning CryLoNexus node.
+            </p>
+          </div>
+
+          <button
+            class="btn btn-secondary"
+            type="button"
+            onclick="App.refreshNexusOperatorDashboard()"
+          >
+            ⟳ Refresh
+          </button>
+        </header>
+
+        <section class="node-center-progress" aria-label="Node onboarding progress">
+          <div class="node-stage" id="nexus-stage-register">
+            <span class="node-stage-number">1</span>
+            <span class="node-stage-copy">
+              <strong>Register</strong>
+              <small>Register your tier</small>
+            </span>
+          </div>
+
+          <div class="node-stage" id="nexus-stage-install">
+            <span class="node-stage-number">2</span>
+            <span class="node-stage-copy">
+              <strong>Install Service</strong>
+              <small>Set up the operator</small>
+            </span>
+          </div>
+
+          <div class="node-stage" id="nexus-stage-connect">
+            <span class="node-stage-number">3</span>
+            <span class="node-stage-copy">
+              <strong>Connect Node</strong>
+              <small>Link wallet and service</small>
+            </span>
+          </div>
+
+          <div class="node-stage" id="nexus-stage-verify">
+            <span class="node-stage-number">4</span>
+            <span class="node-stage-copy">
+              <strong>Verify Uptime</strong>
+              <small>Confirm node health</small>
+            </span>
+          </div>
+
+          <div class="node-stage" id="nexus-stage-operate">
+            <span class="node-stage-number">5</span>
+            <span class="node-stage-copy">
+              <strong>Earn Rewards</strong>
+              <small>Stay online and earn</small>
+            </span>
+          </div>
+        </section>
+
+        <section
+          id="nexus-node-status"
+          class="node-center-smart-status setup"
+          aria-live="polite"
+        >
+          <div
+            id="nexus-node-status-icon"
+            class="node-center-smart-status-icon"
+            aria-hidden="true"
+          >
+            ●
+          </div>
+
+          <div class="node-center-smart-status-copy">
+            <div
+              id="nexus-node-status-eyebrow"
+              class="node-center-smart-status-eyebrow"
+            >
+              Checking node
+            </div>
+
+            <h4 id="nexus-node-status-title">
+              Loading your Node Center status
+            </h4>
+
+            <p id="nexus-node-status-message">
+              Checking registration, service, connection, and verification.
+            </p>
+
+            <div class="node-center-smart-status-step">
+              <span>Current step</span>
+              <strong id="nexus-node-status-current-step">—</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="node-center-wizard">
+
+          <article
+            id="nexus-step-card-register"
+            class="card nexus-card node-center-step-card"
+          >
+            <header class="node-center-step-card-header">
+              <div class="node-center-step-card-heading">
+                <span class="node-center-step-card-icon">1</span>
+                <div>
+                  <div class="node-center-step-label">Step 1</div>
+                  <h4>Register Your Node</h4>
+                  <p>
+                    Stake wCryLo and register your Operator identity.
+                  </p>
+                </div>
+              </div>
+
+              <span
+                id="nexus-step-register-state"
+                class="node-center-step-state"
+              >
+                Pending
+              </span>
+            </header>
+
+            <div class="node-center-step-complete-summary">
+              <strong>Registration complete</strong>
+              <span id="nexus-step-register-summary">
+                Operator registration is active.
+              </span>
+            </div>
+
+            <div class="node-center-step-card-body">
+              <div class="node-center-section-heading">
+                <div>
+                  <div class="node-center-step-label">Current step</div>
+                  <h4 id="nexus-current-step-title">
+                    Register your node
+                  </h4>
+                  <p id="nexus-current-step-description">
+                    Start as an Operator with 300 wCryLo. A Validator
+                    is an Operator upgraded to a 750 wCryLo stake.
+                  </p>
+                </div>
+
+              </div>
+
+              <div class="node-center-requirements">
+                <div>
+                  <span>Operator requirement</span>
+                  <strong id="nexus-node-operator-required">
+                    300 wCryLo
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Validator requirement</span>
+                  <strong id="nexus-node-validator-required">
+                    750 wCryLo
+                  </strong>
+                </div>
+              </div>
+
+              <div class="node-center-actions">
+                <button
+                  id="nexus-register-operator-btn"
+                  class="btn btn-primary"
+                  type="button"
+                  onclick="App.registerNexusOperator()"
+                >
+                  Become an Operator
+                </button>
+
+                <button
+                  id="nexus-register-validator-btn"
+                  class="btn btn-secondary"
+                  type="button"
+                  onclick="App.registerNexusValidator()"
+                >
+                  Upgrade to Validator
+                </button>
+
+              </div>
+
+            </div>
+          </article>
+
+          <article
+            id="nexus-step-card-install"
+            class="card nexus-card node-center-step-card"
+          >
+            <header class="node-center-step-card-header">
+              <div class="node-center-step-card-heading">
+                <span class="node-center-step-card-icon">2</span>
+                <div>
+                  <div class="node-center-step-label">Step 2</div>
+                  <h4 id="nexus-step-install-title">
+                    Install Operator Node
+                  </h4>
+                  <p>
+                    Install the persistent Linux service on the node.
+                  </p>
+                </div>
+              </div>
+
+              <span
+                id="nexus-step-install-state"
+                class="node-center-step-state"
+              >
+                Locked
+              </span>
+            </header>
+
+            <div class="node-center-step-complete-summary">
+              <strong>Service installed</strong>
+              <span id="nexus-step-install-summary">
+                The operator service is installed.
+              </span>
+            </div>
+
+            <div class="node-center-step-card-body">
+              <div
+                id="nexus-operator-install-action-message"
+                class="node-center-card-message"
+              >
+                Install status has not been loaded.
+              </div>
+
+              <div class="node-center-action-row">
+                <button
+                  id="nexus-install-operator-btn"
+                  class="primary-btn"
+                  type="button"
+                  onclick="App.installOrUpdateNexusOperator()"
+                >
+                  Install Operator
+                </button>
+
+                <button
+                  id="nexus-update-operator-btn"
+                  class="primary-btn"
+                  type="button"
+                  onclick="App.installOrUpdateNexusOperator()"
+                  style="display:none"
+                >
+                  Update Operator
+                </button>
+
+                <button
+                  id="nexus-operator-up-to-date-btn"
+                  class="secondary-btn"
+                  type="button"
+                  disabled
+                  style="display:none"
+                >
+                  Operator Up to Date
+                </button>
+
+              </div>
+            </div>
+          </article>
+
+          <article
+            id="nexus-step-card-connect"
+            class="card nexus-card node-center-step-card"
+          >
+            <header class="node-center-step-card-header">
+              <div class="node-center-step-card-heading">
+                <span class="node-center-step-card-icon">3</span>
+                <div>
+                  <div class="node-center-step-label">Step 3</div>
+                  <h4>Connect Node</h4>
+                  <p>
+                    Link the service configuration to this wallet.
+                  </p>
+                </div>
+              </div>
+
+              <span
+                id="nexus-step-connect-state"
+                class="node-center-step-state"
+              >
+                Locked
+              </span>
+            </header>
+
+            <div class="node-center-step-complete-summary">
+              <strong>Node connected</strong>
+              <span id="nexus-step-connect-summary">
+                Wallet and operator service are connected.
+              </span>
+            </div>
+
+            <div class="node-center-step-card-body">
+              <div class="node-center-detail-grid">
+                <span>Configuration</span>
+                <strong id="nexus-operator-config-loaded">—</strong>
+
+                <span>Wallet match</span>
+                <strong id="nexus-operator-wallet-match">—</strong>
+              </div>
+
+              <div class="node-center-card-message">
+                The service configuration must match the registered
+                Nexus wallet before verification can begin.
+              </div>
+
+              <div
+                id="nexus-operator-authorization-panel"
+                class="node-center-card hidden"
+              >
+                <div class="node-center-card-header">
+                  <div>
+                    <div class="node-center-label">
+                      Operator Authorization
+                    </div>
+                    <strong id="nexus-operator-authorization-status">
+                      Not Authorized
+                    </strong>
+                  </div>
+                </div>
+
+                <div class="node-center-detail-grid">
+                  <div>
+                    <span>Expires</span>
+                    <strong id="nexus-operator-authorization-expires">
+                      —
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Time Remaining</span>
+                    <strong id="nexus-operator-authorization-remaining">
+                      —
+                    </strong>
+                  </div>
+                </div>
+
+                <button
+                  id="nexus-authorize-operator-btn"
+                  class="btn btn-primary"
+                  type="button"
+                  onclick="App.authorizeNexusOperator()"
+                >
+                  Authorize Node for 72 Hours
+                </button>
+              </div>
+
+            </div>
+          </article>
+
+          <article
+            id="nexus-step-card-verify"
+            class="card nexus-card node-center-step-card"
+          >
+            <header class="node-center-step-card-header">
+              <div class="node-center-step-card-heading">
+                <span class="node-center-step-card-icon">4</span>
+                <div>
+                  <div class="node-center-step-label">Step 4</div>
+                  <h4>Verify Uptime</h4>
+                  <p>
+                    Confirm health, uptime, and reward eligibility.
+                  </p>
+                </div>
+              </div>
+
+              <span
+                id="nexus-step-verify-state"
+                class="node-center-step-state"
+              >
+                Locked
+              </span>
+            </header>
+
+            <div class="node-center-step-complete-summary">
+              <strong>Verification complete</strong>
+              <span id="nexus-step-verify-summary">
+                The node is connected to reward verification.
+              </span>
+            </div>
+
+            <div class="node-center-step-card-body">
+              <div class="node-center-detail-grid">
+                <span>Verification</span>
+                <strong id="nexus-reward-verification-status">
+                  Not Connected
+                </strong>
+
+                <span>Eligibility</span>
+                <strong id="nexus-reward-eligibility">
+                  Unavailable
+                </strong>
+              </div>
+
+              <div
+                id="nexus-reward-verification-message"
+                class="node-center-card-message"
+              >
+                Uptime verification and operator reward validation
+                are not connected yet.
+              </div>
+            </div>
+          </article>
+
+          <article
+            id="nexus-step-card-operate"
+            class="card nexus-card node-center-step-card"
+          >
+            <header class="node-center-step-card-header">
+              <div class="node-center-step-card-heading">
+                <span class="node-center-step-card-icon">5</span>
+                <div>
+                  <div class="node-center-step-label">Step 5</div>
+                  <h4>Operate Node</h4>
+                  <p>
+                    Keep the verified service online and monitor rewards.
+                  </p>
+                </div>
+              </div>
+
+              <span
+                id="nexus-step-operate-state"
+                class="node-center-step-state"
+              >
+                Locked
+              </span>
+            </header>
+
+            <div class="node-center-step-complete-summary">
+              <strong>Node operational</strong>
+              <span id="nexus-step-operate-summary">
+                The node is online and participating.
+              </span>
+            </div>
+
+            <div class="node-center-step-card-body">
+              <div class="node-center-card-message">
+                Keep the operator service online to maintain uptime
+                verification and reward eligibility. Ongoing controls
+                remain available in Node Management below.
+              </div>
+            </div>
+          </article>
+
+        </section>
+
+        <section
+          class="card nexus-card node-center-management"
+          aria-labelledby="nexus-node-management-title"
+        >
+          <div class="node-center-section-heading compact">
+            <div>
+              <div class="node-center-eyebrow">Operations</div>
+              <h4 id="nexus-node-management-title">
+                Node Management
+              </h4>
+              <p>
+                Manage registration, operator service, rewards, and
+                transaction gas after onboarding.
+              </p>
+            </div>
+
+            <div class="node-center-tier-badge">
+              <span>Current tier</span>
+              <strong id="nexus-node-tier">—</strong>
+            </div>
+          </div>
+
+          <div class="node-management-grid">
+            <section class="node-management-panel">
+              <div class="node-management-panel-header">
+                <div>
+                  <div class="node-center-step-label">Registration</div>
+                  <h4>Node Identity</h4>
+                </div>
+              </div>
+
+              <div class="node-center-summary-grid registration">
+                <div class="node-summary-card">
+                  <span>Registration</span>
+                  <strong id="nexus-node-registration-status">—</strong>
+                </div>
+
+                <div class="node-summary-card">
+                  <span>Locked stake</span>
+                  <strong id="nexus-node-stake">—</strong>
+                </div>
+              </div>
+
+              <div class="node-center-actions">
+                <button
+                  id="nexus-unregister-node-btn"
+                  class="btn btn-danger hidden"
+                  type="button"
+                  onclick="App.unregisterNexusNode()"
+                >
+                  Deregister Node
+                </button>
+              </div>
+
+              <div
+                id="nexus-node-action-status"
+                class="node-center-action-status"
+              >
+                Register as an Operator to begin earning node rewards.
+              </div>
+            </section>
+
+            <section class="node-management-panel">
+              <div class="node-management-panel-header">
+                <div>
+                  <div class="node-center-step-label">
+                    Operator Runtime
+                  </div>
+                  <h4>Service Control</h4>
+                </div>
+              </div>
+
+              <div class="node-center-detail-grid">
+                <span>Installed</span>
+                <strong id="nexus-operator-installed">—</strong>
+
+                <span>Running</span>
+                <strong id="nexus-operator-running">—</strong>
+
+                <span>Installed version</span>
+                <strong id="nexus-operator-installed-version">—</strong>
+
+                <span>Available version</span>
+                <strong id="nexus-operator-bundled-version">—</strong>
+              </div>
+
+              <div class="node-center-actions">
+                <button
+                  id="nexus-start-operator-btn"
+                  class="secondary-btn"
+                  type="button"
+                  onclick="App.controlNexusOperatorService('start')"
+                  style="display:none"
+                >
+                  Start Service
+                </button>
+
+                <button
+                  id="nexus-restart-operator-btn"
+                  class="secondary-btn"
+                  type="button"
+                  onclick="App.controlNexusOperatorService('restart')"
+                  style="display:none"
+                >
+                  Restart Service
+                </button>
+
+                <button
+                  id="nexus-stop-operator-btn"
+                  class="secondary-btn"
+                  type="button"
+                  onclick="App.controlNexusOperatorService('stop')"
+                  style="display:none"
+                >
+                  Stop Service
+                </button>
+              </div>
+
+              <div
+                id="nexus-operator-service-message"
+                class="node-center-card-message"
+              >
+                Operator service status has not been loaded.
+              </div>
+            </section>
+
+            <section class="node-management-panel">
+              <div class="node-management-panel-header">
+                <div>
+                  <div class="node-center-step-label">Rewards</div>
+                  <h4>Node Earnings</h4>
+                </div>
+              </div>
+
+              <div class="node-center-summary-grid operate">
+                <div class="node-summary-card">
+                  <span>Pending rewards</span>
+                  <strong id="nexus-node-pending">—</strong>
+                </div>
+              </div>
+
+              <div class="node-center-actions">
+                <button
+                  id="nexus-claim-node-rewards-btn"
+                  class="btn btn-primary hidden"
+                  type="button"
+                  onclick="App.claimNexusNodeRewards()"
+                >
+                  Claim Rewards
+                </button>
+              </div>
+            </section>
+
+            <section class="node-management-panel">
+              <div class="node-management-panel-header">
+                <div>
+                  <div class="node-center-step-label">Utilities</div>
+                  <h4>Transaction Gas</h4>
+                </div>
+              </div>
+
+              <div class="node-center-card-message">
+                CRYLO is required for Nexus registration, reward,
+                upgrade, and deregistration transactions.
+              </div>
+
+              <div class="node-center-actions">
+                <button
+                  id="nexus-dashboard-buy-gas-btn"
+                  class="btn btn-secondary"
+                  type="button"
+                  onclick="App.openNexusGasPurchase()"
+                >
+                  Buy CRYLO Gas
+                </button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <details class="node-center-disclosure">
+          <summary>
+            <span>
+              <strong>Advanced Diagnostics</strong>
+              <small>Service, node, worker, and runtime details</small>
+            </span>
+            <span class="node-center-chevron">⌄</span>
+          </summary>
+
+          <div class="node-center-disclosure-body">
+            <div class="node-center-detail-grid diagnostics">
+              <span>Service scope</span>
+              <strong id="nexus-operator-service-scope">—</strong>
+
+              <span>Node ID</span>
+              <strong id="nexus-operator-node-id">—</strong>
+
+              <span>Last update</span>
+              <strong id="nexus-operator-updated-at">—</strong>
+
+              <span>Status age</span>
+              <strong id="nexus-operator-status-age">—</strong>
+            </div>
+
+            <div class="node-center-subsection">
+              <h4>Worker Health</h4>
+
+              <div
+                id="nexus-operator-worker-summary"
+                class="node-center-card-message"
+              >
+                No worker status loaded.
+              </div>
+
+              <div
+                id="nexus-operator-workers"
+                class="node-center-worker-grid"
+              ></div>
+            </div>
+
+            <div class="node-center-subsection">
+              <h4>Operator Metrics</h4>
+
+              <div
+                id="nexus-operator-metrics"
+                class="node-center-metrics-grid"
+              >
+                <div class="muted">No metrics loaded.</div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+      </div>
+    </div>
 
     <div class="tab-panel" id="tab-nexusNfts">
       <h3>🖼 Nexus NFTs</h3>
@@ -522,6 +1243,9 @@
   <div id="toast-container"></div>
 
 </div><!-- /app -->
+<script src="node-center/facts.js"></script>
+<script src="node-center/state.js"></script>
+<script src="node-center/renderer.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
