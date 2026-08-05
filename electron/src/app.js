@@ -326,7 +326,24 @@ async function openWallet() {
     password: pass
   }, 30000);
 
-  if (!res.ok) { setOpenWalletLoading(false); markPasswordInvalid('open-pass'); return; }
+  if (!res.ok) {
+    setOpenWalletLoading(false);
+
+    markPasswordInvalid('open-pass');
+
+    console.error(
+      'open_wallet failed:',
+      res
+    );
+
+    toast(
+      `Wallet RPC: ${res.error || 'Unknown error'}`,
+      'error',
+      10000
+    );
+
+    return;
+  }
 
   State.walletName = name;
   State.address = '';
