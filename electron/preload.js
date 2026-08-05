@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('crylo', {
   nexusGasStatus: (linkedAddress) =>
     ipcRenderer.invoke('nexus-gas-status', linkedAddress),
 
+  nexusNativeGasBalance: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-native-gas-balance', linkedAddress),
+
   nexusTransactions: (linkedAddress) =>
     ipcRenderer.invoke('nexus-transactions', linkedAddress),
 
@@ -65,6 +68,33 @@ contextBridge.exposeInMainWorld('crylo', {
     nexusNodeStatus: (linkedAddress) =>
     ipcRenderer.invoke('nexus-node-status', linkedAddress),
 
+  nexusOperatorDashboard: (linkedAddress) =>
+    ipcRenderer.invoke('nexus-operator-dashboard', linkedAddress),
+
+  nexusOperatorInstallationStatus: () =>
+    ipcRenderer.invoke(
+      'nexus-operator-installation-status'
+    ),
+
+  nexusInstallOperatorService: () =>
+    ipcRenderer.invoke(
+      'nexus-install-operator-service'
+    ),
+
+  nexusControlOperatorService: (action) =>
+    ipcRenderer.invoke(
+      'nexus-control-operator-service',
+      action
+    ),
+
+
+  nexusAuthorizeOperator: (walletName, cryloAddress) =>
+    ipcRenderer.invoke(
+      'nexus-authorize-operator',
+      walletName,
+      cryloAddress
+    ),
+
   nexusRegisterOperator: (walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-register-operator', walletName, cryloAddress),
 
@@ -93,6 +123,13 @@ contextBridge.exposeInMainWorld('crylo', {
   onLog:           (cb)          => ipcRenderer.on('log',            (_, data) => cb(data)),
   onDaemonExit:    (cb)          => ipcRenderer.on('daemon-exit',    (_, code) => cb(code)),
   onWalletRpcExit: (cb)          => ipcRenderer.on('wallet-rpc-exit',(_, code) => cb(code)),
+
+  onNexusWalletOnboardingResult: (cb) =>
+    ipcRenderer.on(
+      'nexus-wallet-onboarding-result',
+      (_, data) => cb(data)
+    ),
+
   // ── Cleanup ───────────────────────────────────────────────────────────
   removeAllListeners: (channel)  => ipcRenderer.removeAllListeners(channel)
 });

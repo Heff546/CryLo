@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crylonexus.org/schemas/heartbeat-envelope.schema.json",
+  "title": "CryLoNexus Delegated Operator Heartbeat",
+  "description": "Canonical heartbeat evidence signed by an authorized CryLoNexus operator session key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "chainId",
+    "operatorAddress",
+    "sessionAddress",
+    "delegationHash",
+    "authorizationExpiresAt",
+    "nodeId",
+    "sequence",
+    "issuedAt",
+    "expiresAt",
+    "nonce",
+    "statusHash",
+    "payloadHash",
+    "signature"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "const": "2.0.0"
+    },
+    "chainId": {
+      "const": 5546
+    },
+    "operatorAddress": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{40}$"
+    },
+    "sessionAddress": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{40}$"
+    },
+    "delegationHash": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{64}$"
+    },
+    "authorizationExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nodeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "statusHash": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{64}$"
+    },
+    "payloadHash": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{64}$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{130}$"
+    }
+  }
+}

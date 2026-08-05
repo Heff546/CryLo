@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "network": "CryLoNexus Mainnet",
+  "chainId": 5546,
+  "operatorAddress": "0x1111111111111111111111111111111111111111",
+  "nodeId": "example-node-public-identity-0001",
+  "windowStartedAt": "2026-07-01T20:00:00Z",
+  "windowEndedAt": "2026-07-01T20:20:00Z",
+  "expectedHeartbeats": 20,
+  "receivedHeartbeats": 20,
+  "successfulObservations": 20,
+  "failedObservations": 0,
+  "distinctVerifiers": 0,
+  "successRateBasisPoints": 10000,
+  "locallyQualified": true,
+  "consensusQualified": false,
+  "rewardAuthorized": false,
+  "reasonCode": "LOCAL_EVIDENCE_ONLY"
+}
