@@ -12,3 +12,4 @@ crylo-gas-treasury-wallet
 crylo-gas-treasury-wallet.address.txt
 crylo-gas-treasury-wallet.*.locked.*
 *.locked.*
+electron/bin/linux/*.old-*

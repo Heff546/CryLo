@@ -11,9 +11,15 @@
   "scripts": {
     "start": "electron .",
     "build-win": "electron-builder --win --x64",
-    "build-linux": "electron-builder --linux --x64",
+    "build-linux": "bash scripts/release-linux.sh auto",
     "build-all": "electron-builder --win --linux --mac --x64",
-    "build-mac": "electron-builder --mac --x64"
+    "build-mac": "electron-builder --mac --x64",
+    "sync-linux-binaries": "bash scripts/sync-linux-binaries.sh",
+    "verify-linux-binaries": "bash scripts/verify-linux-binaries.sh",
+    "release-linux": "bash scripts/release-linux.sh auto",
+    "prebuild-all": "npm run sync-linux-binaries && npm run verify-linux-binaries",
+    "build-linux-arm64": "bash scripts/release-linux.sh arm64",
+    "build-linux-x64": "bash scripts/release-linux.sh x64"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -45,8 +51,9 @@
         "from": "bin/linux",
         "to": "bin/linux",
         "filter": [
-          "**/*",
-          "!README.txt"
+          "CryLo-daemon",
+          "CryLo-wallet-rpc",
+          "BINARY-MANIFEST.txt"
         ]
       },
       {
@@ -103,7 +110,9 @@
       ],
       "category": "public.app-category.finance",
       "icon": "assets/icon.png"
-    }
+    },
+    "beforePack": "scripts/before-pack.js",
+    "afterPack": "scripts/after-pack.js"
   },
   "homepage": "https://crylo.com",
   "dependencies": {
