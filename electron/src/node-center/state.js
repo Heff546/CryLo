@@ -334,7 +334,7 @@
           eyebrow: 'Setup ready',
           title: 'Register your node',
           message:
-            'Register as an Operator with 300 wCryLo. Validator remains an upgrade from Operator.',
+            'Choose a node tier: Operator requires 300 wCryLo and Validator requires 750 wCryLo.',
           currentStep: 'Register Your Node'
         },
 

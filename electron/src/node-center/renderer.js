@@ -251,12 +251,21 @@
             actionRunning === true
         }),
         registration: Object.freeze({
-          showRegister:
-            state.action === 'REGISTER',
-          showUpgrade:
+          showOperator: true,
+          showValidator: true,
+          operatorText:
             registration.registered &&
-            registration.tier ===
-              'Operator',
+            registration.tier === 'Operator'
+              ? 'Operator Active'
+              : 'Become Operator',
+          validatorText:
+            registration.registered &&
+            registration.tier === 'Validator'
+              ? 'Validator Active'
+              : 'Become Validator',
+          tierSelectionDisabled:
+            registration.registered ||
+            actionRunning === true,
           showDeregister:
             registration.registered,
           showClaim:
@@ -525,12 +534,22 @@
       setVisible(
         documentRef,
         'nexus-register-operator-btn',
-        model.registration.showRegister
+        model.registration.showOperator
       );
       setVisible(
         documentRef,
         'nexus-register-validator-btn',
-        model.registration.showUpgrade
+        model.registration.showValidator
+      );
+      setText(
+        documentRef,
+        'nexus-register-operator-btn',
+        model.registration.operatorText
+      );
+      setText(
+        documentRef,
+        'nexus-register-validator-btn',
+        model.registration.validatorText
       );
       setVisible(
         documentRef,
@@ -558,6 +577,17 @@
         documentRef,
         'nexus-authorize-operator-btn',
         model.authorization.disabled
+      );
+
+      setDisabled(
+        documentRef,
+        'nexus-register-operator-btn',
+        model.registration.tierSelectionDisabled
+      );
+      setDisabled(
+        documentRef,
+        'nexus-register-validator-btn',
+        model.registration.tierSelectionDisabled
       );
 
       for (const id of [

@@ -1,8 +1,9 @@
 'use strict';
 
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -4630,9 +4631,11 @@ ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
       } else if (p.name === 'MintedFromCryLo' || p.name === 'BurnedForCryLo') {
         amount = formatWcryloUnits(p.args.amount) + ' wCryLo';
       } else if (p.args.amount != null) {
-        amount = formatWcryloUnits(p.args.amount);
-        if (p.name.includes('Gas') || p.name === 'StarterGasSent') amount += ' CRYLO';
-        else amount += ' wCryLo';
+        if (p.name === 'DailyGasClaimed' || p.name === 'StarterGasSent') {
+          amount = formatNexusGasUnits(p.args.amount) + ' CRYLO';
+        } else {
+          amount = formatWcryloUnits(p.args.amount) + ' wCryLo';
+        }
       } else if (p.args.wcryloAmount != null) {
         amount =
           formatWcryloUnits(p.args.wcryloAmount) +

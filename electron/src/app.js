@@ -172,18 +172,55 @@ function showSetup() {
 
 // ─── Setup screen ─────────────────────────────────────────────────────────────
 function backToSetupCards() {
-  el('setup-cards').classList.remove('hidden');
+  const setupScreen = el('setup-screen');
+  const setupCards = el('setup-cards');
+
+  if (setupScreen) {
+    setupScreen.classList.remove('hidden');
+    setupScreen.style.display = '';
+  }
+
+  if (setupCards) {
+    setupCards.classList.remove('hidden');
+    setupCards.style.display = '';
+  }
+
   ['form-create', 'form-open', 'form-restore'].forEach(id => {
-    el(id).classList.add('hidden');
+    const form = el(id);
+    if (!form) return;
+
+    form.classList.add('hidden');
+    form.style.display = 'none';
   });
 }
 
 function showSetupForm(type) {
-  el('setup-cards').classList.add('hidden');
+  const setupScreen = el('setup-screen');
+  const setupCards = el('setup-cards');
+  const targetForm = el(`form-${type}`);
+
+  if (setupScreen) {
+    setupScreen.classList.remove('hidden');
+    setupScreen.style.display = '';
+  }
+
+  if (setupCards) {
+    setupCards.classList.add('hidden');
+    setupCards.style.display = 'none';
+  }
+
   ['form-create', 'form-open', 'form-restore'].forEach(id => {
-    el(id).classList.add('hidden');
+    const form = el(id);
+    if (!form) return;
+
+    form.classList.add('hidden');
+    form.style.display = 'none';
   });
-  el(`form-${type}`).classList.remove('hidden');
+
+  if (targetForm) {
+    targetForm.classList.remove('hidden');
+    targetForm.style.display = '';
+  }
 
   if (type === 'create') {
     el('create-seed-section').classList.add('hidden');
@@ -3707,16 +3744,6 @@ async function refreshNexusOperatorDashboard() {
     );
 
     setNexusNodeDashboardVisible(
-      'nexus-register-operator-btn',
-      !registered
-    );
-
-    setNexusNodeDashboardVisible(
-      'nexus-register-validator-btn',
-      registered && tierValue === '1'
-    );
-
-    setNexusNodeDashboardVisible(
       'nexus-claim-node-rewards-btn',
       registered
     );
@@ -4215,28 +4242,66 @@ async function authorizeNexusOperator() {
   }
 }
 
+let nexusRegistrationInProgress = false;
+
+function setNexusRegistrationProgress(tier = '', phase = '') {
+  const operatorButton =
+    document.getElementById('nexus-register-operator-btn');
+  const validatorButton =
+    document.getElementById('nexus-register-validator-btn');
+
+  const inProgress = !!phase;
+
+  if (operatorButton) {
+    operatorButton.disabled = inProgress;
+    operatorButton.textContent =
+      tier === 'Operator' && phase
+        ? phase
+        : 'Become Operator';
+  }
+
+  if (validatorButton) {
+    validatorButton.disabled = inProgress;
+    validatorButton.textContent =
+      tier === 'Validator' && phase
+        ? phase
+        : 'Become Validator';
+  }
+}
+
 async function registerNexusOperator() {
+  if (nexusRegistrationInProgress) return;
+
+  nexusRegistrationInProgress = true;
+
   const statusEl =
     document.getElementById('nexus-node-action-status');
 
+  setNexusRegistrationProgress('Operator', 'Checking Gas...');
   statusEl.textContent =
     'Checking CRYLO gas for Operator registration...';
 
-  const gasCheck = await ensureNexusGasForAction(
-    'Operator registration',
-    NEXUS_GAS_ESTIMATES.nodeRegistration
-  );
-
-  if (!gasCheck.ok) {
-    statusEl.textContent =
-      `Operator registration stopped: ${gasCheck.error}`;
-    return;
-  }
-
-  statusEl.textContent =
-    'Registering Operator node with 300 wCryLo...';
-
   try {
+    const gasCheck = await ensureNexusGasForAction(
+      'Operator registration',
+      NEXUS_GAS_ESTIMATES.nodeRegistration
+    );
+
+    if (!gasCheck.ok) {
+      statusEl.textContent =
+        `Operator registration stopped: ${gasCheck.error}`;
+      return;
+    }
+
+    setNexusRegistrationProgress(
+      'Operator',
+      'Registering Operator...'
+    );
+
+    statusEl.textContent =
+      'Submitting Operator registration with 300 wCryLo. ' +
+      'Please wait for Nexus confirmation...';
+
     const result =
       await window.crylo.nexusRegisterOperator(
         State.walletName,
@@ -4246,7 +4311,6 @@ async function registerNexusOperator() {
     if (!result.ok) {
       const errorText =
         String(result.error || 'Unknown error');
-
       const lowerError = errorText.toLowerCase();
 
       statusEl.textContent =
@@ -4254,15 +4318,22 @@ async function registerNexusOperator() {
           ? 'Operator registration stopped: Not enough CRYLO gas. ' +
             'Use the Buy Gas button first.'
           : `Operator registration failed: ${errorText}`;
-
       return;
     }
 
+    setNexusRegistrationProgress(
+      'Operator',
+      'Confirming Operator...'
+    );
+
     statusEl.textContent =
-      'Operator node registered successfully.';
+      'Operator transaction confirmed. Updating Node Center...';
 
     await refreshNexusDashboard();
     scheduleNexusDashboardRefresh(5000);
+
+    statusEl.textContent =
+      'Operator node registered successfully.';
   } catch (err) {
     console.error(err);
 
@@ -4274,31 +4345,45 @@ async function registerNexusOperator() {
         ? 'Operator registration stopped: Not enough CRYLO gas. ' +
           'Use the Buy Gas button first.'
         : 'Operator registration failed.';
+  } finally {
+    nexusRegistrationInProgress = false;
+    setNexusRegistrationProgress();
   }
 }
 
 async function registerNexusValidator() {
+  if (nexusRegistrationInProgress) return;
+
+  nexusRegistrationInProgress = true;
+
   const statusEl =
     document.getElementById('nexus-node-action-status');
 
+  setNexusRegistrationProgress('Validator', 'Checking Gas...');
   statusEl.textContent =
     'Checking CRYLO gas for Validator registration...';
 
-  const gasCheck = await ensureNexusGasForAction(
-    'Validator registration',
-    NEXUS_GAS_ESTIMATES.nodeRegistration
-  );
-
-  if (!gasCheck.ok) {
-    statusEl.textContent =
-      `Validator registration stopped: ${gasCheck.error}`;
-    return;
-  }
-
-  statusEl.textContent =
-    'Registering Validator node with 750 wCryLo...';
-
   try {
+    const gasCheck = await ensureNexusGasForAction(
+      'Validator registration',
+      NEXUS_GAS_ESTIMATES.nodeRegistration
+    );
+
+    if (!gasCheck.ok) {
+      statusEl.textContent =
+        `Validator registration stopped: ${gasCheck.error}`;
+      return;
+    }
+
+    setNexusRegistrationProgress(
+      'Validator',
+      'Registering Validator...'
+    );
+
+    statusEl.textContent =
+      'Submitting Validator registration with 750 wCryLo. ' +
+      'Please wait for Nexus confirmation...';
+
     const result =
       await window.crylo.nexusRegisterValidator(
         State.walletName,
@@ -4308,7 +4393,6 @@ async function registerNexusValidator() {
     if (!result.ok) {
       const errorText =
         String(result.error || 'Unknown error');
-
       const lowerError = errorText.toLowerCase();
 
       statusEl.textContent =
@@ -4316,15 +4400,22 @@ async function registerNexusValidator() {
           ? 'Validator registration stopped: Not enough CRYLO gas. ' +
             'Use the Buy Gas button first.'
           : `Validator registration failed: ${errorText}`;
-
       return;
     }
 
+    setNexusRegistrationProgress(
+      'Validator',
+      'Confirming Validator...'
+    );
+
     statusEl.textContent =
-      'Validator node registered successfully.';
+      'Validator transaction confirmed. Updating Node Center...';
 
     await refreshNexusDashboard();
     scheduleNexusDashboardRefresh(5000);
+
+    statusEl.textContent =
+      'Validator node registered successfully.';
   } catch (err) {
     console.error(err);
 
@@ -4336,6 +4427,9 @@ async function registerNexusValidator() {
         ? 'Validator registration stopped: Not enough CRYLO gas. ' +
           'Use the Buy Gas button first.'
         : 'Validator registration failed.';
+  } finally {
+    nexusRegistrationInProgress = false;
+    setNexusRegistrationProgress();
   }
 }
 
@@ -4344,7 +4438,7 @@ async function unregisterNexusNode() {
   const statusEl = document.getElementById('nexus-node-action-status');
 
   const yes = confirm(
-    'Deregister this Nexus node?\n\nYour staked wCryLo and available node rewards will be returned.'
+    'Deregister this Nexus node?\n\nYour staked wCryLo will be returned. Any pending node rewards remain separately claimable.'
   );
 
   if (!yes) return;
