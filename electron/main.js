@@ -2598,6 +2598,12 @@ async function installBundledOperatorRuntime() {
 
   const paths = getOperatorInstallPaths();
 
+  const previousServiceStatus =
+    await readOperatorServiceStatus();
+
+  const serviceWasRunning =
+    previousServiceStatus.running === true;
+
   if (!(await pathExists(paths.configPath))) {
     throw new Error(
       'Register the Operator or Validator before installing the service.'
@@ -2845,8 +2851,28 @@ async function installBundledOperatorRuntime() {
   if (!enableResult.ok) {
     throw new Error(
       enableResult.stderr ||
-      'The Node Service could not be enabled and started.'
+      'The Node Service could not be enabled.'
     );
+  }
+
+  if (serviceWasRunning) {
+    const restartResult =
+      await runLocalCommand(
+        'systemctl',
+        [
+          '--user',
+          'restart',
+          'crylo-nexus-operator.service'
+        ],
+        15_000
+      );
+
+    if (!restartResult.ok) {
+      throw new Error(
+        restartResult.stderr ||
+        'The updated Node Service was installed but could not be restarted.'
+      );
+    }
   }
 
   const warnings = [];
