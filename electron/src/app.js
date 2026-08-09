@@ -1035,9 +1035,9 @@ async function loadVesting() {
   try {
     const balRes = await window.crylo.walletRpc('get_balance', { account_index: 0 });
     const bal = balRes.result?.result || balRes.result || {};
+    const realTotal = Number(bal.balance || 0);
     const realUnlocked = Number(bal.unlocked_balance || 0);
-    const minedTotal = tierTotals[0] + tierTotals[1];
-    const realLocked = Math.max(0, minedTotal - realUnlocked);
+    const realLocked = Math.max(0, realTotal - realUnlocked);
 
     el('vest-t1').textContent = fmt(realUnlocked) + '  CryLo';
     el('vest-t2').textContent = fmt(realLocked) + '  CryLo';
@@ -3543,30 +3543,35 @@ function renderNexusInstallationDetails(
   const action =
     state?.action;
 
+  const tier =
+    state?.facts?.registration?.tier === 'Validator'
+      ? 'Validator'
+      : 'Operator';
+
   if (action === 'REPAIR') {
     messageElement.textContent =
-      'Required runtime files are missing or incomplete. Repair the operator node to continue.';
+      `Required runtime files are missing or incomplete. Repair the ${tier} Node Service to continue.`;
   } else if (action === 'INSTALL') {
     messageElement.textContent =
-      'Install the operator node once. The background service remains independent of Electron.';
+      `Install the ${tier} Node Service once. The background service remains independent of Electron.`;
   } else if (action === 'UPDATE') {
     messageElement.textContent =
-      `Operator ${result.installedVersion || 'runtime'} is installed. Version ${result.bundledVersion || 'the latest release'} is ready.`;
+      `${tier} Node Service ${result.installedVersion || 'runtime'} is installed. Version ${result.bundledVersion || 'the latest release'} is ready.`;
   } else if (action === 'AUTHORIZE') {
     messageElement.textContent =
-      `Operator ${result.installedVersion || ''} is installed and current. Authorize the node to continue.`;
+      `${tier} Node Service ${result.installedVersion || ''} is installed and current. Authorize the node to continue.`;
   } else if (action === 'START') {
     messageElement.textContent =
-      `Operator ${result.installedVersion || ''} is installed, current, and authorized. Start the background service.`;
+      `${tier} Node Service ${result.installedVersion || ''} is installed, current, and authorized. Start the background service.`;
   } else if (
     action === 'VERIFY' ||
     action === 'OPERATE'
   ) {
     messageElement.textContent =
-      `Operator ${result.installedVersion || ''} is installed, current, and running.`;
+      `${tier} Node Service ${result.installedVersion || ''} is installed, current, and running.`;
   } else {
     messageElement.textContent =
-      'Operator installation status loaded.';
+      `${tier} Node Service installation status loaded.`;
   }
 }
 
@@ -3636,7 +3641,7 @@ async function refreshNexusOperatorDashboard() {
     eyebrow: 'Refreshing status',
     title: 'Loading Node Center',
     message:
-      'Checking registration, operator service, connection, uptime, and reward eligibility.',
+      'Checking registration, Node Service, connection, uptime, and reward eligibility.',
     currentStep: 'Checking Node'
   });
 
@@ -3690,23 +3695,16 @@ async function refreshNexusOperatorDashboard() {
     const tierValue =
       String(registration.tier || '0');
 
-    const operatorRegistrationStatus =
+    const registrationStatus =
       registration.available === false
         ? 'Unavailable'
-        : registered && tierValue === '1'
-          ? 'Registered'
-          : 'Not Registered';
-
-    const validatorRegistrationStatus =
-      registration.available === false
-        ? 'Unavailable'
-        : registered && tierValue === '2'
+        : registered
           ? 'Registered'
           : 'Not Registered';
 
     setNexusNodeDashboardText(
       'nexus-node-registration-status',
-      operatorRegistrationStatus
+      registrationStatus
     );
 
     const currentTierLabel =
@@ -3931,15 +3929,15 @@ async function refreshNexusOperatorDashboard() {
 
       if (runtime.stale === true) {
         messages.push(
-          'The saved operator status is stale.'
+          `The saved ${currentTierLabel} Node Service status is stale.`
         );
       }
 
       if (messages.length === 0) {
         messages.push(
           service.running
-            ? 'The operator service is running.'
-            : 'The operator service is not running.'
+            ? `The ${currentTierLabel} Node Service is running.`
+            : `The ${currentTierLabel} Node Service is not running.`
         );
       }
 
@@ -3968,7 +3966,7 @@ async function refreshNexusOperatorDashboard() {
     setNexusNodeDashboardText(
       'nexus-reward-verification-message',
       verification.message ||
-      'Uptime verification and operator reward validation are not connected yet.'
+      `Uptime verification and ${currentTierLabel} reward validation are not connected yet.`
     );
 
     renderNexusOperatorWorkers(
@@ -4048,6 +4046,15 @@ async function refreshNexusOperatorInstallationControls() {
   return currentNexusNodeCenterState;
 }
 
+function getActiveNexusNodeTierLabel() {
+  return currentNexusNodeCenterState
+    ?.facts
+    ?.registration
+    ?.tier === 'Validator'
+      ? 'Validator'
+      : 'Operator';
+}
+
 
 async function installOrUpdateNexusOperator() {
   if (nexusOperatorServiceActionRunning) {
@@ -4059,13 +4066,16 @@ async function installOrUpdateNexusOperator() {
       'nexus-operator-install-action-message'
     );
 
+  const tier =
+    getActiveNexusNodeTierLabel();
+
   nexusOperatorServiceActionRunning = true;
 
   rerenderCurrentNexusNodeCenter();
 
   if (messageElement) {
     messageElement.textContent =
-      'Installing the CryLoNexus operator runtime...';
+      `Installing the CryLoNexus ${tier} Node Service runtime...`;
   }
 
   try {
@@ -4076,7 +4086,7 @@ async function installOrUpdateNexusOperator() {
     if (!result?.ok) {
       throw new Error(
         result?.error ||
-        'Operator installation failed.'
+        `${tier} Node Service installation failed.`
       );
     }
 
@@ -4088,21 +4098,21 @@ async function installOrUpdateNexusOperator() {
     if (messageElement) {
       messageElement.textContent =
         warnings.length
-          ? `Operator ${result.runtimeVersion || ''} installed. Authorize the node to start the service. ${warnings.join(' ')}`
-          : `Operator ${result.runtimeVersion || ''} installed. Authorize the node to start the service.`;
+          ? `${tier} Node Service ${result.runtimeVersion || ''} installed. Authorize the node to start the service. ${warnings.join(' ')}`
+          : `${tier} Node Service ${result.runtimeVersion || ''} installed. Authorize the node to start the service.`;
     }
 
     await refreshNexusOperatorDashboard();
   } catch (error) {
     console.error(
-      'Operator installation failed:',
+      `${tier} Node Service installation failed:`,
       error
     );
 
     if (messageElement) {
       messageElement.textContent =
         error?.message ||
-        'Operator installation failed.';
+        `${tier} Node Service installation failed.`;
     }
   } finally {
     nexusOperatorServiceActionRunning = false;
@@ -4132,13 +4142,16 @@ async function controlNexusOperatorService(action) {
       'nexus-operator-install-action-message'
     );
 
+  const tier =
+    getActiveNexusNodeTierLabel();
+
   nexusOperatorServiceActionRunning = true;
 
   rerenderCurrentNexusNodeCenter();
 
   if (messageElement) {
     messageElement.textContent =
-      `${action[0].toUpperCase()}${action.slice(1)}ing the operator service...`;
+      `${action[0].toUpperCase()}${action.slice(1)}ing the ${tier} Node Service...`;
   }
 
   try {
@@ -4151,26 +4164,26 @@ async function controlNexusOperatorService(action) {
     if (!result?.ok) {
       throw new Error(
         result?.error ||
-        `Unable to ${action} the operator service.`
+        `Unable to ${action} the ${tier} Node Service.`
       );
     }
 
     if (messageElement) {
       messageElement.textContent =
-        `Operator service ${action} completed.`;
+        `${tier} Node Service ${action} completed.`;
     }
 
     await refreshNexusOperatorDashboard();
   } catch (error) {
     console.error(
-      'Operator service control failed:',
+      `${tier} Node Service control failed:`,
       error
     );
 
     if (messageElement) {
       messageElement.textContent =
         error?.message ||
-        `Unable to ${action} the operator service.`;
+        `Unable to ${action} the ${tier} Node Service.`;
     }
   } finally {
     nexusOperatorServiceActionRunning = false;

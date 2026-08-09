@@ -175,6 +175,11 @@
         registration
       } = state.facts;
 
+      const tier =
+        registration.tier === 'Validator'
+          ? 'Validator'
+          : 'Operator';
+
       return Object.freeze({
         action: state.action,
         statusType:
@@ -192,7 +197,11 @@
         stages: Object.freeze(stages),
         install: Object.freeze({
           title:
-            actionUi.installTitle,
+            actionUi.installAction === 'repair'
+              ? `Repair ${tier} Node`
+              : actionUi.installAction === 'update'
+                ? `Update ${tier} Node`
+                : `Install ${tier} Node`,
           installVisible:
             actionUi.installAction ===
               'install' ||
@@ -209,10 +218,10 @@
           installText:
             actionUi.installAction ===
             'repair'
-              ? 'Repair Operator Node'
-              : 'Install Operator Node',
+              ? `Repair ${tier} Node`
+              : `Install ${tier} Node`,
           updateText:
-            'Update Operator Node',
+            `Update ${tier} Node`,
           disabled:
             actionRunning === true
         }),
@@ -235,8 +244,8 @@
             ),
           buttonText:
             authorization.valid
-              ? 'Renew 72-Hour Authorization'
-              : 'Authorize Node for 72 Hours',
+              ? `Renew ${tier} 72-Hour Authorization`
+              : `Authorize ${tier} Node for 72 Hours`,
           disabled:
             actionRunning === true
         }),
@@ -269,7 +278,8 @@
           showDeregister:
             registration.registered,
           showClaim:
-            registration.registered
+            registration.registered,
+          tier
         })
       });
     }
@@ -371,6 +381,43 @@
         documentRef,
         'nexus-node-status-current-step',
         model.banner.currentStep
+      );
+
+      const registerCard =
+        documentRef.getElementById(
+          'nexus-step-card-register'
+        );
+
+      const registerHeading =
+        registerCard?.querySelector(
+          '.node-center-step-card-heading h4'
+        );
+
+      const registerDescription =
+        registerCard?.querySelector(
+          '.node-center-step-card-heading p'
+        );
+
+      if (registerHeading) {
+        registerHeading.textContent =
+          `Register Your ${model.registration.tier} Node`;
+      }
+
+      if (registerDescription) {
+        registerDescription.textContent =
+          `Stake wCryLo and register your ${model.registration.tier} identity.`;
+      }
+
+      setText(
+        documentRef,
+        'nexus-step-register-summary',
+        `${model.registration.tier} registration is active.`
+      );
+
+      setText(
+        documentRef,
+        'nexus-step-install-summary',
+        `The ${model.registration.tier} Node Service is installed.`
       );
       setText(
         documentRef,

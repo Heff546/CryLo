@@ -2289,7 +2289,7 @@ async function resolveBundledOperatorRuntimePath() {
   }
 
   throw new Error(
-    'The bundled CryLoNexus operator runtime could not be found.'
+    'The bundled CryLoNexus Node Service runtime could not be found.'
   );
 }
 
@@ -2515,7 +2515,7 @@ function buildOperatorServiceUnit({
 }) {
   return [
     '[Unit]',
-    'Description=CryLoNexus Operator Service',
+    'Description=CryLoNexus Node Service',
     'Documentation=https://crylonexus.com',
     'After=network-online.target',
     'Wants=network-online.target',
@@ -2584,7 +2584,7 @@ async function writeOperatorServiceUnit({
 async function installBundledOperatorRuntime() {
   if (!IS_LINUX) {
     throw new Error(
-      'The CryLoNexus operator service installer currently supports Linux only.'
+      'The CryLoNexus Node Service installer currently supports Linux only.'
     );
   }
 
@@ -2753,7 +2753,7 @@ async function installBundledOperatorRuntime() {
     );
 
     throw new Error(
-      'The bundled operator runtime failed installation validation.'
+      'The bundled Node Service runtime failed installation validation.'
     );
   }
 

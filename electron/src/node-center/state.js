@@ -344,9 +344,9 @@
             STAGES.REGISTER
           ],
           eyebrow: 'Repair required',
-          title: 'Repair the operator node',
+          title: `Repair the ${tier} node`,
           message:
-            'Required operator runtime files are missing or incomplete. Repair the installation before continuing.',
+            `Required ${tier} Node Service runtime files are missing or incomplete. Repair the installation before continuing.`,
           currentStep: 'Repair Node'
         },
 
@@ -356,9 +356,9 @@
             STAGES.REGISTER
           ],
           eyebrow: 'Setup in progress',
-          title: 'Install the operator node',
+          title: `Install the ${tier} node`,
           message:
-            `Your ${tier} registration is active. Install the persistent background operator service.`,
+            `Your ${tier} registration is active. Install the persistent background ${tier} Node Service.`,
           currentStep: 'Install Node'
         },
 
@@ -368,9 +368,9 @@
             STAGES.REGISTER
           ],
           eyebrow: 'Update available',
-          title: 'Update the operator node',
+          title: `Update the ${tier} node`,
           message:
-            `Operator ${
+            `${tier} ${
               facts.installation.installedVersion ||
               'runtime'
             } is installed. Version ${
@@ -387,9 +387,9 @@
             STAGES.INSTALL
           ],
           eyebrow: 'Authorization required',
-          title: 'Authorize the operator node',
+          title: `Authorize the ${tier} node`,
           message:
-            'Create the protected temporary session credential used to sign operator heartbeats.',
+            `Create the protected temporary session credential used to sign ${tier} node heartbeats.`,
           currentStep: 'Authorize Node'
         },
 
@@ -400,9 +400,9 @@
             STAGES.INSTALL
           ],
           eyebrow: 'Setup in progress',
-          title: 'Start the operator node',
+          title: `Start the ${tier} node`,
           message:
-            'The runtime is installed, current, configured, and authorized. Start the background service.',
+            `The ${tier} Node Service runtime is installed, current, configured, and authorized. Start the background service.`,
           currentStep: 'Start Node'
         },
 
@@ -416,7 +416,7 @@
           eyebrow: 'Almost ready',
           title: 'Verify node uptime',
           message:
-            'The operator service is running. Complete uptime and reward verification.',
+            `The ${tier} Node Service is running. Complete uptime and reward verification.`,
           currentStep: 'Verify Uptime'
         },
 
@@ -432,7 +432,7 @@
           title:
             `${tier} node is operational`,
           message:
-            'Keep the operator service online to maintain verification and reward eligibility.',
+            `Keep the ${tier} Node Service online to maintain verification and reward eligibility.`,
           currentStep: 'Earn Rewards'
         },
 

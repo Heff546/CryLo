@@ -28,7 +28,7 @@
   "build": {
     "appId": "com.crylo.wallet",
     "productName": "CryLo Wallet",
-    "copyright": "Copyright © 2025 CryLo",
+    "copyright": "Copyright \u00a9 2025 CryLo",
     "directories": {
       "output": "dist"
     },
@@ -62,6 +62,29 @@
         "filter": [
           "**/*",
           "!README.txt"
+        ]
+      },
+      {
+        "from": "../node-operator/runtime",
+        "to": "operator-runtime",
+        "filter": [
+          "package.json",
+          "package-lock.json",
+          "src/**/*",
+          "abis/**/*",
+          "node_modules/**/*"
+        ]
+      },
+      {
+        "from": "../node-operator/protocol",
+        "to": "protocol",
+        "filter": [
+          "package.json",
+          "package-lock.json",
+          "schemas/**/*",
+          "validation/**/*",
+          "test-vectors/**/*",
+          "examples/**/*"
         ]
       }
     ],
