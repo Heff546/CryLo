@@ -3956,17 +3956,23 @@ async function refreshNexusOperatorDashboard() {
 
     setNexusNodeDashboardText(
       'nexus-reward-eligibility',
-      verification.connected
-        ? registered
-          ? 'Pending Verification'
-          : 'Not Registered'
-        : 'Unavailable'
+      verification.rewardEligible
+        ? 'Eligible'
+        : verification.connected
+          ? registered
+            ? verification.locallyQualified
+              ? 'Consensus Pending'
+              : verification.localThresholdMet
+                ? 'Window Completing'
+                : 'Verification Pending'
+            : 'Not Registered'
+          : 'Unavailable'
     );
 
     setNexusNodeDashboardText(
       'nexus-reward-verification-message',
       verification.message ||
-      `Uptime verification and ${currentTierLabel} reward validation are not connected yet.`
+      'Uptime verification status is unavailable.'
     );
 
     renderNexusOperatorWorkers(

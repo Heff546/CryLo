@@ -46,6 +46,10 @@ const {
   createLocalHeartbeatRuntime
 } = require('./evidence');
 
+const {
+  createLocalQualificationTracker
+} = require('./evidence/local-qualification');
+
 let stopping = false;
 let timer = null;
 
@@ -197,10 +201,18 @@ async function run() {
   }
 
   let localHeartbeatRuntime = null;
+  let localQualificationTracker = null;
 
   if (localHeartbeatSetting === '1') {
     localHeartbeatRuntime =
       await createLocalHeartbeatRuntime({
+        operatorAddress:
+          config.operatorAddress,
+        nodeId
+      });
+
+    localQualificationTracker =
+      await createLocalQualificationTracker({
         operatorAddress:
           config.operatorAddress,
         nodeId
@@ -267,6 +279,7 @@ async function run() {
     status.errors = [];
 
     let connection = null;
+    let localObservationSuccessful = false;
 
     try {
       if (!contractClient) {
@@ -387,6 +400,10 @@ async function run() {
         const registrationVerified =
           registration.verified;
 
+        localObservationSuccessful =
+          registrationVerified &&
+          status.rpcHealthy === true;
+
         if (registrationVerified) {
           markWorkerSuccess(
             status,
@@ -423,17 +440,17 @@ async function run() {
         };
 
         if (registrationVerified) {
-          markWorkerFailure(
+          markWorkerSuccess(
             status,
             'reward-eligibility',
             timestamp,
-            'UPTIME_VERIFICATION_PENDING'
+            'DISTRIBUTED_VERIFICATION_PENDING'
           );
 
           status.warnings.push(
             statusMessage(
               'UPTIME_VERIFICATION_PENDING',
-              'Contract registration is verified. Reward eligibility awaits the uptime-verification protocol.',
+              'Contract registration is verified. Local uptime evidence is active; distributed verification and reward authorization remain pending.',
               timestamp
             )
           );
@@ -571,6 +588,21 @@ async function run() {
           await localHeartbeatRuntime
             .writeHeartbeat(status);
 
+        let localQualification = null;
+
+        if (localQualificationTracker) {
+          localQualification =
+            await localQualificationTracker
+              .recordObservation({
+                issuedAt:
+                  signedHeartbeat.issuedAt,
+                sequence:
+                  signedHeartbeat.sequence,
+                successful:
+                  localObservationSuccessful
+              });
+        }
+
         log(
           'info',
           'local-heartbeat-written',
@@ -585,7 +617,24 @@ async function run() {
             expiresAt:
               signedHeartbeat.expiresAt,
             payloadHash:
-              signedHeartbeat.payloadHash
+              signedHeartbeat.payloadHash,
+            localQualification:
+              localQualification
+                ? {
+                    receivedHeartbeats:
+                      localQualification.receivedHeartbeats,
+                    successfulObservations:
+                      localQualification.successfulObservations,
+                    thresholdMet:
+                      localQualification.thresholdMet,
+                    windowComplete:
+                      localQualification.windowComplete,
+                    locallyQualified:
+                      localQualification.locallyQualified,
+                    reasonCode:
+                      localQualification.reasonCode
+                  }
+                : null
           }
         );
       } catch (error) {

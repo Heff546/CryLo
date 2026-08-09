@@ -1991,6 +1991,11 @@ function getOperatorPaths() {
       operatorDir,
       'signing-key'
     ),
+    localQualification: path.join(
+      operatorDir,
+      'verification',
+      'local-window.json'
+    ),
     statusCandidates: [
       path.join(operatorDir, 'status.json'),
       path.join(operatorDir, 'operator-status.json'),
@@ -2329,7 +2334,7 @@ async function resolveSystemNodeBinary() {
   }
 
   throw new Error(
-    'Node.js 18 or newer is required to run the operator service.'
+    'Node.js 18 or newer is required to run the Node Service.'
   );
 }
 
@@ -2840,7 +2845,7 @@ async function installBundledOperatorRuntime() {
   if (!enableResult.ok) {
     throw new Error(
       enableResult.stderr ||
-      'The operator service could not be enabled and started.'
+      'The Node Service could not be enabled and started.'
     );
   }
 
@@ -2927,7 +2932,7 @@ async function installBundledOperatorRuntime() {
 async function controlOperatorService(action) {
   if (!IS_LINUX) {
     throw new Error(
-      'Operator service controls are currently available on Linux only.'
+      'Node Service controls are currently available on Linux only.'
     );
   }
 
@@ -2939,7 +2944,7 @@ async function controlOperatorService(action) {
 
   if (!supportedActions.has(action)) {
     throw new Error(
-      'Unsupported operator service action.'
+      'Unsupported Node Service action.'
     );
   }
 
@@ -2955,7 +2960,7 @@ async function controlOperatorService(action) {
   if (!result.ok) {
     throw new Error(
       result.stderr ||
-      `Unable to ${action} the operator service.`
+      `Unable to ${action} the Node Service.`
     );
   }
 
@@ -2982,7 +2987,7 @@ async function readOperatorServiceStatus() {
       subState: 'unsupported',
       serviceScope: null,
       serviceName: 'crylo-nexus-operator.service',
-      message: 'Operator service status is currently available on Linux only.'
+      message: 'Node Service status is currently available on Linux only.'
     };
   }
 
@@ -3045,7 +3050,7 @@ async function readOperatorServiceStatus() {
         message:
           installation.healthy
             ? result.stderr || null
-            : 'The operator service installation is incomplete and must be repaired.'
+            : 'The Node Service installation is incomplete and must be repaired.'
       };
     }
   }
@@ -3063,8 +3068,8 @@ async function readOperatorServiceStatus() {
     ...installation,
     message:
       installation.repairRequired
-        ? 'The operator service installation is incomplete and must be repaired.'
-        : 'Operator service is not installed.'
+        ? 'The Node Service installation is incomplete and must be repaired.'
+        : 'Node Service is not installed.'
   };
 }
 
@@ -3083,8 +3088,8 @@ function normalizeOperatorWorkers(statusData) {
       name: worker.name || `Worker ${index + 1}`,
       enabled: worker.enabled !== false,
       healthy: worker.enabled === false ? null : worker.healthy === true,
-      lastRun: worker.lastRun || null,
-      lastSuccess: worker.lastSuccess || null,
+      lastRun: worker.lastRunAt || worker.lastRun || null,
+      lastSuccess: worker.lastSuccessAt || worker.lastSuccess || worker.lastRunAt || null,
       errors: Number(worker.errors || worker.errorCount || 0),
       message: worker.message || null
     }));
@@ -3098,8 +3103,8 @@ function normalizeOperatorWorkers(statusData) {
       name: worker.name || name,
       enabled: worker.enabled !== false,
       healthy: worker.enabled === false ? null : worker.healthy === true,
-      lastRun: worker.lastRun || null,
-      lastSuccess: worker.lastSuccess || null,
+      lastRun: worker.lastRunAt || worker.lastRun || null,
+      lastSuccess: worker.lastSuccessAt || worker.lastSuccess || worker.lastRunAt || null,
       errors: Number(worker.errors || worker.errorCount || 0),
       message: worker.message || null
     }));
@@ -3392,7 +3397,7 @@ ipcMain.handle(
       return await installBundledOperatorRuntime();
     } catch (error) {
       console.error(
-        'Operator service installation failed:',
+        'Node Service installation failed:',
         error
       );
 
@@ -3400,7 +3405,7 @@ ipcMain.handle(
         ok: false,
         error:
           error?.message ||
-          'Operator service installation failed.'
+          'Node Service installation failed.'
       };
     }
   }
@@ -3415,7 +3420,7 @@ ipcMain.handle(
       );
     } catch (error) {
       console.error(
-        'Operator service control failed:',
+        'Node Service control failed:',
         error
       );
 
@@ -3424,7 +3429,7 @@ ipcMain.handle(
         action,
         error:
           error?.message ||
-          'Operator service control failed.'
+          'Node Service control failed.'
       };
     }
   }
@@ -3440,7 +3445,7 @@ ipcMain.handle(
 
       if (!configResult.data) {
         throw new Error(
-          'Install and configure the node operator service first'
+          'Install and configure the Node Service first'
         );
       }
 
@@ -3449,7 +3454,7 @@ ipcMain.handle(
 
       if (!service.installed) {
         throw new Error(
-          'Install the CryLoNexus operator service before authorizing this node'
+          'Install the CryLoNexus Node Service before authorizing this node'
         );
       }
 
@@ -3538,7 +3543,7 @@ ipcMain.handle(
           detail:
             'Electron will create a temporary session key. ' +
             'Your bound Nexus wallet private key remains inside Electron ' +
-            'and is not stored in the operator service.'
+            'and is not stored in the Node Service.'
         });
 
       if (confirmation.response !== 0) {
@@ -3661,7 +3666,7 @@ ipcMain.handle(
       if (!restartResult.ok) {
         throw new Error(
           restartResult.stderr ||
-          'The authorized operator service could not be started'
+          'The authorized Node Service could not be started'
         );
       }
 
@@ -3714,6 +3719,8 @@ ipcMain.handle('nexus-operator-dashboard', async (_, linkedAddress) => {
   const configResult = readJsonFileSafe(paths.config);
   const statusFile = findOperatorStatusFile(paths.statusCandidates);
   const statusResult = readJsonFileSafe(statusFile);
+  const localQualificationResult =
+    readJsonFileSafe(paths.localQualification);
   const service = await readOperatorServiceStatus();
 
   const authorization =
@@ -3805,12 +3812,118 @@ ipcMain.handle('nexus-operator-dashboard', async (_, linkedAddress) => {
         ? statusResult.data.metrics
         : {},
 
-    rewardVerification: {
-      connected: false,
-      status: 'Not Connected',
-      message:
-        'Uptime verification and operator reward validation are not connected yet.'
-    }
+    rewardVerification: (() => {
+      const runtimeVerification =
+        statusResult.data?.verification &&
+        typeof statusResult.data.verification === 'object'
+          ? statusResult.data.verification
+          : {};
+
+      const localQualification =
+        localQualificationResult.data &&
+        typeof localQualificationResult.data === 'object'
+          ? localQualificationResult.data
+          : null;
+
+      const heartbeatCount = Number(
+        statusResult.data?.metrics?.heartbeatCount || 0
+      );
+
+      const connected =
+        runtimeVerification.connected === true;
+      const verified =
+        runtimeVerification.verified === true;
+      const rewardEligible =
+        statusResult.data?.rewardEligible === true;
+      const reasonCode =
+        runtimeVerification.reasonCode ||
+        (connected ? 'VERIFICATION_PENDING' : 'NOT_CONNECTED');
+
+      const expectedHeartbeats = Number(
+        localQualification?.expectedHeartbeats || 20
+      );
+      const localThreshold = Number(
+        localQualification?.localThreshold || 18
+      );
+      const receivedHeartbeats = Number(
+        localQualification?.receivedHeartbeats || 0
+      );
+      const successfulObservations = Number(
+        localQualification?.successfulObservations || 0
+      );
+      const failedObservations = Number(
+        localQualification?.failedObservations || 0
+      );
+      const localThresholdMet =
+        localQualification?.thresholdMet === true;
+      const windowComplete =
+        localQualification?.windowComplete === true;
+      const locallyQualified =
+        localQualification?.locallyQualified === true;
+
+      let status = 'Not Connected';
+      let message =
+        'Uptime evidence is not connected to the Node Service yet.';
+
+      if (connected && verified) {
+        status = 'Verified';
+        message = rewardEligible
+          ? 'Distributed uptime verification is complete and this node is reward eligible.'
+          : 'Distributed uptime verification is complete. Reward authorization is still pending.';
+      } else if (connected && locallyQualified) {
+        status = 'Locally Qualified';
+        message =
+          `The completed local window passed (${successfulObservations}/${expectedHeartbeats} successful observations). ` +
+          'Distributed consensus verification and reward authorization are not active yet.';
+      } else if (connected && localThresholdMet) {
+        status = 'Threshold Met';
+        message =
+          `The local threshold has been reached (${successfulObservations}/${expectedHeartbeats}), ` +
+          'but the 20-minute observation window must finish before local qualification is final.';
+      } else if (connected && localQualification) {
+        status = windowComplete
+          ? 'Window Not Qualified'
+          : 'Collecting Evidence';
+        message = windowComplete
+          ? `The completed local window did not qualify (${successfulObservations} successful, ${failedObservations} failed or missing). A new window will be collected automatically.`
+          : `Local uptime evidence is active (${receivedHeartbeats}/${expectedHeartbeats} one-minute observations; ${successfulObservations} successful). ` +
+            `The staged local threshold is ${localThreshold} successful observations.`;
+      } else if (
+        connected &&
+        reasonCode === 'UPTIME_VERIFICATION_PENDING'
+      ) {
+        status = 'Awaiting Local Window';
+        message =
+          `The Node Service is producing signed heartbeats (${heartbeatCount} runtime heartbeats recorded). ` +
+          'A bounded local verification window will begin when the Phase 2 runtime is active.';
+      } else if (connected) {
+        status = 'Connected';
+        message =
+          `Uptime verification is connected but not complete (${reasonCode}).`;
+      }
+
+      return {
+        connected,
+        verified,
+        rewardEligible,
+        reasonCode,
+        heartbeatCount,
+        expectedHeartbeats,
+        localThreshold,
+        receivedHeartbeats,
+        successfulObservations,
+        failedObservations,
+        localThresholdMet,
+        windowComplete,
+        locallyQualified,
+        windowStartedAt:
+          localQualification?.windowStartedAt || null,
+        windowEndedAt:
+          localQualification?.windowEndedAt || null,
+        status,
+        message
+      };
+    })()
   };
 
   try {

@@ -416,7 +416,7 @@
           eyebrow: 'Almost ready',
           title: 'Verify node uptime',
           message:
-            `The ${tier} Node Service is running. Complete uptime and reward verification.`,
+            `The ${tier} Node Service is running. Uptime evidence is being collected; reward eligibility requires distributed verification.`,
           currentStep: 'Verify Uptime'
         },
 
@@ -432,7 +432,7 @@
           title:
             `${tier} node is operational`,
           message:
-            `Keep the ${tier} Node Service online to maintain verification and reward eligibility.`,
+            `Keep the ${tier} Node Service online to maintain verified uptime and reward eligibility.`,
           currentStep: 'Earn Rewards'
         },
 
