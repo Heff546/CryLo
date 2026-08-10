@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "protocolVersion": "2.0.0",
+  "network": "CryLoNexus Mainnet",
+  "chainId": 5546,
+  "observingOperatorAddress": "0x1111111111111111111111111111111111111111",
+  "observingNodeId": "example-observing-node-0001",
+  "observingSessionAddress": "0x2222222222222222222222222222222222222222",
+  "observedOperatorAddress": "0x3333333333333333333333333333333333333333",
+  "observedNodeId": "example-observed-node-0001",
+  "observedSessionAddress": "0x4444444444444444444444444444444444444444",
+  "heartbeatSequence": 10,
+  "heartbeatPayloadHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "statusHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "observedAt": "2026-08-09T23:00:30Z",
+  "claimedTier": "Operator",
+  "registration": {
+    "passed": true,
+    "registered": true,
+    "isNodeWallet": true,
+    "onChainTier": "Operator",
+    "stakeAtomic": "30000000000000",
+    "stakeRequirementAtomic": "30000000000000",
+    "configuredTierMatches": true,
+    "stakeRequirementMet": true,
+    "messageCode": "REGISTERED_OPERATOR"
+  },
+  "result": "PASS",
+  "reasonCode": "REGISTERED_OPERATOR",
+  "observationHash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "signature": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+}

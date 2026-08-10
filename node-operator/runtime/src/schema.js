@@ -59,6 +59,9 @@ const validateConfig =
 const validateStatus =
   createValidator('operator-status.schema.json');
 
+const validateNodeObservation =
+  createValidator('node-observation.schema.json');
+
 function formatValidationErrors(errors) {
   return (errors || [])
     .map(error => {
@@ -73,5 +76,6 @@ function formatValidationErrors(errors) {
 module.exports = {
   validateConfig,
   validateStatus,
+  validateNodeObservation,
   formatValidationErrors
 };

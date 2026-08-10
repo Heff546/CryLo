@@ -31,10 +31,10 @@ const SCHEMAS = {
     'schemas',
     'heartbeat-envelope.schema.json'
   ),
-  verifierObservation: path.join(
+  nodeObservation: path.join(
     ROOT,
     'schemas',
-    'verifier-observation.schema.json'
+    'node-observation.schema.json'
   ),
   verificationWindow: path.join(
     ROOT,
@@ -61,8 +61,8 @@ const VALID_FIXTURES = [
     file: 'examples/heartbeat-envelope.valid.json'
   },
   {
-    schema: 'verifierObservation',
-    file: 'examples/verifier-observation.valid.json'
+    schema: 'nodeObservation',
+    file: 'examples/node-observation.valid.json'
   },
   {
     schema: 'verificationWindow',
@@ -92,8 +92,8 @@ const INVALID_FIXTURES = [
     file: 'tests/invalid/heartbeat-envelope.bad-chain.json'
   },
   {
-    schema: 'verifierObservation',
-    file: 'tests/invalid/verifier-observation.pass-with-failure-code.json'
+    schema: 'nodeObservation',
+    file: 'tests/invalid/node-observation.pass-with-mismatch.json'
   }
 ];
 

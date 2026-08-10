@@ -116,3 +116,36 @@ module.exports = Object.freeze({
   ...module.exports,
   ...authorizationLoader
 });
+
+
+const remoteNodeEvidenceValidator =
+  require('./remote-node-evidence-validator');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...remoteNodeEvidenceValidator
+});
+
+const observationReplayState =
+  require('./observation-replay-state');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...observationReplayState
+});
+
+const nodeObservationWorker =
+  require('./node-observation-worker');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...nodeObservationWorker
+});
+
+const signedNodeObservation =
+  require('./signed-node-observation');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...signedNodeObservation
+});

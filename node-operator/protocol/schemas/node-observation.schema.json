@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crylonexus.org/schemas/node-observation.schema.json",
+  "title": "CryLoNexus Node Observation",
+  "description": "A node worker's signed evaluation of one remote node heartbeat and its independently verified registration state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "protocolVersion",
+    "network",
+    "chainId",
+    "observingOperatorAddress",
+    "observingNodeId",
+    "observingSessionAddress",
+    "observedOperatorAddress",
+    "observedNodeId",
+    "observedSessionAddress",
+    "heartbeatSequence",
+    "heartbeatPayloadHash",
+    "statusHash",
+    "observedAt",
+    "claimedTier",
+    "registration",
+    "result",
+    "reasonCode",
+    "observationHash",
+    "signature"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "protocolVersion": {
+      "const": "2.0.0"
+    },
+    "network": {
+      "const": "CryLoNexus Mainnet"
+    },
+    "chainId": {
+      "const": 5546
+    },
+    "observingOperatorAddress": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{40}$"
+    },
+    "observingNodeId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "observingSessionAddress": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{40}$"
+    },
+    "observedOperatorAddress": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{40}$"
+    },
+    "observedNodeId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "observedSessionAddress": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{40}$"
+    },
+    "heartbeatSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "heartbeatPayloadHash": {
+      "type": "string",
+      "pattern": "^0x[a-f0-9]{64}$"
+    },
+    "statusHash": {
+      "type": "string",
+      "pattern": "^0x[a-f0-9]{64}$"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "claimedTier": {
+      "enum": [
+        "Operator",
+        "Validator"
+      ]
+    },
+    "registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "registered",
+        "isNodeWallet",
+        "onChainTier",
+        "stakeAtomic",
+        "stakeRequirementAtomic",
+        "configuredTierMatches",
+        "stakeRequirementMet",
+        "messageCode"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "registered": {
+          "type": "boolean"
+        },
+        "isNodeWallet": {
+          "type": "boolean"
+        },
+        "onChainTier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stakeAtomic": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "stakeRequirementAtomic": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "configuredTierMatches": {
+          "type": "boolean"
+        },
+        "stakeRequirementMet": {
+          "type": "boolean"
+        },
+        "messageCode": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "result": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observationHash": {
+      "type": "string",
+      "pattern": "^0x[a-f0-9]{64}$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{130}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "PASS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "registration": {
+            "type": "object",
+            "properties": {
+              "passed": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "FAIL"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "registration": {
+            "type": "object",
+            "properties": {
+              "passed": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
