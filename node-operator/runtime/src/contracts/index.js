@@ -126,6 +126,13 @@ async function createReadOnlyContractClient(
       });
     },
 
+    async readNode(walletAddress) {
+      return readNodeStatus(
+        nodeStaking,
+        walletAddress
+      );
+    },
+
     async readOperator(walletAddress) {
       const [node, rewards] = await Promise.all([
         readNodeStatus(

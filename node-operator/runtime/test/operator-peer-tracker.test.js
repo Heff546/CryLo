@@ -16,6 +16,12 @@ const {
 );
 
 const {
+  buildSignedOperatorUptimeReport
+} = require(
+  '../src/evidence/signed-operator-uptime-report'
+);
+
+const {
   createOperatorPeerTracker
 } = require(
   '../src/evidence/operator-peer-tracker'
@@ -662,8 +668,13 @@ test(
             'reporting-operator-node-0001',
           reportingSessionAddress:
             reporterSession.address,
-          reportingSessionPrivateKey:
-            reporterSession.privateKey,
+          signUptimeReport:
+            finalizedWindow =>
+              buildSignedOperatorUptimeReport({
+                finalizedWindow,
+                privateKey:
+                  reporterSession.privateKey
+              }),
           statePath:
             temp.statePath
         });
@@ -792,8 +803,13 @@ test(
             'reporting-operator-node-0001',
           reportingSessionAddress:
             reporterSession.address,
-          reportingSessionPrivateKey:
-            reporterSession.privateKey,
+          signUptimeReport:
+            finalizedWindow =>
+              buildSignedOperatorUptimeReport({
+                finalizedWindow,
+                privateKey:
+                  reporterSession.privateKey
+              }),
           statePath:
             temp.statePath
         });
@@ -955,7 +971,7 @@ test(
             '2026-08-09T23:20:00.000Z'
           )
         ),
-        /private key is required/
+        /uptime report signer is required/
       );
 
       const preserved =

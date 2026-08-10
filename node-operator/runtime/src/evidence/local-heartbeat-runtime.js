@@ -31,6 +31,14 @@ const {
   loadAuthorization
 } = require('./authorization-loader');
 
+const {
+  buildSignedNodeObservation
+} = require('./signed-node-observation');
+
+const {
+  buildSignedOperatorUptimeReport
+} = require('./signed-operator-uptime-report');
+
 function requirePlainObject(
   value,
   name
@@ -275,12 +283,38 @@ async function createLocalHeartbeatRuntime(
       'Local heartbeat writer'
     );
 
+  function signObservation(
+    observation
+  ) {
+    return buildSignedNodeObservation({
+      observation,
+      observingOperatorAddress:
+        operatorAddress,
+      observingNodeId:
+        nodeId,
+      observingSessionPrivateKey:
+        privateKey
+    });
+  }
+
+  function signUptimeReport(
+    finalizedWindow
+  ) {
+    return buildSignedOperatorUptimeReport({
+      finalizedWindow,
+      privateKey
+    });
+  }
+
   return Object.freeze({
     keyPath:
       signingKey.keyPath,
     outputPath,
     sequenceStatePath,
-    writeHeartbeat
+    sessionAddress,
+    writeHeartbeat,
+    signObservation,
+    signUptimeReport
   });
 }
 

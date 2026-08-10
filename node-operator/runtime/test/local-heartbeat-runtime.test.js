@@ -6,6 +6,10 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  computeAddress
+} = require('ethers');
+
+const {
   createLocalHeartbeatRuntime,
   defaultHeartbeatDirectory,
   defaultHeartbeatOutputPath,
@@ -21,7 +25,7 @@ const PRIVATE_KEY =
   `0x${'11'.repeat(32)}`;
 
 const SESSION_ADDRESS =
-  '0x2222222222222222222222222222222222222222';
+  computeAddress(PRIVATE_KEY);
 
 const TEST_AUTHORIZATION =
   Object.freeze({
@@ -233,8 +237,16 @@ test(
         'keyPath',
         'outputPath',
         'sequenceStatePath',
+        'sessionAddress',
+        'signObservation',
+        'signUptimeReport',
         'writeHeartbeat'
       ]
+    );
+
+    assert.equal(
+      runtime.sessionAddress,
+      SESSION_ADDRESS
     );
 
     assert.equal(
@@ -263,6 +275,135 @@ test(
         false
       );
     }
+  }
+);
+
+test(
+  'signs node observations without exposing the session private key',
+  async () => {
+    const {
+      deps
+    } = dependencies();
+
+    const runtime =
+      await createLocalHeartbeatRuntime({
+        operatorAddress:
+          OPERATOR_ADDRESS,
+        nodeId:
+          'operator-node-001',
+        ...deps
+      });
+
+    const observation = {
+      protocolVersion:
+        '2.0.0',
+
+      chainId:
+        5546,
+
+      observedOperatorAddress:
+        '0x3333333333333333333333333333333333333333',
+
+      observedNodeId:
+        'observed-node-0001',
+
+      observedSessionAddress:
+        '0x4444444444444444444444444444444444444444',
+
+      heartbeatSequence:
+        10,
+
+      heartbeatPayloadHash:
+        `0x${'33'.repeat(32)}`,
+
+      statusHash:
+        `0x${'44'.repeat(32)}`,
+
+      observedAt:
+        '2026-08-09T23:00:30.000Z',
+
+      claimedTier:
+        'Operator',
+
+      registration: {
+        passed:
+          true,
+
+        registered:
+          true,
+
+        isNodeWallet:
+          true,
+
+        onChainTier:
+          'Operator',
+
+        stakeAtomic:
+          '30000000000000',
+
+        stakeRequirementAtomic:
+          '30000000000000',
+
+        configuredTierMatches:
+          true,
+
+        stakeRequirementMet:
+          true,
+
+        messageCode:
+          'REGISTERED_OPERATOR'
+      },
+
+      result:
+        'PASS',
+
+      reasonCode:
+        'REGISTERED_OPERATOR'
+    };
+
+    const signed =
+      runtime.signObservation(
+        observation
+      );
+
+    assert.equal(
+      typeof signed,
+      'object'
+    );
+
+    assert.equal(
+      typeof signed.observationHash,
+      'string'
+    );
+
+    assert.equal(
+      typeof signed.signature,
+      'string'
+    );
+
+    assert.equal(
+      Object.values(runtime)
+        .includes(PRIVATE_KEY),
+      false
+    );
+
+    assert.equal(
+      Object.prototype
+        .hasOwnProperty.call(
+          runtime,
+          'privateKey'
+        ),
+      false
+    );
+
+    assert.equal(
+      Object.prototype
+        .hasOwnProperty.call(
+          runtime,
+          'sessionPrivateKey'
+        ),
+      false
+    );
   }
 );
 
@@ -505,6 +646,159 @@ test(
         expectedDirectory,
         'sequence.json'
       )
+    );
+  }
+);
+
+test(
+  'signs Operator uptime reports without exposing the session private key',
+  async () => {
+    const {
+      deps
+    } = dependencies();
+
+    const runtime =
+      await createLocalHeartbeatRuntime({
+        operatorAddress:
+          OPERATOR_ADDRESS,
+        nodeId:
+          'operator-node-001',
+        ...deps
+      });
+
+    const finalizedWindow = {
+      schemaVersion:
+        1,
+
+      protocolVersion:
+        '2.0.0',
+
+      reportingOperatorAddress:
+        OPERATOR_ADDRESS,
+
+      reportingNodeId:
+        'operator-node-001',
+
+      reportingSessionAddress:
+        SESSION_ADDRESS,
+
+      observedOperatorAddress:
+        '0x3333333333333333333333333333333333333333',
+
+      observedNodeId:
+        'observed-node-0001',
+
+      windowStartedAt:
+        '2026-08-09T23:00:00.000Z',
+
+      windowEndedAt:
+        '2026-08-09T23:20:00.000Z',
+
+      expectedObservations:
+        20,
+
+      receivedObservations:
+        18,
+
+      passCount:
+        18,
+
+      failCount:
+        0,
+
+      missingCount:
+        2,
+
+      totalFailures:
+        2,
+
+      windowComplete:
+        true,
+
+      locallyQualified:
+        true,
+
+      slots:
+        Array.from(
+          { length: 18 },
+          (_, index) => ({
+            slotStartedAt:
+              `2026-08-09T23:${String(index)
+                .padStart(2, '0')}:00.000Z`,
+
+            observedAt:
+              `2026-08-09T23:${String(index)
+                .padStart(2, '0')}:05.000Z`,
+
+            observationHash:
+              `0x${(index + 1)
+                .toString(16)
+                .padStart(64, '0')}`,
+
+            heartbeatPayloadHash:
+              `0x${(index + 101)
+                .toString(16)
+                .padStart(64, '0')}`,
+
+            heartbeatSequence:
+              index + 1,
+
+            result:
+              'PASS',
+
+            reasonCode:
+              'REGISTERED_OPERATOR'
+          })
+        )
+    };
+
+    const signed =
+      runtime.signUptimeReport(
+        finalizedWindow
+      );
+
+    assert.equal(
+      typeof signed.reportHash,
+      'string'
+    );
+
+    assert.equal(
+      typeof signed.signature,
+      'string'
+    );
+
+    assert.equal(
+      signed.reportingOperatorAddress,
+      OPERATOR_ADDRESS
+    );
+
+    assert.equal(
+      signed.reportingSessionAddress,
+      SESSION_ADDRESS
+    );
+
+    assert.equal(
+      Object.values(runtime)
+        .includes(PRIVATE_KEY),
+      false
+    );
+
+    assert.equal(
+      Object.prototype
+        .hasOwnProperty.call(
+          runtime,
+          'privateKey'
+        ),
+      false
+    );
+
+    assert.equal(
+      Object.prototype
+        .hasOwnProperty.call(
+          runtime,
+          'sessionPrivateKey'
+        ),
+      false
     );
   }
 );

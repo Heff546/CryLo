@@ -43,8 +43,15 @@ const {
 } = require('./logger');
 
 const {
-  createLocalHeartbeatRuntime
+  createLocalHeartbeatRuntime,
+  createNodeObservationWorker,
+  createObservationReplayState,
+  createOperatorPeerTracker
 } = require('./evidence');
+
+const {
+  createOperatorTransportRuntime
+} = require('./transport');
 
 const {
   createLocalQualificationTracker
@@ -52,6 +59,7 @@ const {
 
 let stopping = false;
 let timer = null;
+let operatorTransportRuntime = null;
 
 function nowIso() {
   return new Date().toISOString();
@@ -200,6 +208,30 @@ async function run() {
     );
   }
 
+  const distributedTransportSetting =
+    process.env
+      .CRYLONEXUS_DISTRIBUTED_TRANSPORT;
+
+  if (
+    distributedTransportSetting !== undefined &&
+    distributedTransportSetting !== '' &&
+    distributedTransportSetting !== '0' &&
+    distributedTransportSetting !== '1'
+  ) {
+    throw new Error(
+      'CRYLONEXUS_DISTRIBUTED_TRANSPORT must be 0 or 1'
+    );
+  }
+
+  if (
+    distributedTransportSetting === '1' &&
+    localHeartbeatSetting !== '1'
+  ) {
+    throw new Error(
+      'Distributed transport requires CRYLONEXUS_LOCAL_HEARTBEATS=1'
+    );
+  }
+
   let localHeartbeatRuntime = null;
   let localQualificationTracker = null;
 
@@ -246,10 +278,152 @@ async function run() {
     tier: config.tier,
     intervalMs,
     localHeartbeatsEnabled:
-      localHeartbeatRuntime !== null
+      localHeartbeatRuntime !== null,
+    distributedTransportEnabled:
+      distributedTransportSetting === '1'
   });
 
   let contractClient = null;
+
+  if (distributedTransportSetting === '1') {
+    const verificationDirectory =
+      path.join(
+        config.service.dataDirectory,
+        'verification'
+      );
+
+    const replayState =
+      await createObservationReplayState({
+        statePath:
+          path.join(
+            verificationDirectory,
+            'observation-replay-state.json'
+          )
+      });
+
+    const observationWorker =
+      createNodeObservationWorker({
+        localOperatorAddress:
+          config.operatorAddress,
+        localNodeId:
+          nodeId,
+        replayState,
+
+        async readRemoteNodeStatus(
+          walletAddress
+        ) {
+          if (!contractClient) {
+            contractClient =
+              await createReadOnlyContractClient(
+                config
+              );
+          } else {
+            await contractClient
+              .verifyConnection();
+          }
+
+          return contractClient.readNode(
+            walletAddress
+          );
+        }
+      });
+
+    const peerTracker =
+      await createOperatorPeerTracker({
+        reportingOperatorAddress:
+          config.operatorAddress,
+        reportingNodeId:
+          nodeId,
+        reportingSessionAddress:
+          localHeartbeatRuntime
+            .sessionAddress,
+        signUptimeReport:
+          localHeartbeatRuntime
+            .signUptimeReport,
+        statePath:
+          path.join(
+            verificationDirectory,
+            'operator-peer-windows.json'
+          )
+      });
+
+    operatorTransportRuntime =
+      await createOperatorTransportRuntime({
+        host:
+          '127.0.0.1',
+        port:
+          0,
+        observationWorker,
+
+        async onObservation(
+          observation
+        ) {
+          const signedObservation =
+            localHeartbeatRuntime
+              .signObservation(
+                observation
+              );
+
+          await peerTracker
+            .recordObservation(
+              signedObservation
+            );
+
+          log(
+            'info',
+            'distributed-observation-recorded',
+            {
+              observedOperatorAddress:
+                signedObservation
+                  .observedOperatorAddress,
+              observedNodeId:
+                signedObservation
+                  .observedNodeId,
+              result:
+                signedObservation.result,
+              reasonCode:
+                signedObservation
+                  .reasonCode,
+              observationHash:
+                signedObservation
+                  .observationHash
+            }
+          );
+        }
+      });
+
+    const transport =
+      await operatorTransportRuntime
+        .start();
+
+    log(
+      'info',
+      'distributed-transport-enabled',
+      {
+        host:
+          transport.host,
+        port:
+          transport.port,
+        route:
+          transport.route,
+        replayStatePath:
+          path.join(
+            verificationDirectory,
+            'observation-replay-state.json'
+          ),
+        peerTrackerStatePath:
+          path.join(
+            verificationDirectory,
+            'operator-peer-windows.json'
+          )
+      }
+    );
+  } else {
+    log(
+      'info',
+      'distributed-transport-disabled'
+    );
+  }
 
   async function heartbeat() {
     if (stopping) return;
@@ -676,6 +850,24 @@ async function shutdown(signal) {
 
   if (timer) {
     clearInterval(timer);
+  }
+
+  if (operatorTransportRuntime) {
+    try {
+      await operatorTransportRuntime
+        .stop();
+
+      operatorTransportRuntime = null;
+    } catch (error) {
+      log(
+        'error',
+        'distributed-transport-stop-failed',
+        {
+          error:
+            error.message
+        }
+      );
+    }
   }
 
   log('info', 'operator-stopping', {

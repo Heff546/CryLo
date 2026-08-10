@@ -14,7 +14,6 @@ const {
 } = require('./signed-node-observation');
 
 const {
-  buildSignedOperatorUptimeReport,
   verifySignedOperatorUptimeReport
 } = require('./signed-operator-uptime-report');
 
@@ -223,13 +222,18 @@ async function createOperatorPeerTracker(options) {
       'Reporting session address'
     );
 
-  const reportingSessionPrivateKey =
-    options.reportingSessionPrivateKey ===
-      undefined
+  const signUptimeReport =
+    options.signUptimeReport === undefined
       ? null
-      : requireString(
-          options.reportingSessionPrivateKey,
-          'Reporting session private key'
+      : (
+          typeof options.signUptimeReport ===
+            'function'
+            ? options.signUptimeReport
+            : (() => {
+                throw new TypeError(
+                  'Operator uptime report signer must be a function'
+                );
+              })()
         );
 
   const statePath =
@@ -498,9 +502,9 @@ async function createOperatorPeerTracker(options) {
       return existing;
     }
 
-    if (!reportingSessionPrivateKey) {
+    if (!signUptimeReport) {
       throw new Error(
-        'Reporting session private key is required to finalize a peer window'
+        'Operator uptime report signer is required to finalize a peer window'
       );
     }
 
@@ -514,12 +518,9 @@ async function createOperatorPeerTracker(options) {
     };
 
     const finalized =
-      buildSignedOperatorUptimeReport({
-        finalizedWindow:
-          unsignedFinalized,
-        privateKey:
-          reportingSessionPrivateKey
-      });
+      await signUptimeReport(
+        unsignedFinalized
+      );
 
     verifySignedOperatorUptimeReport(
       finalized
