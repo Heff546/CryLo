@@ -149,3 +149,20 @@ module.exports = Object.freeze({
   ...module.exports,
   ...signedNodeObservation
 });
+
+
+const operatorPeerTracker =
+  require('./operator-peer-tracker');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...operatorPeerTracker
+});
+
+const signedOperatorUptimeReport =
+  require('./signed-operator-uptime-report');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...signedOperatorUptimeReport
+});
