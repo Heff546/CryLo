@@ -46,11 +46,15 @@ const {
   createLocalHeartbeatRuntime,
   createNodeObservationWorker,
   createObservationReplayState,
-  createOperatorPeerTracker
+  createOperatorPeerTracker,
+  createValidatorReportReplayState,
+  createValidatorUptimeReportHandler,
+  createValidatorIntakeLifecycle
 } = require('./evidence');
 
 const {
-  createOperatorTransportRuntime
+  createOperatorTransportRuntime,
+  createValidatorReportTransport
 } = require('./transport');
 
 const {
@@ -60,6 +64,7 @@ const {
 let stopping = false;
 let timer = null;
 let operatorTransportRuntime = null;
+let validatorIntakeLifecycle = null;
 
 function nowIso() {
   return new Date().toISOString();
@@ -232,6 +237,24 @@ async function run() {
     );
   }
 
+  if (
+    config.tier === 'Validator' &&
+    localHeartbeatSetting === '1'
+  ) {
+    throw new Error(
+      'CRYLONEXUS_LOCAL_HEARTBEATS is Operator-only'
+    );
+  }
+
+  if (
+    config.tier === 'Validator' &&
+    distributedTransportSetting === '1'
+  ) {
+    throw new Error(
+      'CRYLONEXUS_DISTRIBUTED_TRANSPORT is Operator-only'
+    );
+  }
+
   let localHeartbeatRuntime = null;
   let localQualificationTracker = null;
 
@@ -284,6 +307,113 @@ async function run() {
   });
 
   let contractClient = null;
+
+  if (config.tier === 'Validator') {
+    const validatorVerificationDirectory =
+      path.join(
+        config.service.dataDirectory,
+        'verification'
+      );
+
+    validatorIntakeLifecycle =
+      createValidatorIntakeLifecycle({
+        async createRuntime() {
+          const replayState =
+            await createValidatorReportReplayState({
+              statePath:
+                path.join(
+                  validatorVerificationDirectory,
+                  'validator-report-replay-state.json'
+                )
+            });
+
+          const reportHandler =
+            createValidatorUptimeReportHandler({
+              async readNode(
+                walletAddress
+              ) {
+                if (!contractClient) {
+                  contractClient =
+                    await createReadOnlyContractClient(
+                      config
+                    );
+                } else {
+                  await contractClient
+                    .verifyConnection();
+                }
+
+                return contractClient.readNode(
+                  walletAddress
+                );
+              },
+
+              replayState,
+
+              async onAcceptedReport({
+                accepted,
+                reporterNode
+              }) {
+                log(
+                  'info',
+                  'validator-report-accepted',
+                  {
+                    reportHash:
+                      accepted.reportHash,
+                    reportingOperatorAddress:
+                      accepted
+                        .reportingOperatorAddress,
+                    reportingNodeId:
+                      accepted
+                        .reportingNodeId,
+                    observedOperatorAddress:
+                      accepted
+                        .observedOperatorAddress,
+                    observedNodeId:
+                      accepted
+                        .observedNodeId,
+                    windowStartedAt:
+                      accepted
+                        .windowStartedAt,
+                    windowEndedAt:
+                      accepted
+                        .windowEndedAt,
+                    locallyQualified:
+                      accepted
+                        .locallyQualified,
+                    reporterStakeAtomic:
+                      reporterNode
+                        .stakeAtomic
+                  }
+                );
+              }
+            });
+
+          return createValidatorReportTransport({
+            host:
+              '127.0.0.1',
+            port:
+              0,
+            handleValidatorUptimeReport:
+              reportHandler
+                .handleValidatorUptimeReport
+          });
+        }
+      });
+
+    log(
+      'info',
+      'validator-intake-configured',
+      {
+        operatorAddress:
+          config.operatorAddress,
+        replayStatePath:
+          path.join(
+            validatorVerificationDirectory,
+            'validator-report-replay-state.json'
+          )
+      }
+    );
+  }
 
   if (distributedTransportSetting === '1') {
     const verificationDirectory =
@@ -454,6 +584,7 @@ async function run() {
 
     let connection = null;
     let localObservationSuccessful = false;
+    let validatorRegistrationVerified = false;
 
     try {
       if (!contractClient) {
@@ -573,6 +704,11 @@ async function run() {
 
         const registrationVerified =
           registration.verified;
+
+        validatorRegistrationVerified =
+          config.tier === 'Validator' &&
+          registrationVerified &&
+          status.rpcHealthy === true;
 
         localObservationSuccessful =
           registrationVerified &&
@@ -711,6 +847,61 @@ async function run() {
           'contract-verification-failed',
           {
             error: error.message
+          }
+        );
+      }
+    }
+
+    if (validatorIntakeLifecycle) {
+      try {
+        if (validatorRegistrationVerified) {
+          const result =
+            await validatorIntakeLifecycle
+              .enable();
+
+          if (result.changed) {
+            log(
+              'info',
+              'validator-intake-enabled',
+              {
+                host:
+                  result.transport.host,
+                port:
+                  result.transport.port,
+                route:
+                  result.transport.route
+              }
+            );
+          }
+        } else {
+          const result =
+            await validatorIntakeLifecycle
+              .disable();
+
+          if (result.changed) {
+            log(
+              'warn',
+              'validator-intake-disabled',
+              {
+                reason:
+                  status.rpcHealthy
+                    ? 'VALIDATOR_REGISTRATION_NOT_VERIFIED'
+                    : 'RPC_UNAVAILABLE'
+              }
+            );
+          }
+        }
+      } catch (error) {
+        log(
+          'error',
+          'validator-intake-lifecycle-failed',
+          {
+            action:
+              validatorRegistrationVerified
+                ? 'enable'
+                : 'disable',
+            error:
+              error.message
           }
         );
       }
@@ -862,6 +1053,24 @@ async function shutdown(signal) {
       log(
         'error',
         'distributed-transport-stop-failed',
+        {
+          error:
+            error.message
+        }
+      );
+    }
+  }
+
+  if (validatorIntakeLifecycle) {
+    try {
+      await validatorIntakeLifecycle
+        .disable();
+
+      validatorIntakeLifecycle = null;
+    } catch (error) {
+      log(
+        'error',
+        'validator-intake-stop-failed',
         {
           error:
             error.message

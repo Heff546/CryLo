@@ -166,3 +166,27 @@ module.exports = Object.freeze({
   ...module.exports,
   ...signedOperatorUptimeReport
 });
+
+const validatorReportReplayState =
+  require('./validator-report-replay-state');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorReportReplayState
+});
+
+const validatorUptimeReportHandler =
+  require('./validator-uptime-report-handler');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorUptimeReportHandler
+});
+
+const validatorIntakeLifecycle =
+  require('./validator-intake-lifecycle');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorIntakeLifecycle
+});

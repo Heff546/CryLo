@@ -9,8 +9,12 @@ const operatorEvidenceHandler =
 const transportRuntime =
   require('./transport-runtime');
 
+const validatorReportTransport =
+  require('./validator-report-transport');
+
 module.exports = Object.freeze({
   ...httpJsonServer,
   ...operatorEvidenceHandler,
-  ...transportRuntime
+  ...transportRuntime,
+  ...validatorReportTransport
 });
