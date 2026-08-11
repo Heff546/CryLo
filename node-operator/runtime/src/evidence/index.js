@@ -206,3 +206,11 @@ module.exports = Object.freeze({
   ...module.exports,
   ...validatorConsensusPolicy
 });
+
+const validatorRewardAuthorizationState =
+  require('./validator-reward-authorization-state');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardAuthorizationState
+});
