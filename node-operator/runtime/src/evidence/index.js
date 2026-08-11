@@ -190,3 +190,19 @@ module.exports = Object.freeze({
   ...module.exports,
   ...validatorIntakeLifecycle
 });
+
+const validatorConsensusState =
+  require('./validator-consensus-state');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorConsensusState
+});
+
+const validatorConsensusPolicy =
+  require('./validator-consensus-policy');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorConsensusPolicy
+});

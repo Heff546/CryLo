@@ -49,7 +49,9 @@ const {
   createOperatorPeerTracker,
   createValidatorReportReplayState,
   createValidatorUptimeReportHandler,
-  createValidatorIntakeLifecycle
+  createValidatorIntakeLifecycle,
+  createValidatorConsensusState,
+  parseValidatorConsensusMinimumReports
 } = require('./evidence');
 
 const {
@@ -308,6 +310,14 @@ async function run() {
 
   let contractClient = null;
 
+  const validatorMinimumReports =
+    config.tier === 'Validator'
+      ? parseValidatorConsensusMinimumReports(
+          process.env
+            .CRYLONEXUS_VALIDATOR_MINIMUM_REPORTS
+        )
+      : null;
+
   if (config.tier === 'Validator') {
     const validatorVerificationDirectory =
       path.join(
@@ -324,6 +334,17 @@ async function run() {
                 path.join(
                   validatorVerificationDirectory,
                   'validator-report-replay-state.json'
+                )
+            });
+
+          const consensusState =
+            await createValidatorConsensusState({
+              minimumReports:
+                validatorMinimumReports,
+              statePath:
+                path.join(
+                  validatorVerificationDirectory,
+                  'validator-consensus-state.json'
                 )
             });
 
@@ -353,6 +374,12 @@ async function run() {
                 accepted,
                 reporterNode
               }) {
+                const consensus =
+                  await consensusState
+                    .acceptReport(
+                      accepted
+                    );
+
                 log(
                   'info',
                   'validator-report-accepted',
@@ -382,7 +409,17 @@ async function run() {
                         .locallyQualified,
                     reporterStakeAtomic:
                       reporterNode
-                        .stakeAtomic
+                        .stakeAtomic,
+                    consensus:
+                      consensus.consensus,
+                    consensusFinalized:
+                      consensus.finalized,
+                    consensusReportCount:
+                      consensus.reportCount,
+                    consensusQualifiedCount:
+                      consensus.qualifiedCount,
+                    consensusUnqualifiedCount:
+                      consensus.unqualifiedCount
                   }
                 );
               }
@@ -410,7 +447,14 @@ async function run() {
           path.join(
             validatorVerificationDirectory,
             'validator-report-replay-state.json'
-          )
+          ),
+        consensusStatePath:
+          path.join(
+            validatorVerificationDirectory,
+            'validator-consensus-state.json'
+          ),
+        minimumReports:
+          validatorMinimumReports
       }
     );
   }
