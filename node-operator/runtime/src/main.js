@@ -51,7 +51,9 @@ const {
   createValidatorUptimeReportHandler,
   createValidatorIntakeLifecycle,
   createValidatorConsensusState,
-  parseValidatorConsensusMinimumReports
+  parseValidatorConsensusMinimumReports,
+  createValidatorRewardAuthorizationState,
+  createValidatorRewardAuthorizationReconciler
 } = require('./evidence');
 
 const {
@@ -348,6 +350,39 @@ async function run() {
                 )
             });
 
+          const rewardAuthorizationState =
+            await createValidatorRewardAuthorizationState({
+              statePath:
+                path.join(
+                  validatorVerificationDirectory,
+                  'validator-reward-authorization-state.json'
+                )
+            });
+
+          const rewardAuthorizationReconciler =
+            createValidatorRewardAuthorizationReconciler({
+              consensusState,
+              authorizationState:
+                rewardAuthorizationState
+            });
+
+          const reconciliation =
+            await rewardAuthorizationReconciler
+              .reconcile();
+
+          log(
+            'info',
+            'validator-reward-authorization-reconciled',
+            {
+              finalizedCount:
+                reconciliation.finalizedCount,
+              createdCount:
+                reconciliation.createdCount,
+              existingCount:
+                reconciliation.existingCount
+            }
+          );
+
           const reportHandler =
             createValidatorUptimeReportHandler({
               async readNode(
@@ -378,6 +413,12 @@ async function run() {
                   await consensusState
                     .acceptReport(
                       accepted
+                    );
+
+                const authorization =
+                  await rewardAuthorizationReconciler
+                    .ensureAuthorization(
+                      consensus
                     );
 
                 log(
@@ -419,7 +460,19 @@ async function run() {
                     consensusQualifiedCount:
                       consensus.qualifiedCount,
                     consensusUnqualifiedCount:
-                      consensus.unqualifiedCount
+                      consensus.unqualifiedCount,
+                    rewardAuthorizationChanged:
+                      authorization.changed,
+                    rewardAuthorizationId:
+                      authorization.record
+                        ? authorization.record
+                            .authorizationId
+                        : null,
+                    rewardAuthorizationStatus:
+                      authorization.record
+                        ? authorization.record
+                            .authorizationStatus
+                        : null
                   }
                 );
               }
@@ -452,6 +505,11 @@ async function run() {
           path.join(
             validatorVerificationDirectory,
             'validator-consensus-state.json'
+          ),
+        rewardAuthorizationStatePath:
+          path.join(
+            validatorVerificationDirectory,
+            'validator-reward-authorization-state.json'
           ),
         minimumReports:
           validatorMinimumReports

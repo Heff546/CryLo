@@ -214,3 +214,11 @@ module.exports = Object.freeze({
   ...module.exports,
   ...validatorRewardAuthorizationState
 });
+
+const validatorRewardAuthorizationReconciler =
+  require('./validator-reward-authorization-reconciler');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardAuthorizationReconciler
+});
