@@ -222,3 +222,36 @@ module.exports = Object.freeze({
   ...module.exports,
   ...validatorRewardAuthorizationReconciler
 });
+
+const validatorContractVerification =
+  require('./validator-contract-verification');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorContractVerification
+});
+
+const validatorContractVerificationState =
+  require('./validator-contract-verification-state');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorContractVerificationState
+});
+
+const validatorContractVerifier =
+  require('./validator-contract-verifier');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorContractVerifier
+});
+
+const validatorContractVerificationProcessor =
+  require('./validator-contract-verification-processor');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorContractVerificationProcessor
+});
+

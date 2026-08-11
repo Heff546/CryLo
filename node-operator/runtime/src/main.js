@@ -53,7 +53,10 @@ const {
   createValidatorConsensusState,
   parseValidatorConsensusMinimumReports,
   createValidatorRewardAuthorizationState,
-  createValidatorRewardAuthorizationReconciler
+  createValidatorRewardAuthorizationReconciler,
+  createValidatorContractVerificationState,
+  createValidatorContractVerifier,
+  createValidatorContractVerificationProcessor
 } = require('./evidence');
 
 const {
@@ -383,6 +386,83 @@ async function run() {
             }
           );
 
+          const contractVerificationState =
+            await createValidatorContractVerificationState({
+              statePath:
+                path.join(
+                  validatorVerificationDirectory,
+                  'validator-contract-verification-state.json'
+                )
+            });
+
+          const contractVerifier =
+            createValidatorContractVerifier({
+              async readNode(
+                walletAddress
+              ) {
+                if (!contractClient) {
+                  contractClient =
+                    await createReadOnlyContractClient(
+                      config
+                    );
+                } else {
+                  await contractClient
+                    .verifyConnection();
+                }
+
+                return contractClient.readNode(
+                  walletAddress
+                );
+              },
+
+              verificationState:
+                contractVerificationState
+            });
+
+          const contractVerificationProcessor =
+            createValidatorContractVerificationProcessor({
+              authorizationState:
+                rewardAuthorizationState,
+              verificationState:
+                contractVerificationState,
+              verifier:
+                contractVerifier
+            });
+
+          const initialContractVerification =
+            await contractVerificationProcessor
+              .processPending();
+
+          log(
+            'info',
+            'validator-contract-verification-processed',
+            {
+              phase:
+                'startup',
+              authorizationCount:
+                initialContractVerification
+                  .authorizationCount,
+              awaitingCount:
+                initialContractVerification
+                  .awaitingCount,
+              verifiedCount:
+                initialContractVerification
+                  .verifiedCount,
+              rejectedCount:
+                initialContractVerification
+                  .rejectedCount,
+              existingCount:
+                initialContractVerification
+                  .existingCount,
+              retryableErrorCount:
+                initialContractVerification
+                  .retryableErrorCount,
+              ignoredCount:
+                initialContractVerification
+                  .ignoredCount
+            }
+          );
+
           const reportHandler =
             createValidatorUptimeReportHandler({
               async readNode(
@@ -420,6 +500,10 @@ async function run() {
                     .ensureAuthorization(
                       consensus
                     );
+
+                const contractVerification =
+                  await contractVerificationProcessor
+                    .processPending();
 
                 log(
                   'info',
@@ -472,7 +556,16 @@ async function run() {
                       authorization.record
                         ? authorization.record
                             .authorizationStatus
-                        : null
+                        : null,
+                    contractVerifiedCount:
+                      contractVerification
+                        .verifiedCount,
+                    contractRejectedCount:
+                      contractVerification
+                        .rejectedCount,
+                    contractRetryableErrorCount:
+                      contractVerification
+                        .retryableErrorCount
                   }
                 );
               }
@@ -510,6 +603,11 @@ async function run() {
           path.join(
             validatorVerificationDirectory,
             'validator-reward-authorization-state.json'
+          ),
+        contractVerificationStatePath:
+          path.join(
+            validatorVerificationDirectory,
+            'validator-contract-verification-state.json'
           ),
         minimumReports:
           validatorMinimumReports
