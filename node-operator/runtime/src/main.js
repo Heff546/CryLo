@@ -56,7 +56,9 @@ const {
   createValidatorRewardAuthorizationReconciler,
   createValidatorContractVerificationState,
   createValidatorContractVerifier,
-  createValidatorContractVerificationProcessor
+  createValidatorContractVerificationProcessor,
+  createValidatorRewardEligibilityState,
+  createValidatorRewardEligibilityReconciler
 } = require('./evidence');
 
 const {
@@ -395,6 +397,23 @@ async function run() {
                 )
             });
 
+          const rewardEligibilityState =
+            await createValidatorRewardEligibilityState({
+              statePath:
+                path.join(
+                  validatorVerificationDirectory,
+                  'validator-reward-eligibility-state.json'
+                )
+            });
+
+          const rewardEligibilityReconciler =
+            createValidatorRewardEligibilityReconciler({
+              verificationState:
+                contractVerificationState,
+              eligibilityState:
+                rewardEligibilityState
+            });
+
           const contractVerifier =
             createValidatorContractVerifier({
               async readNode(
@@ -432,6 +451,28 @@ async function run() {
           const initialContractVerification =
             await contractVerificationProcessor
               .processPending();
+
+          const initialRewardEligibility =
+            await rewardEligibilityReconciler
+              .reconcile();
+
+          log(
+            'info',
+            'validator-reward-eligibility-reconciled',
+            {
+              phase:
+                'startup',
+              verificationCount:
+                initialRewardEligibility
+                  .verificationCount,
+              createdCount:
+                initialRewardEligibility
+                  .createdCount,
+              existingCount:
+                initialRewardEligibility
+                  .existingCount
+            }
+          );
 
           log(
             'info',
@@ -505,6 +546,10 @@ async function run() {
                   await contractVerificationProcessor
                     .processPending();
 
+                const rewardEligibility =
+                  await rewardEligibilityReconciler
+                    .reconcile();
+
                 log(
                   'info',
                   'validator-report-accepted',
@@ -565,7 +610,13 @@ async function run() {
                         .rejectedCount,
                     contractRetryableErrorCount:
                       contractVerification
-                        .retryableErrorCount
+                        .retryableErrorCount,
+                    rewardEligibilityCreatedCount:
+                      rewardEligibility
+                        .createdCount,
+                    rewardEligibilityExistingCount:
+                      rewardEligibility
+                        .existingCount
                   }
                 );
               }
@@ -608,6 +659,11 @@ async function run() {
           path.join(
             validatorVerificationDirectory,
             'validator-contract-verification-state.json'
+          ),
+        rewardEligibilityStatePath:
+          path.join(
+            validatorVerificationDirectory,
+            'validator-reward-eligibility-state.json'
           ),
         minimumReports:
           validatorMinimumReports

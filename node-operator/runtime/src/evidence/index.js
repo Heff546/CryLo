@@ -255,3 +255,19 @@ module.exports = Object.freeze({
   ...validatorContractVerificationProcessor
 });
 
+const validatorRewardEligibilityState =
+  require('./validator-reward-eligibility-state');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardEligibilityState
+});
+
+const validatorRewardEligibilityReconciler =
+  require('./validator-reward-eligibility-reconciler');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardEligibilityReconciler
+});
+
