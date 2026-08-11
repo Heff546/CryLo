@@ -3,6 +3,7 @@
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { getAddress } = require('ethers');
 
 const {
   writeJsonAtomic
@@ -62,6 +63,31 @@ function requireNonEmptyString(
   return value;
 }
 
+function requireCanonicalTime(
+  value,
+  name
+) {
+  requireNonEmptyString(
+    value,
+    name
+  );
+
+  const parsed =
+    Date.parse(value);
+
+  if (
+    !Number.isFinite(parsed) ||
+    new Date(parsed).toISOString() !==
+      value
+  ) {
+    throw new TypeError(
+      `${name} must be a canonical UTC timestamp`
+    );
+  }
+
+  return value;
+}
+
 function defaultRewardEligibilityStatePath() {
   return path.join(
     os.homedir(),
@@ -102,6 +128,18 @@ function eligibilityDecisionId(
     verificationId:
       record.verificationId,
 
+    observedOperatorAddress:
+      record.observedOperatorAddress,
+
+    observedNodeId:
+      record.observedNodeId,
+
+    windowStartedAt:
+      record.windowStartedAt,
+
+    windowEndedAt:
+      record.windowEndedAt,
+
     contractOutcome:
       record.contractOutcome,
 
@@ -133,6 +171,41 @@ function normalizeEligibilityRecord(
       'Reward eligibility verification ID'
     );
 
+  const observedOperatorAddress =
+    getAddress(
+      requireNonEmptyString(
+        verification.observedOperatorAddress,
+        'Reward eligibility observed Operator address'
+      )
+    );
+
+  const observedNodeId =
+    requireNonEmptyString(
+      verification.observedNodeId,
+      'Reward eligibility observed node ID'
+    );
+
+  const windowStartedAt =
+    requireCanonicalTime(
+      verification.windowStartedAt,
+      'Reward eligibility windowStartedAt'
+    );
+
+  const windowEndedAt =
+    requireCanonicalTime(
+      verification.windowEndedAt,
+      'Reward eligibility windowEndedAt'
+    );
+
+  if (
+    Date.parse(windowEndedAt) <=
+    Date.parse(windowStartedAt)
+  ) {
+    throw new Error(
+      'Reward eligibility window end must follow its start'
+    );
+  }
+
   const contractOutcome =
     verification.outcome;
 
@@ -148,6 +221,14 @@ function normalizeEligibilityRecord(
     authorizationId,
 
     verificationId,
+
+    observedOperatorAddress,
+
+    observedNodeId,
+
+    windowStartedAt,
+
+    windowEndedAt,
 
     contractOutcome,
 
@@ -217,6 +298,18 @@ async function readState(
 
           verificationId:
             persisted.verificationId,
+
+          observedOperatorAddress:
+            persisted.observedOperatorAddress,
+
+          observedNodeId:
+            persisted.observedNodeId,
+
+          windowStartedAt:
+            persisted.windowStartedAt,
+
+          windowEndedAt:
+            persisted.windowEndedAt,
 
           outcome:
             persisted.contractOutcome,

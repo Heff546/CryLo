@@ -55,6 +55,31 @@ function requireNonEmptyString(
   return value;
 }
 
+function requireCanonicalTime(
+  value,
+  name
+) {
+  requireNonEmptyString(
+    value,
+    name
+  );
+
+  const parsed =
+    Date.parse(value);
+
+  if (
+    !Number.isFinite(parsed) ||
+    new Date(parsed).toISOString() !==
+      value
+  ) {
+    throw new TypeError(
+      `${name} must be a canonical UTC timestamp`
+    );
+  }
+
+  return value;
+}
+
 function defaultStatePath() {
   return path.join(
     os.homedir(),
@@ -74,8 +99,10 @@ function buildVerificationId(
       1,
     authorizationId:
       record.authorizationId,
-    targetOperatorAddress:
-      record.targetOperatorAddress,
+    observedOperatorAddress:
+      record.observedOperatorAddress,
+    observedNodeId:
+      record.observedNodeId,
     windowStartedAt:
       record.windowStartedAt,
     windowEndedAt:
@@ -107,25 +134,40 @@ function normalizeVerificationRecord(
       'Authorization ID'
     );
 
-  const targetOperatorAddress =
+  const observedOperatorAddress =
     getAddress(
       requireNonEmptyString(
-        record.targetOperatorAddress,
-        'Target Operator address'
+        record.observedOperatorAddress,
+        'Observed Operator address'
       )
     );
 
-  const windowStartedAt =
+  const observedNodeId =
     requireNonEmptyString(
+      record.observedNodeId,
+      'Observed node ID'
+    );
+
+  const windowStartedAt =
+    requireCanonicalTime(
       record.windowStartedAt,
       'Window start'
     );
 
   const windowEndedAt =
-    requireNonEmptyString(
+    requireCanonicalTime(
       record.windowEndedAt,
       'Window end'
     );
+
+  if (
+    Date.parse(windowEndedAt) <=
+    Date.parse(windowStartedAt)
+  ) {
+    throw new Error(
+      'Validator contract verification window end must follow its start'
+    );
+  }
 
   if (
     record.outcome !== CONTRACT_VERIFIED &&
@@ -143,7 +185,9 @@ function normalizeVerificationRecord(
 
       authorizationId,
 
-      targetOperatorAddress,
+      observedOperatorAddress,
+
+      observedNodeId,
 
       windowStartedAt,
 
@@ -352,8 +396,11 @@ async function createValidatorContractVerificationState(
       normalizeVerificationRecord({
         authorizationId,
 
-        targetOperatorAddress:
-          authorization.targetOperatorAddress,
+        observedOperatorAddress:
+          authorization.observedOperatorAddress,
+
+        observedNodeId:
+          authorization.observedNodeId,
 
         windowStartedAt:
           authorization.windowStartedAt,

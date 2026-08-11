@@ -87,16 +87,24 @@ function createValidatorContractVerifier(
       );
     }
 
-    const targetOperatorAddress =
-      authorization.observedOperatorAddress ||
-      authorization.targetOperatorAddress;
+    const observedOperatorAddress =
+      authorization.observedOperatorAddress;
 
     if (
-      typeof targetOperatorAddress !== 'string' ||
-      targetOperatorAddress.trim() === ''
+      typeof observedOperatorAddress !== 'string' ||
+      observedOperatorAddress.trim() === ''
     ) {
       throw new TypeError(
-        'Validator reward authorization target Operator address is required'
+        'Validator reward authorization observed Operator address is required'
+      );
+    }
+
+    if (
+      typeof authorization.observedNodeId !== 'string' ||
+      authorization.observedNodeId.trim() === ''
+    ) {
+      throw new TypeError(
+        'Validator reward authorization observed node ID is required'
       );
     }
 
@@ -108,7 +116,7 @@ function createValidatorContractVerifier(
      */
     const node =
       await readNode(
-        targetOperatorAddress
+        observedOperatorAddress
       );
 
     const verification =
@@ -118,10 +126,7 @@ function createValidatorContractVerifier(
 
     const record =
       await recordVerification(
-        {
-          ...authorization,
-          targetOperatorAddress
-        },
+        authorization,
         verification
       );
 

@@ -58,6 +58,19 @@ function verification({
   return {
     authorizationId,
     verificationId,
+
+    observedOperatorAddress:
+      '0x1111111111111111111111111111111111111111',
+
+    observedNodeId:
+      'observed-node-001',
+
+    windowStartedAt:
+      '2026-08-10T20:00:00.000Z',
+
+    windowEndedAt:
+      '2026-08-10T20:20:00.000Z',
+
     outcome,
     reasonCode
   };

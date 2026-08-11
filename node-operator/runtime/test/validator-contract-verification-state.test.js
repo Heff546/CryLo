@@ -48,8 +48,11 @@ function authorization(
     authorizationId:
       '0x' + '11'.repeat(32),
 
-    targetOperatorAddress:
+    observedOperatorAddress:
       Wallet.createRandom().address,
+
+    observedNodeId:
+      'observed-node-001',
 
     windowStartedAt:
       '2026-08-10T20:00:00.000Z',
@@ -490,6 +493,116 @@ test(
             true,
           force:
             true
+        }
+      );
+    }
+  }
+);
+
+test(
+  'verification ID commits the observed node identity',
+  async () => {
+    const firstTemp =
+      await makeTempState();
+
+    const secondTemp =
+      await makeTempState();
+
+    try {
+      const firstState =
+        await createValidatorContractVerificationState({
+          statePath:
+            firstTemp.statePath
+        });
+
+      const secondState =
+        await createValidatorContractVerificationState({
+          statePath:
+            secondTemp.statePath
+        });
+
+      const baseAuthorization =
+        authorization();
+
+      const first =
+        await firstState.recordVerification(
+          baseAuthorization,
+          verification()
+        );
+
+      const second =
+        await secondState.recordVerification(
+          {
+            ...baseAuthorization,
+            observedNodeId:
+              'observed-node-002'
+          },
+          verification()
+        );
+
+      assert.notEqual(
+        first.verificationId,
+        second.verificationId
+      );
+
+      assert.equal(
+        first.observedNodeId,
+        'observed-node-001'
+      );
+
+      assert.equal(
+        second.observedNodeId,
+        'observed-node-002'
+      );
+    } finally {
+      await fs.rm(
+        firstTemp.directory,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+
+      await fs.rm(
+        secondTemp.directory,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+    }
+  }
+);
+
+test(
+  'rejects non-canonical verification window timestamps',
+  async () => {
+    const temp =
+      await makeTempState();
+
+    try {
+      const state =
+        await createValidatorContractVerificationState({
+          statePath:
+            temp.statePath
+        });
+
+      await assert.rejects(
+        state.recordVerification(
+          authorization({
+            windowStartedAt:
+              '2026-08-10 20:00:00'
+          }),
+          verification()
+        ),
+        /canonical UTC timestamp/
+      );
+    } finally {
+      await fs.rm(
+        temp.directory,
+        {
+          recursive: true,
+          force: true
         }
       );
     }

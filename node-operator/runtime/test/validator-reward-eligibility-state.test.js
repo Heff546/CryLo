@@ -52,6 +52,18 @@ function verification(
     verificationId:
       '0x' + '22'.repeat(32),
 
+    observedOperatorAddress:
+      '0x1111111111111111111111111111111111111111',
+
+    observedNodeId:
+      'observed-node-001',
+
+    windowStartedAt:
+      '2026-08-10T20:00:00.000Z',
+
+    windowEndedAt:
+      '2026-08-10T20:20:00.000Z',
+
     outcome:
       CONTRACT_VERIFIED,
 
@@ -432,6 +444,109 @@ test(
             temp.statePath
         }),
         /decision ID mismatch/
+      );
+    } finally {
+      await fs.rm(
+        temp.directory,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+    }
+  }
+);
+
+test(
+  'eligibility decision ID commits the observed node identity',
+  async () => {
+    const firstTemp =
+      await makeTempState();
+
+    const secondTemp =
+      await makeTempState();
+
+    try {
+      const firstState =
+        await createValidatorRewardEligibilityState({
+          statePath:
+            firstTemp.statePath
+        });
+
+      const secondState =
+        await createValidatorRewardEligibilityState({
+          statePath:
+            secondTemp.statePath
+        });
+
+      const first =
+        await firstState.recordVerification(
+          verification()
+        );
+
+      const second =
+        await secondState.recordVerification(
+          verification({
+            observedNodeId:
+              'observed-node-002'
+          })
+        );
+
+      assert.notEqual(
+        first.decisionId,
+        second.decisionId
+      );
+
+      assert.equal(
+        first.observedNodeId,
+        'observed-node-001'
+      );
+
+      assert.equal(
+        second.observedNodeId,
+        'observed-node-002'
+      );
+    } finally {
+      await fs.rm(
+        firstTemp.directory,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+
+      await fs.rm(
+        secondTemp.directory,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+    }
+  }
+);
+
+test(
+  'rejects non-canonical eligibility window timestamps',
+  async () => {
+    const temp =
+      await makeTempState();
+
+    try {
+      const state =
+        await createValidatorRewardEligibilityState({
+          statePath:
+            temp.statePath
+        });
+
+      await assert.rejects(
+        state.recordVerification(
+          verification({
+            windowEndedAt:
+              '2026-08-10 20:20:00'
+          })
+        ),
+        /canonical UTC timestamp/
       );
     } finally {
       await fs.rm(
