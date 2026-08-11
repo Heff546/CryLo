@@ -12,9 +12,13 @@ const transportRuntime =
 const validatorReportTransport =
   require('./validator-report-transport');
 
+const validatorRewardApprovalTransport =
+  require('./validator-reward-approval-transport');
+
 module.exports = Object.freeze({
   ...httpJsonServer,
   ...operatorEvidenceHandler,
   ...transportRuntime,
-  ...validatorReportTransport
+  ...validatorReportTransport,
+  ...validatorRewardApprovalTransport
 });

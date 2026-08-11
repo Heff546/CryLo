@@ -271,3 +271,45 @@ module.exports = Object.freeze({
   ...validatorRewardEligibilityReconciler
 });
 
+const signedValidatorRewardApproval =
+  require('./signed-validator-reward-approval');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...signedValidatorRewardApproval
+});
+
+const validatorRewardApprovalAuthorization =
+  require('./validator-reward-approval-authorization');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardApprovalAuthorization
+});
+
+const validatorRewardApprovalAuthority =
+  require('./validator-reward-approval-authority');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardApprovalAuthority
+});
+
+
+const validatorRewardApprovalQuorumState =
+  require('./validator-reward-approval-quorum-state');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardApprovalQuorumState
+});
+
+
+const validatorRewardApprovalHandler =
+  require('./validator-reward-approval-handler');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardApprovalHandler
+});
+
