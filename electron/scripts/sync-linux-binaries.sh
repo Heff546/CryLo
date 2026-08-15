@@ -37,9 +37,7 @@ mkdir -p "$DEST"
 rm -f \
   "$DEST"/CryLo-daemon.old-* \
   "$DEST"/CryLo-wallet-rpc.old-* \
-  "$DEST"/*.log \
-  "$DEST"/c64chaind \
-  "$DEST"/c64chain-wallet-rpc
+  "$DEST"/*.log
 
 echo "CryLo Linux binary synchronization"
 echo "Source:       $SOURCE"

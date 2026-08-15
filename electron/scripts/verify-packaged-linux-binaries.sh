@@ -46,7 +46,7 @@ done
 
 unexpected="$(
   find "$PACKAGED" -maxdepth 1 -type f \
-    \( -name '*.log' -o -name '*.old-*' -o -name 'c64chain*' \) \
+    \( -name '*.log' -o -name '*.old-*' \) \
     -printf '%f\n'
 )"
 

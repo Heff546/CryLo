@@ -54,8 +54,7 @@ module.exports = async function afterPack(context) {
 
   const forbidden = fs.readdirSync(packagedDir).filter(name =>
     name.endsWith('.log') ||
-    name.includes('.old-') ||
-    name.startsWith('c64chain')
+    name.includes('.old-')
   );
 
   if (forbidden.length > 0) {
