@@ -70,10 +70,17 @@ const {
   createLocalQualificationTracker
 } = require('./evidence/local-qualification');
 
+const {
+  createValidatorRewardApprovalRuntime
+} = require(
+  './evidence/validator-reward-approval-runtime'
+);
+
 let stopping = false;
 let timer = null;
 let operatorTransportRuntime = null;
 let validatorIntakeLifecycle = null;
+let validatorRewardApprovalRuntime = null;
 
 function nowIso() {
   return new Date().toISOString();
@@ -456,6 +463,93 @@ async function run() {
             await rewardEligibilityReconciler
               .reconcile();
 
+          if (validatorRewardApprovalRuntime) {
+            validatorRewardApprovalRuntime
+              .stop();
+
+            validatorRewardApprovalRuntime =
+              null;
+          }
+
+          validatorRewardApprovalRuntime =
+            await createValidatorRewardApprovalRuntime({
+              validatorAddress:
+                config.operatorAddress,
+
+              validatorNodeId:
+                nodeId,
+
+              dataDirectory:
+                config.service.dataDirectory
+            });
+
+          if (validatorRewardApprovalRuntime) {
+            const startupApprovalQueue =
+              await validatorRewardApprovalRuntime
+                .enqueueDecisions(
+                  rewardEligibilityState
+                    .listDecisions()
+                );
+
+            const startupApprovalDelivery =
+              await validatorRewardApprovalRuntime
+                .processPending();
+
+            validatorRewardApprovalRuntime
+              .start();
+
+            log(
+              'info',
+              'validator-reward-approval-runtime-enabled',
+              {
+                finalizationContract:
+                  validatorRewardApprovalRuntime
+                    .finalizationContract,
+
+                sessionAddress:
+                  validatorRewardApprovalRuntime
+                    .sessionAddress,
+
+                deliveryStatePath:
+                  validatorRewardApprovalRuntime
+                    .deliveryStatePath,
+
+                destinationHost:
+                  validatorRewardApprovalRuntime
+                    .destinationHost,
+
+                destinationPort:
+                  validatorRewardApprovalRuntime
+                    .destinationPort,
+
+                destinationRoute:
+                  validatorRewardApprovalRuntime
+                    .destinationRoute,
+
+                queuedCreatedCount:
+                  startupApprovalQueue
+                    .createdCount,
+
+                queuedExistingCount:
+                  startupApprovalQueue
+                    .existingCount,
+
+                deliveredCount:
+                  startupApprovalDelivery
+                    .deliveredCount,
+
+                retryableErrorCount:
+                  startupApprovalDelivery
+                    .retryableErrorCount
+              }
+            );
+          } else {
+            log(
+              'info',
+              'validator-reward-approval-runtime-disabled'
+            );
+          }
+
           log(
             'info',
             'validator-reward-eligibility-reconciled',
@@ -550,6 +644,42 @@ async function run() {
                   await rewardEligibilityReconciler
                     .reconcile();
 
+                let rewardApprovalDelivery =
+                  null;
+
+                if (
+                  validatorRewardApprovalRuntime
+                ) {
+                  const queuedApprovals =
+                    await validatorRewardApprovalRuntime
+                      .enqueueDecisions(
+                        rewardEligibilityState
+                          .listDecisions()
+                      );
+
+                  const deliveredApprovals =
+                    await validatorRewardApprovalRuntime
+                      .processPending();
+
+                  rewardApprovalDelivery = {
+                    queuedCreatedCount:
+                      queuedApprovals
+                        .createdCount,
+
+                    queuedExistingCount:
+                      queuedApprovals
+                        .existingCount,
+
+                    deliveredCount:
+                      deliveredApprovals
+                        .deliveredCount,
+
+                    retryableErrorCount:
+                      deliveredApprovals
+                        .retryableErrorCount
+                  };
+                }
+
                 log(
                   'info',
                   'validator-report-accepted',
@@ -616,7 +746,9 @@ async function run() {
                         .createdCount,
                     rewardEligibilityExistingCount:
                       rewardEligibility
-                        .existingCount
+                        .existingCount,
+
+                    rewardApprovalDelivery
                   }
                 );
               }
@@ -1134,6 +1266,16 @@ async function run() {
             await validatorIntakeLifecycle
               .disable();
 
+          if (
+            validatorRewardApprovalRuntime
+          ) {
+            validatorRewardApprovalRuntime
+              .stop();
+
+            validatorRewardApprovalRuntime =
+              null;
+          }
+
           if (result.changed) {
             log(
               'warn',
@@ -1315,6 +1457,14 @@ async function shutdown(signal) {
         }
       );
     }
+  }
+
+  if (validatorRewardApprovalRuntime) {
+    validatorRewardApprovalRuntime
+      .stop();
+
+    validatorRewardApprovalRuntime =
+      null;
   }
 
   if (validatorIntakeLifecycle) {
