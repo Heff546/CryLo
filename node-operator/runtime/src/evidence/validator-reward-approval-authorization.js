@@ -6,16 +6,20 @@ const path = require('node:path');
 
 const {
   getAddress,
-  isAddress,
-  verifyMessage
+  isAddress
 } = require('ethers');
 
-const AUTHORIZATION_VERSION = 1;
-const DELEGATION_VERSION = 1;
-const CHAIN_ID = 5546;
+const {
+  CHAIN_ID,
+  PURPOSE,
+  DELEGATION_VERSION,
+  validatorRewardApprovalDelegationTypedData,
+  verifyValidatorRewardApprovalDelegationSignature
+} = require(
+  './validator-reward-approval-eip712'
+);
 
-const PURPOSE =
-  'validator-reward-approval';
+const AUTHORIZATION_VERSION = 2;
 
 function requirePlainObject(
   value,
@@ -70,31 +74,6 @@ function normalizeAddress(
   return getAddress(value);
 }
 
-function requireCanonicalTime(
-  value,
-  name
-) {
-  requireNonEmptyString(
-    value,
-    name
-  );
-
-  const parsed =
-    Date.parse(value);
-
-  if (
-    !Number.isFinite(parsed) ||
-    new Date(parsed).toISOString() !==
-      value
-  ) {
-    throw new TypeError(
-      `${name} must be a canonical UTC timestamp`
-    );
-  }
-
-  return parsed;
-}
-
 function defaultValidatorRewardApprovalAuthorizationPath() {
   return path.join(
     os.homedir(),
@@ -110,6 +89,7 @@ function verifyValidatorRewardApprovalAuthorization({
   expectedValidatorAddress,
   expectedValidatorNodeId,
   expectedSessionAddress,
+  expectedFinalizationContract,
   nowMs = Date.now()
 }) {
   requirePlainObject(
@@ -143,54 +123,14 @@ function verifyValidatorRewardApprovalAuthorization({
   const delegation =
     authorization.delegation;
 
-  if (
-    delegation.version !==
-    DELEGATION_VERSION
-  ) {
-    throw new Error(
-      `Unsupported Validator reward approval delegation version: ${delegation.version}`
-    );
-  }
-
-  if (
-    delegation.purpose !==
-    PURPOSE
-  ) {
-    throw new Error(
-      'Validator reward approval authorization purpose mismatch'
-    );
-  }
-
-  if (
-    delegation.chainId !==
-    CHAIN_ID
-  ) {
-    throw new Error(
-      `Unexpected Validator reward approval chain ID: ${delegation.chainId}`
-    );
-  }
-
-  const validatorAddress =
-    normalizeAddress(
-      delegation.validatorAddress,
-      'Validator delegation wallet address'
-    );
-
-  const validatorNodeId =
-    requireNonEmptyString(
-      delegation.nodeId,
-      'Validator delegation node ID'
-    );
-
-  const sessionAddress =
-    normalizeAddress(
-      delegation.sessionAddress,
-      'Validator delegation session address'
+  const typed =
+    validatorRewardApprovalDelegationTypedData(
+      delegation
     );
 
   if (
     expectedValidatorAddress !== undefined &&
-    validatorAddress !==
+    typed.validatorAddress !==
       normalizeAddress(
         expectedValidatorAddress,
         'Expected Validator address'
@@ -203,7 +143,7 @@ function verifyValidatorRewardApprovalAuthorization({
 
   if (
     expectedValidatorNodeId !== undefined &&
-    validatorNodeId !==
+    typed.validatorNodeId !==
       requireNonEmptyString(
         expectedValidatorNodeId,
         'Expected Validator node ID'
@@ -216,7 +156,7 @@ function verifyValidatorRewardApprovalAuthorization({
 
   if (
     expectedSessionAddress !== undefined &&
-    sessionAddress !==
+    typed.sessionAddress !==
       normalizeAddress(
         expectedSessionAddress,
         'Expected Validator session address'
@@ -227,29 +167,21 @@ function verifyValidatorRewardApprovalAuthorization({
     );
   }
 
-  const issuedAtMs =
-    requireCanonicalTime(
-      delegation.issuedAt,
-      'Validator delegation issuedAt'
-    );
-
-  const expiresAtMs =
-    requireCanonicalTime(
-      delegation.expiresAt,
-      'Validator delegation expiresAt'
-    );
-
   if (
-    expiresAtMs <=
-    issuedAtMs
+    expectedFinalizationContract !== undefined &&
+    typed.finalizationContract !==
+      normalizeAddress(
+        expectedFinalizationContract,
+        'Expected Validator reward finalization contract'
+      )
   ) {
     throw new Error(
-      'Validator reward approval delegation expiration must follow issuance'
+      'Validator reward approval authorization finalization contract mismatch'
     );
   }
 
   if (
-    expiresAtMs <=
+    typed.expiresAt * 1000 <=
     nowMs
   ) {
     throw new Error(
@@ -263,27 +195,12 @@ function verifyValidatorRewardApprovalAuthorization({
       'Validator reward approval delegation signature'
     );
 
-  const delegationMessage =
-    JSON.stringify(
-      delegation
-    );
-
-  const recoveredValidatorAddress =
-    getAddress(
-      verifyMessage(
-        delegationMessage,
+  const signatureResult =
+    verifyValidatorRewardApprovalDelegationSignature({
+      delegation,
+      signature:
         delegationSignature
-      )
-    );
-
-  if (
-    recoveredValidatorAddress !==
-    validatorAddress
-  ) {
-    throw new Error(
-      'Validator reward approval delegation signature mismatch'
-    );
-  }
+    });
 
   if (
     Object.prototype.hasOwnProperty.call(
@@ -299,18 +216,36 @@ function verifyValidatorRewardApprovalAuthorization({
   return Object.freeze({
     authorization,
     delegation,
-    delegationMessage,
+
+    delegationDigest:
+      typed.digest,
+
     delegationSignature,
 
-    validatorAddress,
-    validatorNodeId,
-    sessionAddress,
+    validatorAddress:
+      typed.validatorAddress,
+
+    validatorNodeId:
+      typed.validatorNodeId,
+
+    validatorNodeIdHash:
+      typed.validatorNodeIdHash,
+
+    sessionAddress:
+      typed.sessionAddress,
+
+    finalizationContract:
+      typed.finalizationContract,
 
     issuedAt:
       delegation.issuedAt,
 
     expiresAt:
-      delegation.expiresAt
+      delegation.expiresAt,
+
+    signatureSigner:
+      signatureResult
+        .recoveredValidatorAddress
   });
 }
 
@@ -390,6 +325,9 @@ async function loadValidatorRewardApprovalAuthorization(
 
       expectedSessionAddress:
         options.expectedSessionAddress,
+
+      expectedFinalizationContract:
+        options.expectedFinalizationContract,
 
       ...(options.nowMs === undefined
         ? {}

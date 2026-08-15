@@ -279,6 +279,23 @@ module.exports = Object.freeze({
   ...signedValidatorRewardApproval
 });
 
+const validatorRewardApprovalEip712 =
+  require('./validator-reward-approval-eip712');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardApprovalEip712
+});
+
+
+const validatorRewardApprovalSignatureEip712 =
+  require('./validator-reward-approval-signature-eip712');
+
+module.exports = Object.freeze({
+  ...module.exports,
+  ...validatorRewardApprovalSignatureEip712
+});
+
 const validatorRewardApprovalAuthorization =
   require('./validator-reward-approval-authorization');
 

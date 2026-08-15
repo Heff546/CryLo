@@ -18,6 +18,15 @@ const {
 );
 
 const {
+  validatorRewardApprovalDelegationTypedData
+} = require(
+  '../src/evidence/validator-reward-approval-eip712'
+);
+
+const FINALIZATION_CONTRACT =
+  '0xF100000000000000000000000000000000000001';
+
+const {
   buildSignedValidatorRewardApproval
 } = require(
   '../src/evidence/signed-validator-reward-approval'
@@ -120,7 +129,7 @@ async function approvalBundle({
     decision()
 } = {}) {
   const delegation = {
-    version: 1,
+    version: 2,
 
     purpose:
       PURPOSE,
@@ -136,6 +145,9 @@ async function approvalBundle({
     sessionAddress:
       session.address,
 
+    finalizationContract:
+      FINALIZATION_CONTRACT,
+
     issuedAt:
       '2026-08-11T04:00:00.000Z',
 
@@ -143,15 +155,20 @@ async function approvalBundle({
       '2026-08-12T04:00:00.000Z'
   };
 
+  const typedDelegation =
+    validatorRewardApprovalDelegationTypedData(
+      delegation
+    );
+
   const delegationSignature =
-    await validator.signMessage(
-      JSON.stringify(
-        delegation
-      )
+    await validator.signTypedData(
+      typedDelegation.domain,
+      typedDelegation.types,
+      typedDelegation.value
     );
 
   const authorization = {
-    version: 1,
+    version: 2,
     delegation,
     delegationSignature
   };
@@ -169,6 +186,9 @@ async function approvalBundle({
 
       approvingSessionAddress:
         session.address,
+
+      finalizationContract:
+        FINALIZATION_CONTRACT,
 
       issuedAt:
         '2026-08-11T05:21:00.000Z',

@@ -19,6 +19,9 @@ const {
   '../src/evidence/signed-validator-reward-approval'
 );
 
+const FINALIZATION_CONTRACT =
+  '0xF100000000000000000000000000000000000001';
+
 function decision(
   overrides = {}
 ) {
@@ -82,6 +85,9 @@ function buildApproval(
 
       approvingSessionAddress:
         session.address,
+
+      finalizationContract:
+        FINALIZATION_CONTRACT,
 
       issuedAt:
         '2026-08-11T05:21:00.000Z',
@@ -289,6 +295,9 @@ test(
           approvingSessionAddress:
             session.address,
 
+          finalizationContract:
+            FINALIZATION_CONTRACT,
+
           issuedAt:
             '2026-08-11T05:21:00.000Z',
 
@@ -321,6 +330,9 @@ test(
 
           approvingSessionAddress:
             session.address,
+
+          finalizationContract:
+            FINALIZATION_CONTRACT,
 
           issuedAt:
             '2026-08-11 05:21:00',

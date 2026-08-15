@@ -117,6 +117,10 @@ function createValidatorRewardApprovalHandler(
           verifiedApproval
             .approvingSessionAddress,
 
+        expectedFinalizationContract:
+          verifiedApproval
+            .finalizationContract,
+
         nowMs
       });
 

@@ -1,19 +1,17 @@
 'use strict';
 
 const {
-  getAddress,
-  computeAddress
+  SigningKey,
+  computeAddress,
+  getAddress
 } = require('ethers');
 
 const {
-  canonicalHash,
   isCanonicalHash
 } = require('./hashing');
 
 const {
-  assertPrivateKey,
-  signHeartbeatPayload,
-  verifyHeartbeatSignature
+  assertPrivateKey
 } = require('./detached-signing');
 
 const {
@@ -23,9 +21,18 @@ const {
   './validator-reward-eligibility-state'
 );
 
-const APPROVAL_SCHEMA_VERSION = 1;
+const {
+  APPROVAL_VERSION,
+  validatorRewardApprovalTypedData,
+  verifyValidatorRewardApprovalSignature
+} = require(
+  './validator-reward-approval-signature-eip712'
+);
+
+const APPROVAL_SCHEMA_VERSION = 2;
+
 const APPROVAL_PROTOCOL_VERSION =
-  '2.0.0';
+  '3.0.0';
 
 const CRYLONEXUS_CHAIN_ID = 5546;
 
@@ -78,7 +85,10 @@ function normalizeAddress(
   } catch (error) {
     throw new TypeError(
       `${name} must be a valid EVM address`,
-      { cause: error }
+      {
+        cause:
+          error
+      }
     );
   }
 }
@@ -105,6 +115,15 @@ function requireCanonicalTime(
     );
   }
 
+  if (
+    parsed % 1000 !==
+    0
+  ) {
+    throw new TypeError(
+      `${name} must have whole-second precision`
+    );
+  }
+
   return value;
 }
 
@@ -126,6 +145,7 @@ function buildUnsignedValidatorRewardApproval({
   approvingValidatorAddress,
   approvingValidatorNodeId,
   approvingSessionAddress,
+  finalizationContract,
   issuedAt
 }) {
   requirePlainObject(
@@ -149,6 +169,12 @@ function buildUnsignedValidatorRewardApproval({
     normalizeAddress(
       approvingSessionAddress,
       'Approving Validator session address'
+    );
+
+  const normalizedFinalizationContract =
+    normalizeAddress(
+      finalizationContract,
+      'Validator reward finalization contract'
     );
 
   const observedOperatorAddress =
@@ -188,8 +214,10 @@ function buildUnsignedValidatorRewardApproval({
     decision.rewardEligibility;
 
   if (
-    rewardEligibility !== REWARD_ELIGIBLE &&
-    rewardEligibility !== REWARD_INELIGIBLE
+    rewardEligibility !==
+      REWARD_ELIGIBLE &&
+    rewardEligibility !==
+      REWARD_INELIGIBLE
   ) {
     throw new Error(
       'Published reward eligibility decision is invalid'
@@ -200,6 +228,9 @@ function buildUnsignedValidatorRewardApproval({
     schemaVersion:
       APPROVAL_SCHEMA_VERSION,
 
+    approvalVersion:
+      APPROVAL_VERSION,
+
     protocolVersion:
       APPROVAL_PROTOCOL_VERSION,
 
@@ -208,6 +239,9 @@ function buildUnsignedValidatorRewardApproval({
 
     purpose:
       'validator-reward-approval',
+
+    finalizationContract:
+      normalizedFinalizationContract,
 
     approvingValidatorAddress:
       validatorAddress,
@@ -270,6 +304,7 @@ function buildSignedValidatorRewardApproval({
   approvingValidatorAddress,
   approvingValidatorNodeId,
   approvingSessionAddress,
+  finalizationContract,
   issuedAt,
   privateKey
 }) {
@@ -284,6 +319,7 @@ function buildSignedValidatorRewardApproval({
       approvingValidatorAddress,
       approvingValidatorNodeId,
       approvingSessionAddress,
+      finalizationContract,
       issuedAt
     });
 
@@ -303,22 +339,31 @@ function buildSignedValidatorRewardApproval({
     );
   }
 
-  const approvalHash =
-    canonicalHash(
-      unsigned
+  const typed =
+    validatorRewardApprovalTypedData(
+      unsigned,
+      unsigned.finalizationContract
     );
 
-  const signing =
-    signHeartbeatPayload(
-      approvalHash,
+  const signingKey =
+    new SigningKey(
       privateKey
     );
 
+  const signature =
+    signingKey
+      .sign(
+        typed.digest
+      )
+      .serialized;
+
   return Object.freeze({
     ...unsigned,
-    approvalHash,
-    signature:
-      signing.signature
+
+    approvalHash:
+      typed.digest,
+
+    signature
   });
 }
 
@@ -392,17 +437,22 @@ function verifySignedValidatorRewardApproval(
         unsignedInput
           .approvingSessionAddress,
 
+      finalizationContract:
+        unsignedInput
+          .finalizationContract,
+
       issuedAt:
         unsignedInput.issuedAt
     });
 
-  const expectedHash =
-    canonicalHash(
-      unsigned
+  const typed =
+    validatorRewardApprovalTypedData(
+      unsigned,
+      unsigned.finalizationContract
     );
 
   if (
-    expectedHash !==
+    typed.digest !==
     approvalHash
   ) {
     throw new Error(
@@ -411,15 +461,14 @@ function verifySignedValidatorRewardApproval(
   }
 
   const signatureResult =
-    verifyHeartbeatSignature({
-      payloadHash:
-        approvalHash,
+    verifyValidatorRewardApprovalSignature({
+      approval:
+        unsigned,
 
-      signature,
+      finalizationContract:
+        unsigned.finalizationContract,
 
-      expectedOperatorAddress:
-        unsigned
-          .approvingSessionAddress
+      signature
     });
 
   return Object.freeze({
@@ -429,7 +478,11 @@ function verifySignedValidatorRewardApproval(
     approvalHash,
 
     signatureSigner:
-      signatureResult.operatorAddress,
+      signatureResult
+        .recoveredSessionAddress,
+
+    finalizationContract:
+      unsigned.finalizationContract,
 
     ...unsigned
   });

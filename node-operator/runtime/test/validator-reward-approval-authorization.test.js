@@ -19,6 +19,15 @@ const {
   '../src/evidence/validator-reward-approval-authorization'
 );
 
+const {
+  validatorRewardApprovalDelegationTypedData
+} = require(
+  '../src/evidence/validator-reward-approval-eip712'
+);
+
+const FINALIZATION_CONTRACT =
+  '0xF100000000000000000000000000000000000001';
+
 async function buildAuthorization(
   overrides = {}
 ) {
@@ -32,7 +41,7 @@ async function buildAuthorization(
 
   const delegation = {
     version:
-      1,
+      2,
 
     purpose:
       PURPOSE,
@@ -49,6 +58,9 @@ async function buildAuthorization(
     sessionAddress:
       session.address,
 
+    finalizationContract:
+      FINALIZATION_CONTRACT,
+
     issuedAt:
       '2026-08-11T05:00:00.000Z',
 
@@ -58,11 +70,16 @@ async function buildAuthorization(
     ...(overrides.delegation || {})
   };
 
+  const typedDelegation =
+    validatorRewardApprovalDelegationTypedData(
+      delegation
+    );
+
   const delegationSignature =
-    await validator.signMessage(
-      JSON.stringify(
-        delegation
-      )
+    await validator.signTypedData(
+      typedDelegation.domain,
+      typedDelegation.types,
+      typedDelegation.value
     );
 
   return {
@@ -71,7 +88,7 @@ async function buildAuthorization(
 
     authorization: {
       version:
-        1,
+        2,
 
       delegation,
 
@@ -132,17 +149,25 @@ test(
     const {
       authorization
     } =
-      await buildAuthorization({
-        delegation: {
-          purpose:
-            'operator-heartbeat'
-        }
-      });
+      await buildAuthorization();
+
+    const tampered = {
+      ...authorization,
+
+      delegation: {
+        ...authorization.delegation,
+
+        purpose:
+          'operator-heartbeat'
+      }
+    };
 
     assert.throws(
       () =>
         verifyValidatorRewardApprovalAuthorization({
-          authorization,
+          authorization:
+            tampered,
+
           nowMs:
             Date.parse(
               '2026-08-11T06:00:00.000Z'
