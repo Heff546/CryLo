@@ -1636,7 +1636,7 @@ bool wallet2::should_expand(const cryptonote::subaddress_index &index) const
 void wallet2::expand_subaddresses(const cryptonote::subaddress_index& index)
 {
   // check if index will overflow container (usually only applicable on 32-bit systems)
-  if constexpr (sizeof(std::size_t) <= sizeof(std::uint32_t))
+  if (sizeof(std::size_t) <= sizeof(std::uint32_t))
   {
     static constexpr std::uint32_t max_idx = static_cast<std::uint32_t>(std::numeric_limits<std::size_t>::max());
     const bool cannot_label_index = index.major == max_idx || index.minor == max_idx;
@@ -4110,7 +4110,6 @@ void wallet2::refresh(bool trusted_daemon, uint64_t start_height, uint64_t & blo
   uint64_t blocks_start_height;
   std::vector<cryptonote::block_complete_entry> blocks;
   std::vector<parsed_block> parsed_blocks;
-  bool refreshed = false;
   std::shared_ptr<std::map<std::pair<uint64_t, uint64_t>, size_t>> output_tracker_cache;
   hw::device &hwdev = m_account.get_device();
 
@@ -7169,7 +7168,7 @@ uint64_t wallet2::unlocked_balance_all(bool strict, uint64_t *blocks_to_unlock, 
     *time_to_unlock = 0;
   for (uint32_t index_major = 0; index_major < get_num_subaddress_accounts(); ++index_major)
   {
-    uint64_t local_blocks_to_unlock, local_time_to_unlock;
+    uint64_t local_blocks_to_unlock = 0, local_time_to_unlock = 0;
     r += unlocked_balance(index_major, strict, blocks_to_unlock ? &local_blocks_to_unlock : NULL, time_to_unlock ? &local_time_to_unlock : NULL);
     if (blocks_to_unlock)
       *blocks_to_unlock = std::max(*blocks_to_unlock, local_blocks_to_unlock);
@@ -15892,8 +15891,10 @@ std::vector<std::pair<uint64_t, uint64_t>> wallet2::estimate_backlog(const std::
   THROW_WALLET_EXCEPTION_IF(full_reward_zone == 0, error::wallet_internal_error, "Invalid block weight limit from daemon");
 
   std::vector<std::pair<uint64_t, uint64_t>> blocks;
-  for (const auto& [our_fee_byte_min, our_fee_byte_max] : fee_levels)
+  for (const auto& fee_level : fee_levels)
   {
+    const double our_fee_byte_min = fee_level.first;
+    const double our_fee_byte_max = fee_level.second;
     uint64_t minfee_weight = 0, maxfee_weight = 0;
     for (const auto &i: res.backlog)
     {

@@ -592,7 +592,12 @@ message(STATUS "Using OpenSSL include dir at ${OPENSSL_INCLUDE_DIR}")
 include_directories(${OPENSSL_INCLUDE_DIR})
 if(STATIC AND NOT IOS)
   if(UNIX)
-    set(OPENSSL_LIBRARIES "${OPENSSL_LIBRARIES};${CMAKE_DL_LIBS};${CMAKE_THREAD_LIBS_INIT}")
+    # Static OpenSSL builds require compression dependencies that are not
+    # propagated by FindOpenSSL on all Linux distributions.
+    find_library(ZLIB_LIBRARY z REQUIRED)
+    find_library(ZSTD_LIBRARY zstd REQUIRED)
+    set(OPENSSL_LIBRARIES
+      "${OPENSSL_LIBRARIES};${ZLIB_LIBRARY};${ZSTD_LIBRARY};${CMAKE_DL_LIBS};${CMAKE_THREAD_LIBS_INIT}")
   endif()
 endif()
 
