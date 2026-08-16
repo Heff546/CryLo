@@ -1,6 +1,6 @@
 'use strict';
 
-const NETWORK = 'CryLoNexus Mainnet';
+const NETWORK = 'CryLoNexus Testnet';
 const CHAIN_ID = 5546;
 const SCHEMA_VERSION = 1;
 const PROTOCOL_VERSION = 1;

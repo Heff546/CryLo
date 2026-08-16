@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:crylonexus:operator:config:schema:v1",
   "title": "CryLoNexus Operator Configuration",
-  "description": "Non-secret configuration for a CryLoNexus mainnet operator service.",
+  "description": "Non-secret configuration for a CryLoNexus testnet operator service.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -25,7 +25,7 @@
       "const": 1
     },
     "network": {
-      "const": "CryLoNexus Mainnet"
+      "const": "CryLoNexus Testnet"
     },
     "chainId": {
       "const": 5546

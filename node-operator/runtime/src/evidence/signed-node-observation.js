@@ -168,7 +168,7 @@ function unsignedObservationFromResult({
       OBSERVATION_PROTOCOL_VERSION,
 
     network:
-      'CryLoNexus Mainnet',
+      'CryLoNexus Testnet',
 
     chainId:
       CRYLONEXUS_CHAIN_ID,

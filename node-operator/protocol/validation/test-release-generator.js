@@ -134,7 +134,7 @@ function testValidGeneration(directory, files) {
   assert.strictEqual(manifest.chainId, 5546);
   assert.strictEqual(
     manifest.network,
-    'CryLoNexus Mainnet'
+    'CryLoNexus Testnet'
   );
   assert.strictEqual(manifest.channel, 'stable');
   assert.strictEqual(manifest.version, '2.0.0');
@@ -170,7 +170,7 @@ function testValidGeneration(directory, files) {
   );
 
   console.log(
-    'PASS generator creates a valid mainnet manifest'
+    'PASS generator creates a valid testnet manifest'
   );
 }
 

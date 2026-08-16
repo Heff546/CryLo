@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "protocolVersion": "2.0.0",
-  "network": "CryLoNexus Mainnet",
+  "network": "CryLoNexus Testnet",
   "chainId": 5546,
   "observingOperatorAddress": "0x1111111111111111111111111111111111111111",
   "observingNodeId": "example-observing-node-0001",

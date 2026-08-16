@@ -15,7 +15,7 @@ const SCHEMA_PATH = path.join(
 );
 
 const PRODUCT = 'CryLoNexus Operator';
-const NETWORK = 'CryLoNexus Mainnet';
+const NETWORK = 'CryLoNexus Testnet';
 const CHAIN_ID = 5546;
 const SERVICE_NAME = 'crylo-nexus-operator.service';
 

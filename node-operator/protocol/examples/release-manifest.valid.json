@@ -3,7 +3,7 @@
   "product": "CryLoNexus Operator",
   "version": "2.0.0",
   "channel": "stable",
-  "network": "CryLoNexus Mainnet",
+  "network": "CryLoNexus Testnet",
   "chainId": 5546,
   "protocolVersion": 1,
   "configSchemaVersion": 1,

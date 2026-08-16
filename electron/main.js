@@ -1638,7 +1638,7 @@ function saveOperatorConfig({
   const config = {
     schemaVersion: 1,
     protocolVersion: 1,
-    network: 'CryLoNexus Mainnet',
+    network: 'CryLoNexus Testnet',
     chainId: 5546,
     operatorAddress: normalizedOperatorAddress,
     tier,

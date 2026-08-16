@@ -35,7 +35,7 @@
       "const": "2.0.0"
     },
     "network": {
-      "const": "CryLoNexus Mainnet"
+      "const": "CryLoNexus Testnet"
     },
     "chainId": {
       "const": 5546

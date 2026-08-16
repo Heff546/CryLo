@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "protocolVersion": 1,
-  "network": "CryLoNexus Mainnet",
+  "network": "CryLoNexus Testnet",
   "chainId": 546,
   "operatorAddress": "0x1111111111111111111111111111111111111111",
   "nodeId": "example-node-public-identity-0001",
