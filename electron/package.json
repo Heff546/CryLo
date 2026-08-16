@@ -10,16 +10,20 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "build-win": "electron-builder --win --x64",
+    "build-win": "node scripts/release-native.js win x64",
     "build-linux": "bash scripts/release-linux.sh auto",
-    "build-all": "electron-builder --win --linux --mac --x64",
-    "build-mac": "electron-builder --mac --x64",
+    "build-mac": "node scripts/release-native.js mac auto",
     "sync-linux-binaries": "bash scripts/sync-linux-binaries.sh",
     "verify-linux-binaries": "bash scripts/verify-linux-binaries.sh",
     "release-linux": "bash scripts/release-linux.sh auto",
-    "prebuild-all": "npm run sync-linux-binaries && npm run verify-linux-binaries",
     "build-linux-arm64": "bash scripts/release-linux.sh arm64",
-    "build-linux-x64": "bash scripts/release-linux.sh x64"
+    "build-linux-x64": "bash scripts/release-linux.sh x64",
+    "build-win-x64": "node scripts/release-native.js win x64",
+    "build-mac-x64": "node scripts/release-native.js mac x64",
+    "build-mac-arm64": "node scripts/release-native.js mac arm64",
+    "release-win-x64": "node scripts/release-native.js win x64",
+    "release-mac-x64": "node scripts/release-native.js mac x64",
+    "release-mac-arm64": "node scripts/release-native.js mac arm64"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -39,31 +43,6 @@
       "assets/**/*"
     ],
     "extraResources": [
-      {
-        "from": "bin/win",
-        "to": "bin/win",
-        "filter": [
-          "**/*",
-          "!README.txt"
-        ]
-      },
-      {
-        "from": "bin/linux",
-        "to": "bin/linux",
-        "filter": [
-          "CryLo-daemon",
-          "CryLo-wallet-rpc",
-          "BINARY-MANIFEST.txt"
-        ]
-      },
-      {
-        "from": "bin/mac",
-        "to": "bin/mac",
-        "filter": [
-          "**/*",
-          "!README.txt"
-        ]
-      },
       {
         "from": "../node-operator/runtime",
         "to": "operator-runtime",
@@ -103,7 +82,18 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "bin/win",
+          "to": "bin/win",
+          "filter": [
+            "CryLo-daemon.exe",
+            "CryLo-wallet-rpc.exe",
+            "BINARY-MANIFEST.txt"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -120,19 +110,42 @@
         "deb"
       ],
       "icon": "assets/icon.png",
-      "category": "Finance"
+      "category": "Finance",
+      "extraResources": [
+        {
+          "from": "bin/linux",
+          "to": "bin/linux",
+          "filter": [
+            "CryLo-daemon",
+            "CryLo-wallet-rpc",
+            "BINARY-MANIFEST.txt"
+          ]
+        }
+      ]
     },
     "mac": {
       "target": [
         {
           "target": "dmg",
           "arch": [
-            "x64"
+            "x64",
+            "arm64"
           ]
         }
       ],
       "category": "public.app-category.finance",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "extraResources": [
+        {
+          "from": "bin/mac",
+          "to": "bin/mac",
+          "filter": [
+            "CryLo-daemon",
+            "CryLo-wallet-rpc",
+            "BINARY-MANIFEST.txt"
+          ]
+        }
+      ]
     },
     "beforePack": "scripts/before-pack.js",
     "afterPack": "scripts/after-pack.js"

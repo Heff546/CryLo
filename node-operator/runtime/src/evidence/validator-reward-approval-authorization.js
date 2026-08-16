@@ -1,13 +1,15 @@
-'use strict';
 
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 
 const {
   getAddress,
   isAddress
 } = require('ethers');
+
+const {
+  defaultOperatorDirectory
+} = require('../config');
 
 const {
   CHAIN_ID,
@@ -76,10 +78,7 @@ function normalizeAddress(
 
 function defaultValidatorRewardApprovalAuthorizationPath() {
   return path.join(
-    os.homedir(),
-    '.config',
-    'crylo-wallet',
-    'operator',
+    defaultOperatorDirectory(),
     'validator-reward-approval-authorization.json'
   );
 }

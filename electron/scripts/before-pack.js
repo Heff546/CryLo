@@ -11,54 +11,113 @@ const ELECTRON_BUILDER_ARCH = {
   4: 'universal'
 };
 
-module.exports = async function beforePack(context) {
-  if (context.electronPlatformName !== 'linux') {
-    return;
+function runChecked(command, args, cwd, label) {
+  const result = spawnSync(command, args, {
+    cwd,
+    stdio: 'inherit'
+  });
+
+  if (result.error) {
+    throw result.error;
   }
 
+  if (result.status !== 0) {
+    throw new Error(`Packaging check failed: ${label}`);
+  }
+}
+
+module.exports = async function beforePack(context) {
   const electronDir = path.resolve(__dirname, '..');
   const targetArch =
     ELECTRON_BUILDER_ARCH[context.arch] || String(context.arch);
 
-  for (const script of [
-    'scripts/sync-linux-binaries.sh',
-    'scripts/verify-linux-binaries.sh'
-  ]) {
-    const result = spawnSync('bash', [script], {
-      cwd: electronDir,
-      stdio: 'inherit'
-    });
-
-    if (result.status !== 0) {
-      throw new Error(`Packaging check failed: ${script}`);
+  if (context.electronPlatformName === 'linux') {
+    for (const script of [
+      'scripts/sync-linux-binaries.sh',
+      'scripts/verify-linux-binaries.sh'
+    ]) {
+      runChecked(
+        'bash',
+        [script],
+        electronDir,
+        script
+      );
     }
+
+    const daemon = path.join(
+      electronDir,
+      'bin',
+      'linux',
+      'CryLo-daemon'
+    );
+
+    const binaryArch = execFileSync(
+      path.join(
+        electronDir,
+        'scripts',
+        'detect-linux-binary-arch.sh'
+      ),
+      [daemon],
+      { encoding: 'utf8' }
+    ).trim();
+
+    if (binaryArch !== targetArch) {
+      throw new Error(
+        `Electron target ${targetArch} cannot contain ` +
+        `${binaryArch} CryLo binaries`
+      );
+    }
+
+    console.log(
+      `Verified Electron target ${targetArch} matches CryLo binaries`
+    );
+    return;
   }
 
-  const daemon = path.join(
-    electronDir,
-    'bin',
-    'linux',
-    'CryLo-daemon'
-  );
+  const platform =
+    context.electronPlatformName === 'win32'
+      ? 'win'
+      : context.electronPlatformName === 'darwin'
+        ? 'mac'
+        : null;
 
-  const binaryArch = execFileSync(
-    path.join(
-      electronDir,
-      'scripts',
-      'detect-linux-binary-arch.sh'
-    ),
-    [daemon],
-    { encoding: 'utf8' }
-  ).trim();
+  if (!platform) {
+    return;
+  }
 
-  if (binaryArch !== targetArch) {
+  if (platform === 'win' && targetArch !== 'x64') {
     throw new Error(
-      `Electron target ${targetArch} cannot contain ` +
-      `${binaryArch} CryLo binaries`
+      `Unsupported Windows Electron architecture: ${targetArch}`
+    );
+  }
+
+  if (
+    platform === 'mac' &&
+    !['x64', 'arm64'].includes(targetArch)
+  ) {
+    throw new Error(
+      `Unsupported macOS Electron architecture: ${targetArch}`
+    );
+  }
+
+  for (const script of [
+    'sync-native-binaries.js',
+    'verify-native-binaries.js'
+  ]) {
+    runChecked(
+      process.execPath,
+      [
+        path.join(electronDir, 'scripts', script),
+        platform,
+        targetArch
+      ],
+      electronDir,
+      script
     );
   }
 
   console.log(
-    `Verified Electron target ${targetArch} matches CryLo binaries`
+    `Verified Electron target ${platform}/${targetArch} ` +
+    'matches CryLo binaries'
   );
 };

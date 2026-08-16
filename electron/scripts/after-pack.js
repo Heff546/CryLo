@@ -11,31 +11,73 @@ function sha256(file) {
     .digest('hex');
 }
 
+function platformDefinition(electronPlatformName) {
+  if (electronPlatformName === 'linux') {
+    return {
+      dir: 'linux',
+      required: [
+        'CryLo-daemon',
+        'CryLo-wallet-rpc',
+        'BINARY-MANIFEST.txt'
+      ]
+    };
+  }
+
+  if (electronPlatformName === 'win32') {
+    return {
+      dir: 'win',
+      required: [
+        'CryLo-daemon.exe',
+        'CryLo-wallet-rpc.exe',
+        'BINARY-MANIFEST.txt'
+      ]
+    };
+  }
+
+  if (electronPlatformName === 'darwin') {
+    return {
+      dir: 'mac',
+      required: [
+        'CryLo-daemon',
+        'CryLo-wallet-rpc',
+        'BINARY-MANIFEST.txt'
+      ]
+    };
+  }
+
+  return null;
+}
+
 module.exports = async function afterPack(context) {
-  if (context.electronPlatformName !== 'linux') {
+  const definition =
+    platformDefinition(context.electronPlatformName);
+
+  if (!definition) {
     return;
   }
 
-  const stagedDir = path.resolve(__dirname, '..', 'bin', 'linux');
+  const stagedDir = path.resolve(
+    __dirname,
+    '..',
+    'bin',
+    definition.dir
+  );
+
   const packagedDir = path.join(
     context.appOutDir,
     'resources',
     'bin',
-    'linux'
+    definition.dir
   );
 
-  const required = [
-    'CryLo-daemon',
-    'CryLo-wallet-rpc',
-    'BINARY-MANIFEST.txt'
-  ];
-
-  for (const name of required) {
+  for (const name of definition.required) {
     const staged = path.join(stagedDir, name);
     const packaged = path.join(packagedDir, name);
 
     if (!fs.existsSync(packaged)) {
-      throw new Error(`Packaged runtime file is missing: ${packaged}`);
+      throw new Error(
+        `Packaged runtime file is missing: ${packaged}`
+      );
     }
 
     const stagedHash = sha256(staged);
@@ -49,12 +91,16 @@ module.exports = async function afterPack(context) {
       );
     }
 
-    console.log(`Verified packaged runtime: ${name} (${packagedHash})`);
+    console.log(
+      `Verified packaged runtime: ${name} (${packagedHash})`
+    );
   }
 
   const forbidden = fs.readdirSync(packagedDir).filter(name =>
     name.endsWith('.log') ||
-    name.includes('.old-')
+    name.includes('.old-') ||
+    name.includes('.before-') ||
+    name.endsWith('.bak')
   );
 
   if (forbidden.length > 0) {

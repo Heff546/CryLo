@@ -1,7 +1,5 @@
-'use strict';
 
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 
 const {
@@ -13,14 +11,15 @@ const {
   assertPrivateKey
 } = require('./detached-signing');
 
+const {
+  defaultOperatorDirectory
+} = require('../config');
+
 const FORBIDDEN_PERMISSION_MASK = 0o077;
 
 function defaultSigningKeyPath() {
   return path.join(
-    os.homedir(),
-    '.config',
-    'crylo-wallet',
-    'operator',
+    defaultOperatorDirectory(),
     'signing-key'
   );
 }
@@ -69,17 +68,19 @@ function assertSecureKeyFile(
     );
   }
 
-  const permissions =
-    stat.mode & 0o777;
+  if (process.platform !== 'win32') {
+    const permissions =
+      stat.mode & 0o777;
 
-  if (
-    permissions &
-    FORBIDDEN_PERMISSION_MASK
-  ) {
-    throw new Error(
-      `Operator signing key file permissions are unsafe: ` +
-      `${permissions.toString(8).padStart(3, '0')}; expected 600 or stricter`
-    );
+    if (
+      permissions &
+      FORBIDDEN_PERMISSION_MASK
+    ) {
+      throw new Error(
+        `Operator signing key file permissions are unsafe: ` +
+        `${permissions.toString(8).padStart(3, '0')}; expected 600 or stricter`
+      );
+    }
   }
 
   if (

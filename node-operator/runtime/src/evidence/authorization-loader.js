@@ -1,7 +1,5 @@
-'use strict';
 
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 
 const {
@@ -10,12 +8,13 @@ const {
   verifyMessage
 } = require('ethers');
 
+const {
+  defaultOperatorDirectory
+} = require('../config');
+
 function defaultAuthorizationPath() {
   return path.join(
-    os.homedir(),
-    '.config',
-    'crylo-wallet',
-    'operator',
+    defaultOperatorDirectory(),
     'authorization.json'
   );
 }

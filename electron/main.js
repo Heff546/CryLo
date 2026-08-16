@@ -37,7 +37,7 @@ function formatNexusGasUnits(amount) {
 
 const BRIDGE_API_URL =
   process.env.CRYLONEXUS_API_URL ||
-  'http://34.118.135.234/crylonexus-api';
+  'http://35.203.86.91/crylonexus-api';
 
 const NEXUS_RUNTIME_CACHE_MS = 60_000;
 
@@ -1590,12 +1590,7 @@ function saveOperatorConfig({
   nodeStakingContract,
   rewardManagerContract
 }) {
-  const dir = path.join(
-    os.homedir(),
-    '.config',
-    'crylo-wallet',
-    'operator'
-  );
+  const dir = getOperatorBaseDirectory();
 
   fs.mkdirSync(dir, {
     recursive: true,
@@ -1700,9 +1695,15 @@ function saveOperatorConfig({
     }
   );
 
-  fs.chmodSync(temporaryFile, 0o600);
+  if (!IS_WIN) {
+    fs.chmodSync(temporaryFile, 0o600);
+  }
+
   fs.renameSync(temporaryFile, file);
-  fs.chmodSync(file, 0o600);
+
+  if (!IS_WIN) {
+    fs.chmodSync(file, 0o600);
+  }
 
   return config;
 }
@@ -1972,13 +1973,37 @@ function readJsonFileSafe(filePath) {
   }
 }
 
-function getOperatorPaths() {
-  const operatorDir = path.join(
+function getOperatorBaseDirectory() {
+  if (IS_WIN) {
+    return path.join(
+      process.env.APPDATA ||
+        path.join(os.homedir(), 'AppData', 'Roaming'),
+      'crylo-wallet',
+      'operator'
+    );
+  }
+
+  if (IS_MAC) {
+    return path.join(
+      os.homedir(),
+      'Library',
+      'Application Support',
+      'crylo-wallet',
+      'operator'
+    );
+  }
+
+  return path.join(
     os.homedir(),
     '.config',
     'crylo-wallet',
     'operator'
   );
+}
+
+function getOperatorPaths() {
+  const operatorDir =
+    getOperatorBaseDirectory();
 
   return {
     directory: operatorDir,
@@ -2089,16 +2114,54 @@ function runLocalCommand(command, args, timeoutMs = 5000) {
 }
 
 
-function getOperatorInstallPaths() {
-  const os = require('node:os');
-  const path = require('node:path');
+const OPERATOR_SYSTEMD_SERVICE =
+  'crylo-nexus-operator.service';
+const OPERATOR_LAUNCHD_LABEL =
+  'com.crylo.nexus-operator';
+const OPERATOR_WINDOWS_TASK =
+  'CryLoNexusNodeService';
 
-  const operatorDirectory = path.join(
-    os.homedir(),
-    '.config',
-    'crylo-wallet',
-    'operator'
-  );
+function getOperatorServiceName() {
+  if (IS_MAC) return OPERATOR_LAUNCHD_LABEL;
+  if (IS_WIN) return OPERATOR_WINDOWS_TASK;
+  return OPERATOR_SYSTEMD_SERVICE;
+}
+
+function getOperatorLaunchdDomain() {
+  if (!IS_MAC) return null;
+
+  if (typeof process.getuid !== 'function') {
+    throw new Error(
+      'Unable to determine the macOS user ID for the Node Service.'
+    );
+  }
+
+  return `gui/${process.getuid()}`;
+}
+
+function getOperatorInstallPaths() {
+  const operatorDirectory =
+    getOperatorBaseDirectory();
+
+  const servicePath = IS_MAC
+    ? path.join(
+        os.homedir(),
+        'Library',
+        'LaunchAgents',
+        `${OPERATOR_LAUNCHD_LABEL}.plist`
+      )
+    : IS_WIN
+      ? path.join(
+          operatorDirectory,
+          'crylo-nexus-operator.cmd'
+        )
+      : path.join(
+          os.homedir(),
+          '.config',
+          'systemd',
+          'user',
+          OPERATOR_SYSTEMD_SERVICE
+        );
 
   return {
     operatorDirectory,
@@ -2126,19 +2189,8 @@ function getOperatorInstallPaths() {
       operatorDirectory,
       'runtime-current'
     ),
-    userSystemdDirectory: path.join(
-      os.homedir(),
-      '.config',
-      'systemd',
-      'user'
-    ),
-    servicePath: path.join(
-      os.homedir(),
-      '.config',
-      'systemd',
-      'user',
-      'crylo-nexus-operator.service'
-    )
+    servicePath,
+    serviceName: getOperatorServiceName()
   };
 }
 
@@ -2309,23 +2361,61 @@ async function resolveSystemNodeBinary() {
     return configured;
   }
 
-  const whichResult = await runLocalCommand(
-    'which',
-    ['node']
-  );
+  const lookupCommand =
+    IS_WIN ? 'where.exe' : 'which';
+
+  const lookupResult =
+    await runLocalCommand(
+      lookupCommand,
+      ['node']
+    );
 
   if (
-    whichResult.ok &&
-    whichResult.stdout &&
-    await pathExists(whichResult.stdout)
+    lookupResult.ok &&
+    lookupResult.stdout
   ) {
-    return whichResult.stdout;
+    const candidates =
+      lookupResult.stdout
+        .split(/\r?\n/)
+        .map(value => value.trim())
+        .filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (await pathExists(candidate)) {
+        return candidate;
+      }
+    }
   }
 
-  const commonPaths = [
-    '/usr/bin/node',
-    '/usr/local/bin/node'
-  ];
+  const commonPaths = IS_WIN
+    ? [
+        path.join(
+          process.env.ProgramFiles || 'C:\\Program Files',
+          'nodejs',
+          'node.exe'
+        ),
+        path.join(
+          process.env.LOCALAPPDATA ||
+            path.join(
+              os.homedir(),
+              'AppData',
+              'Local'
+            ),
+          'Programs',
+          'nodejs',
+          'node.exe'
+        )
+      ]
+    : IS_MAC
+      ? [
+          '/opt/homebrew/bin/node',
+          '/usr/local/bin/node',
+          '/usr/bin/node'
+        ]
+      : [
+          '/usr/bin/node',
+          '/usr/local/bin/node'
+        ];
 
   for (const candidate of commonPaths) {
     if (await pathExists(candidate)) {
@@ -2420,15 +2510,82 @@ async function copyBundledRuntime(
   );
 }
 
-async function replaceRuntimeSymlink(
+async function activateOperatorRuntime(
   targetDirectory,
-  symlinkPath
+  activeRuntimePath
 ) {
   const fs = require('node:fs');
   const path = require('node:path');
 
+  if (IS_WIN) {
+    const temporaryDirectory =
+      `${activeRuntimePath}.next-${process.pid}`;
+
+    const previousDirectory =
+      `${activeRuntimePath}.previous-${process.pid}`;
+
+    await fs.promises.rm(
+      temporaryDirectory,
+      {
+        force: true,
+        recursive: true
+      }
+    );
+
+    await fs.promises.rm(
+      previousDirectory,
+      {
+        force: true,
+        recursive: true
+      }
+    );
+
+    await fs.promises.cp(
+      targetDirectory,
+      temporaryDirectory,
+      {
+        recursive: true,
+        force: false,
+        errorOnExist: true
+      }
+    );
+
+    if (await pathExists(activeRuntimePath)) {
+      await fs.promises.rename(
+        activeRuntimePath,
+        previousDirectory
+      );
+    }
+
+    try {
+      await fs.promises.rename(
+        temporaryDirectory,
+        activeRuntimePath
+      );
+
+      await fs.promises.rm(
+        previousDirectory,
+        {
+          force: true,
+          recursive: true
+        }
+      );
+    } catch (replaceError) {
+      if (await pathExists(previousDirectory)) {
+        await fs.promises.rename(
+          previousDirectory,
+          activeRuntimePath
+        );
+      }
+
+      throw replaceError;
+    }
+
+    return;
+  }
+
   const temporaryLink =
-    `${symlinkPath}.next-${process.pid}`;
+    `${activeRuntimePath}.next-${process.pid}`;
 
   await fs.promises.rm(
     temporaryLink,
@@ -2446,7 +2603,7 @@ async function replaceRuntimeSymlink(
 
   await fs.promises.rename(
     temporaryLink,
-    symlinkPath
+    activeRuntimePath
   ).catch(async error => {
     if (
       error.code !== 'EEXIST' &&
@@ -2456,7 +2613,7 @@ async function replaceRuntimeSymlink(
     }
 
     const previousLink =
-      `${symlinkPath}.previous-${process.pid}`;
+      `${activeRuntimePath}.previous-${process.pid}`;
 
     await fs.promises.rm(
       previousLink,
@@ -2466,9 +2623,9 @@ async function replaceRuntimeSymlink(
       }
     );
 
-    if (await pathExists(symlinkPath)) {
+    if (await pathExists(activeRuntimePath)) {
       await fs.promises.rename(
-        symlinkPath,
+        activeRuntimePath,
         previousLink
       );
     }
@@ -2476,7 +2633,7 @@ async function replaceRuntimeSymlink(
     try {
       await fs.promises.rename(
         temporaryLink,
-        symlinkPath
+        activeRuntimePath
       );
 
       await fs.promises.rm(
@@ -2490,7 +2647,7 @@ async function replaceRuntimeSymlink(
       if (await pathExists(previousLink)) {
         await fs.promises.rename(
           previousLink,
-          symlinkPath
+          activeRuntimePath
         );
       }
 
@@ -2498,9 +2655,10 @@ async function replaceRuntimeSymlink(
     }
   });
 
-  const resolved = await fs.promises.realpath(
-    symlinkPath
-  );
+  const resolved =
+    await fs.promises.realpath(
+      activeRuntimePath
+    );
 
   if (
     path.resolve(resolved) !==
@@ -2512,12 +2670,20 @@ async function replaceRuntimeSymlink(
   }
 }
 
+function operatorLocalHeartbeatValue(tier) {
+  return tier === 'Operator' ? '1' : '0';
+}
+
 function buildOperatorServiceUnit({
   nodeBinary,
   currentRuntimePath,
   operatorDirectory,
-  operatorAddress
+  operatorAddress,
+  tier
 }) {
+  const localHeartbeats =
+    operatorLocalHeartbeatValue(tier);
+
   return [
     '[Unit]',
     'Description=CryLoNexus Node Service',
@@ -2530,7 +2696,7 @@ function buildOperatorServiceUnit({
     `WorkingDirectory=${currentRuntimePath}`,
     `ExecStart=${nodeBinary} ${currentRuntimePath}/src/main.js`,
     `Environment=CRYLONEXUS_LINKED_ADDRESS=${operatorAddress}`,
-    'Environment=CRYLONEXUS_LOCAL_HEARTBEATS=1',
+    `Environment=CRYLONEXUS_LOCAL_HEARTBEATS=${localHeartbeats}`,
     `Environment=CRYLONEXUS_ELECTRON_STATUS_PATH=${operatorDirectory}/status.json`,
     'Restart=always',
     'RestartSec=5',
@@ -2548,7 +2714,126 @@ function buildOperatorServiceUnit({
   ].join('\n');
 }
 
-async function writeOperatorServiceUnit({
+function escapeXml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function buildOperatorLaunchAgent({
+  nodeBinary,
+  currentRuntimePath,
+  operatorDirectory,
+  operatorAddress,
+  tier
+}) {
+  const mainPath =
+    path.join(
+      currentRuntimePath,
+      'src',
+      'main.js'
+    );
+
+  const stdoutPath =
+    path.join(
+      operatorDirectory,
+      'logs',
+      'service.stdout.log'
+    );
+
+  const stderrPath =
+    path.join(
+      operatorDirectory,
+      'logs',
+      'service.stderr.log'
+    );
+
+  const localHeartbeats =
+    operatorLocalHeartbeatValue(tier);
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ' +
+      '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>',
+    '  <key>Label</key>',
+    `  <string>${OPERATOR_LAUNCHD_LABEL}</string>`,
+    '  <key>ProgramArguments</key>',
+    '  <array>',
+    `    <string>${escapeXml(nodeBinary)}</string>`,
+    `    <string>${escapeXml(mainPath)}</string>`,
+    '  </array>',
+    '  <key>WorkingDirectory</key>',
+    `  <string>${escapeXml(currentRuntimePath)}</string>`,
+    '  <key>EnvironmentVariables</key>',
+    '  <dict>',
+    '    <key>CRYLONEXUS_LINKED_ADDRESS</key>',
+    `    <string>${escapeXml(operatorAddress)}</string>`,
+    '    <key>CRYLONEXUS_LOCAL_HEARTBEATS</key>',
+    `    <string>${localHeartbeats}</string>`,
+    '    <key>CRYLONEXUS_ELECTRON_STATUS_PATH</key>',
+    `    <string>${escapeXml(path.join(operatorDirectory, 'status.json'))}</string>`,
+    '  </dict>',
+    '  <key>RunAtLoad</key>',
+    '  <true/>',
+    '  <key>KeepAlive</key>',
+    '  <true/>',
+    '  <key>ProcessType</key>',
+    '  <string>Background</string>',
+    '  <key>StandardOutPath</key>',
+    `  <string>${escapeXml(stdoutPath)}</string>`,
+    '  <key>StandardErrorPath</key>',
+    `  <string>${escapeXml(stderrPath)}</string>`,
+    '</dict>',
+    '</plist>',
+    ''
+  ].join('\n');
+}
+
+function quoteWindowsCmdArgument(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function buildOperatorWindowsCommand({
+  nodeBinary,
+  currentRuntimePath,
+  operatorDirectory,
+  operatorAddress,
+  tier
+}) {
+  const mainPath =
+    path.join(
+      currentRuntimePath,
+      'src',
+      'main.js'
+    );
+
+  const localHeartbeats =
+    operatorLocalHeartbeatValue(tier);
+
+  return [
+    '@echo off',
+    'setlocal',
+    `set "CRYLONEXUS_LINKED_ADDRESS=${operatorAddress}"`,
+    `set "CRYLONEXUS_LOCAL_HEARTBEATS=${localHeartbeats}"`,
+    `set "CRYLONEXUS_ELECTRON_STATUS_PATH=${path.join(
+      operatorDirectory,
+      'status.json'
+    )}"`,
+    `cd /d ${quoteWindowsCmdArgument(currentRuntimePath)}`,
+    ':restart',
+    `${quoteWindowsCmdArgument(nodeBinary)} ${quoteWindowsCmdArgument(mainPath)}`,
+    'timeout /t 5 /nobreak >nul',
+    'goto restart',
+    ''
+  ].join('\r\n');
+}
+
+async function writeOperatorServiceDefinition({
   servicePath,
   serviceText
 }) {
@@ -2575,10 +2860,12 @@ async function writeOperatorServiceUnit({
     }
   );
 
-  await fs.promises.chmod(
-    temporaryPath,
-    0o600
-  );
+  if (!IS_WIN) {
+    await fs.promises.chmod(
+      temporaryPath,
+      0o600
+    );
+  }
 
   await fs.promises.rename(
     temporaryPath,
@@ -2586,10 +2873,94 @@ async function writeOperatorServiceUnit({
   );
 }
 
+async function registerOperatorServiceDefinition(
+  paths
+) {
+  if (IS_LINUX) {
+    const daemonReload =
+      await runLocalCommand(
+        'systemctl',
+        ['--user', 'daemon-reload']
+      );
+
+    if (!daemonReload.ok) {
+      throw new Error(
+        daemonReload.stderr ||
+        'systemctl --user daemon-reload failed.'
+      );
+    }
+
+    const enableResult =
+      await runLocalCommand(
+        'systemctl',
+        [
+          '--user',
+          'enable',
+          OPERATOR_SYSTEMD_SERVICE
+        ]
+      );
+
+    if (!enableResult.ok) {
+      throw new Error(
+        enableResult.stderr ||
+        'The Node Service could not be enabled.'
+      );
+    }
+
+    return;
+  }
+
+  if (IS_MAC) {
+    const domain = getOperatorLaunchdDomain();
+    await runLocalCommand(
+      'launchctl',
+      [
+        'enable',
+        `${domain}/${OPERATOR_LAUNCHD_LABEL}`
+      ]
+    );
+    return;
+  }
+
+  if (IS_WIN) {
+    const createResult =
+      await runLocalCommand(
+        'schtasks.exe',
+        [
+          '/Create',
+          '/TN',
+          OPERATOR_WINDOWS_TASK,
+          '/TR',
+          paths.servicePath,
+          '/SC',
+          'ONLOGON',
+          '/RL',
+          'LIMITED',
+          '/F'
+        ],
+        15_000
+      );
+
+    if (!createResult.ok) {
+      throw new Error(
+        createResult.stderr ||
+        createResult.stdout ||
+        'The Windows Node Service startup task could not be created.'
+      );
+    }
+
+    return;
+  }
+
+  throw new Error(
+    `Unsupported Node Service platform: ${process.platform}`
+  );
+}
+
 async function installBundledOperatorRuntime() {
-  if (!IS_LINUX) {
+  if (!IS_LINUX && !IS_MAC && !IS_WIN) {
     throw new Error(
-      'The CryLoNexus Node Service installer currently supports Linux only.'
+      `Unsupported Node Service platform: ${process.platform}`
     );
   }
 
@@ -2620,10 +2991,13 @@ async function installBundledOperatorRuntime() {
     typeof operatorConfig !== 'object' ||
     !ethers.isAddress(
       operatorConfig.operatorAddress
+    ) ||
+    !['Operator', 'Validator'].includes(
+      operatorConfig.tier
     )
   ) {
     throw new Error(
-      'operator.json does not contain a valid operatorAddress.'
+      'operator.json does not contain a valid operator identity and tier.'
     );
   }
 
@@ -2659,6 +3033,17 @@ async function installBundledOperatorRuntime() {
 
   await fs.promises.mkdir(
     paths.operatorDirectory,
+    {
+      recursive: true,
+      mode: 0o700
+    }
+  );
+
+  await fs.promises.mkdir(
+    path.join(
+      paths.operatorDirectory,
+      'logs'
+    ),
     {
       recursive: true,
       mode: 0o700
@@ -2801,96 +3186,58 @@ async function installBundledOperatorRuntime() {
     );
   }
 
-  await replaceRuntimeSymlink(
+  await activateOperatorRuntime(
     destinationDirectory,
     paths.currentRuntimePath
   );
 
-  const serviceText =
-    buildOperatorServiceUnit({
-      nodeBinary,
-      currentRuntimePath:
-        paths.currentRuntimePath,
-      operatorDirectory:
-        paths.operatorDirectory,
-      operatorAddress:
-        operatorConfig.operatorAddress
-    });
+  const serviceOptions = {
+    nodeBinary,
+    currentRuntimePath:
+      paths.currentRuntimePath,
+    operatorDirectory:
+      paths.operatorDirectory,
+    operatorAddress:
+      operatorConfig.operatorAddress,
+    tier:
+      operatorConfig.tier
+  };
 
-  await writeOperatorServiceUnit({
+  const serviceText = IS_MAC
+    ? buildOperatorLaunchAgent(serviceOptions)
+    : IS_WIN
+      ? buildOperatorWindowsCommand(serviceOptions)
+      : buildOperatorServiceUnit(serviceOptions);
+
+  await writeOperatorServiceDefinition({
     servicePath: paths.servicePath,
     serviceText
   });
 
-  const daemonReload =
-    await runLocalCommand(
-      'systemctl',
-      [
-        '--user',
-        'daemon-reload'
-      ]
-    );
-
-  if (!daemonReload.ok) {
-    throw new Error(
-      daemonReload.stderr ||
-      'systemctl --user daemon-reload failed.'
-    );
-  }
-
-  const enableResult =
-    await runLocalCommand(
-      'systemctl',
-      [
-        '--user',
-        'enable',
-        'crylo-nexus-operator.service'
-      ]
-    );
-
-  if (!enableResult.ok) {
-    throw new Error(
-      enableResult.stderr ||
-      'The Node Service could not be enabled.'
-    );
-  }
+  await registerOperatorServiceDefinition(paths);
 
   if (serviceWasRunning) {
-    const restartResult =
-      await runLocalCommand(
-        'systemctl',
-        [
-          '--user',
-          'restart',
-          'crylo-nexus-operator.service'
-        ],
-        15_000
-      );
-
-    if (!restartResult.ok) {
-      throw new Error(
-        restartResult.stderr ||
-        'The updated Node Service was installed but could not be restarted.'
-      );
-    }
+    await controlOperatorService('restart');
   }
 
   const warnings = [];
 
-  const lingerResult =
-    await runLocalCommand(
-      'loginctl',
-      [
-        'enable-linger',
-        process.env.USER ||
-          require('node:os').userInfo().username
-      ]
-    );
+  if (IS_LINUX) {
+    const lingerResult =
+      await runLocalCommand(
+        'loginctl',
+        [
+          'enable-linger',
+          process.env.USER ||
+            require('node:os').userInfo().username
+        ]
+      );
 
-  if (!lingerResult.ok) {
-    warnings.push(
-      'The service is running, but Linux lingering could not be enabled automatically. It may require administrator approval to start before login.'
-    );
+    if (!lingerResult.ok) {
+      warnings.push(
+        'The service is installed, but Linux lingering could not be enabled automatically. It may require administrator approval to start before login.'
+      );
+    }
   }
 
   const installedManifest = {
@@ -2907,7 +3254,11 @@ async function installBundledOperatorRuntime() {
       paths.currentRuntimePath,
     nodeBinary,
     serviceName:
-      'crylo-nexus-operator.service'
+      paths.serviceName,
+    servicePath:
+      paths.servicePath,
+    servicePlatform:
+      process.platform
   };
 
   const manifestPath =
@@ -2956,12 +3307,6 @@ async function installBundledOperatorRuntime() {
 }
 
 async function controlOperatorService(action) {
-  if (!IS_LINUX) {
-    throw new Error(
-      'Node Service controls are currently available on Linux only.'
-    );
-  }
-
   const supportedActions = new Set([
     'start',
     'stop',
@@ -2974,24 +3319,174 @@ async function controlOperatorService(action) {
     );
   }
 
-  const result = await runLocalCommand(
-    'systemctl',
-    [
-      '--user',
-      action,
-      'crylo-nexus-operator.service'
-    ]
-  );
+  const paths = getOperatorInstallPaths();
+  const currentStatus =
+    await readOperatorServiceStatus();
 
-  if (!result.ok) {
+  if (!currentStatus.installed) {
     throw new Error(
-      result.stderr ||
-      `Unable to ${action} the Node Service.`
+      'The Node Service is not installed or requires repair.'
+    );
+  }
+
+  if (IS_LINUX) {
+    const result = await runLocalCommand(
+      'systemctl',
+      [
+        '--user',
+        action,
+        OPERATOR_SYSTEMD_SERVICE
+      ],
+      15_000
+    );
+
+    if (!result.ok) {
+      throw new Error(
+        result.stderr ||
+        `Unable to ${action} the Node Service.`
+      );
+    }
+  } else if (IS_MAC) {
+    const domain = getOperatorLaunchdDomain();
+    const serviceTarget =
+      `${domain}/${OPERATOR_LAUNCHD_LABEL}`;
+
+    if (action === 'stop') {
+      if (currentStatus.running) {
+        const result = await runLocalCommand(
+          'launchctl',
+          ['bootout', serviceTarget],
+          15_000
+        );
+
+        if (!result.ok) {
+          throw new Error(
+            result.stderr ||
+            'Unable to stop the macOS Node Service.'
+          );
+        }
+      }
+    } else {
+      if (currentStatus.loaded) {
+        if (action === 'restart') {
+          const stopResult = await runLocalCommand(
+            'launchctl',
+            ['bootout', serviceTarget],
+            15_000
+          );
+
+          if (!stopResult.ok) {
+            throw new Error(
+              stopResult.stderr ||
+              'Unable to restart the macOS Node Service.'
+            );
+          }
+        } else if (currentStatus.running) {
+          return {
+            ok: true,
+            action,
+            service: currentStatus
+          };
+        }
+      }
+
+      const startResult = await runLocalCommand(
+        'launchctl',
+        [
+          'bootstrap',
+          domain,
+          paths.servicePath
+        ],
+        15_000
+      );
+
+      if (!startResult.ok) {
+        throw new Error(
+          startResult.stderr ||
+          'Unable to start the macOS Node Service.'
+        );
+      }
+    }
+  } else if (IS_WIN) {
+    if (action === 'stop') {
+      if (currentStatus.running) {
+        const result = await runLocalCommand(
+          'schtasks.exe',
+          [
+            '/End',
+            '/TN',
+            OPERATOR_WINDOWS_TASK
+          ],
+          15_000
+        );
+
+        if (!result.ok) {
+          throw new Error(
+            result.stderr ||
+            result.stdout ||
+            'Unable to stop the Windows Node Service.'
+          );
+        }
+      }
+    } else {
+      if (
+        action === 'restart' &&
+        currentStatus.running
+      ) {
+        const endResult = await runLocalCommand(
+          'schtasks.exe',
+          [
+            '/End',
+            '/TN',
+            OPERATOR_WINDOWS_TASK
+          ],
+          15_000
+        );
+
+        if (!endResult.ok) {
+          throw new Error(
+            endResult.stderr ||
+            endResult.stdout ||
+            'Unable to restart the Windows Node Service.'
+          );
+        }
+      } else if (
+        action === 'start' &&
+        currentStatus.running
+      ) {
+        return {
+          ok: true,
+          action,
+          service: currentStatus
+        };
+      }
+
+      const runResult = await runLocalCommand(
+        'schtasks.exe',
+        [
+          '/Run',
+          '/TN',
+          OPERATOR_WINDOWS_TASK
+        ],
+        15_000
+      );
+
+      if (!runResult.ok) {
+        throw new Error(
+          runResult.stderr ||
+          runResult.stdout ||
+          'Unable to start the Windows Node Service.'
+        );
+      }
+    }
+  } else {
+    throw new Error(
+      `Unsupported Node Service platform: ${process.platform}`
     );
   }
 
   await new Promise(resolve => {
-    setTimeout(resolve, 500);
+    setTimeout(resolve, 750);
   });
 
   return {
@@ -3002,100 +3497,250 @@ async function controlOperatorService(action) {
   };
 }
 
-
 async function readOperatorServiceStatus() {
-  if (!IS_LINUX) {
+  const installation =
+    await inspectOperatorInstallationHealth();
+  const paths = getOperatorInstallPaths();
+
+  if (IS_LINUX) {
+    const serviceName = OPERATOR_SYSTEMD_SERVICE;
+    const checks = [
+      {
+        scope: 'system',
+        args: [
+          'show',
+          serviceName,
+          '--no-page',
+          '--property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp'
+        ]
+      },
+      {
+        scope: 'user',
+        args: [
+          '--user',
+          'show',
+          serviceName,
+          '--no-page',
+          '--property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp'
+        ]
+      }
+    ];
+
+    for (const check of checks) {
+      const result = await runLocalCommand(
+        'systemctl',
+        check.args
+      );
+
+      if (!result.stdout) continue;
+
+      const values = {};
+
+      for (const line of result.stdout.split(/\r?\n/)) {
+        const separator = line.indexOf('=');
+        if (separator < 0) continue;
+
+        const key = line.slice(0, separator);
+        const value = line.slice(separator + 1);
+        values[key] = value;
+      }
+
+      if (
+        values.LoadState &&
+        values.LoadState !== 'not-found'
+      ) {
+        return {
+          supported: true,
+          installed: installation.healthy,
+          running:
+            installation.healthy &&
+            values.ActiveState === 'active',
+          loaded: true,
+          activeState:
+            values.ActiveState || 'unknown',
+          subState:
+            values.SubState || 'unknown',
+          mainPid:
+            values.MainPID || '0',
+          startedAt:
+            values.ExecMainStartTimestamp || null,
+          serviceScope: check.scope,
+          serviceName,
+          ...installation,
+          message:
+            installation.healthy
+              ? result.stderr || null
+              : 'The Node Service installation is incomplete and must be repaired.'
+        };
+      }
+    }
+
     return {
-      supported: false,
+      supported: true,
       installed: false,
       running: false,
-      activeState: 'unsupported',
-      subState: 'unsupported',
+      loaded: false,
+      activeState: 'not-found',
+      subState: 'not-found',
+      mainPid: '0',
+      startedAt: null,
       serviceScope: null,
-      serviceName: 'crylo-nexus-operator.service',
-      message: 'Node Service status is currently available on Linux only.'
+      serviceName,
+      ...installation,
+      message:
+        installation.repairRequired
+          ? 'The Node Service installation is incomplete and must be repaired.'
+          : 'Node Service is not installed.'
     };
   }
 
-  const serviceName = 'crylo-nexus-operator.service';
-  const installation =
-    await inspectOperatorInstallationHealth();
+  if (IS_MAC) {
+    const domain = getOperatorLaunchdDomain();
+    const serviceTarget =
+      `${domain}/${OPERATOR_LAUNCHD_LABEL}`;
+    const result = await runLocalCommand(
+      'launchctl',
+      ['print', serviceTarget]
+    );
 
-  const checks = [
-    {
-      scope: 'system',
-      args: [
-        'show',
-        serviceName,
-        '--no-page',
-        '--property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp'
+    const loaded = result.ok;
+    const running =
+      installation.healthy &&
+      loaded &&
+      /\bstate\s*=\s*running\b/i.test(
+        result.stdout
+      );
+    const pidMatch =
+      result.stdout.match(/\bpid\s*=\s*(\d+)/i);
+
+    return {
+      supported: true,
+      installed: installation.healthy,
+      running,
+      loaded,
+      activeState:
+        running
+          ? 'active'
+          : loaded
+            ? 'inactive'
+            : 'not-loaded',
+      subState:
+        running
+          ? 'running'
+          : loaded
+            ? 'loaded'
+            : 'not-loaded',
+      mainPid:
+        pidMatch ? pidMatch[1] : '0',
+      startedAt: null,
+      serviceScope: 'user',
+      serviceName: OPERATOR_LAUNCHD_LABEL,
+      ...installation,
+      message:
+        installation.healthy
+          ? null
+          : installation.repairRequired
+            ? 'The Node Service installation is incomplete and must be repaired.'
+            : 'Node Service is not installed.'
+    };
+  }
+
+  if (IS_WIN) {
+    const queryResult = await runLocalCommand(
+      'schtasks.exe',
+      [
+        '/Query',
+        '/TN',
+        OPERATOR_WINDOWS_TASK
       ]
-    },
-    {
-      scope: 'user',
-      args: [
-        '--user',
-        'show',
-        serviceName,
-        '--no-page',
-        '--property=LoadState,ActiveState,SubState,MainPID,ExecMainStartTimestamp'
-      ]
+    );
+
+    const taskExists = queryResult.ok;
+    let taskState = null;
+    let lastRunTime = null;
+
+    if (taskExists) {
+      const stateResult = await runLocalCommand(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `$task=Get-ScheduledTask -TaskName '${OPERATOR_WINDOWS_TASK}' -ErrorAction Stop; ` +
+          `$info=Get-ScheduledTaskInfo -TaskName '${OPERATOR_WINDOWS_TASK}' -ErrorAction Stop; ` +
+          `[Console]::WriteLine('State=' + $task.State); ` +
+          `[Console]::WriteLine('LastRunTime=' + $info.LastRunTime.ToString('o'))`
+        ],
+        10_000
+      );
+
+      if (stateResult.ok) {
+        for (
+          const line of
+          stateResult.stdout.split(/\r?\n/)
+        ) {
+          if (line.startsWith('State=')) {
+            taskState = line.slice(6).trim();
+          }
+
+          if (line.startsWith('LastRunTime=')) {
+            lastRunTime = line.slice(12).trim();
+          }
+        }
+      }
     }
-  ];
 
-  for (const check of checks) {
-    const result = await runLocalCommand('systemctl', check.args);
+    const running =
+      installation.healthy &&
+      taskExists &&
+      String(taskState).toLowerCase() === 'running';
 
-    if (!result.stdout) continue;
-
-    const values = {};
-
-    for (const line of result.stdout.split(/\r?\n/)) {
-      const separator = line.indexOf('=');
-      if (separator < 0) continue;
-
-      const key = line.slice(0, separator);
-      const value = line.slice(separator + 1);
-      values[key] = value;
-    }
-
-    if (values.LoadState && values.LoadState !== 'not-found') {
-      return {
-        supported: true,
-        installed: installation.healthy,
-        running:
-          installation.healthy &&
-          values.ActiveState === 'active',
-        activeState: values.ActiveState || 'unknown',
-        subState: values.SubState || 'unknown',
-        mainPid: values.MainPID || '0',
-        startedAt: values.ExecMainStartTimestamp || null,
-        serviceScope: check.scope,
-        serviceName,
-        ...installation,
-        message:
-          installation.healthy
-            ? result.stderr || null
-            : 'The Node Service installation is incomplete and must be repaired.'
-      };
-    }
+    return {
+      supported: true,
+      installed:
+        installation.healthy && taskExists,
+      running,
+      loaded: taskExists,
+      activeState:
+        running
+          ? 'active'
+          : taskExists
+            ? 'inactive'
+            : 'not-found',
+      subState:
+        taskState
+          ? String(taskState).toLowerCase()
+          : taskExists
+            ? 'unknown'
+            : 'not-found',
+      mainPid: '0',
+      startedAt: lastRunTime,
+      serviceScope: 'user-task',
+      serviceName: OPERATOR_WINDOWS_TASK,
+      ...installation,
+      message:
+        installation.healthy && taskExists
+          ? null
+          : installation.repairRequired || taskExists
+            ? 'The Node Service installation is incomplete and must be repaired.'
+            : 'Node Service is not installed.'
+    };
   }
 
   return {
-    supported: true,
+    supported: false,
     installed: false,
     running: false,
-    activeState: 'not-found',
-    subState: 'not-found',
+    loaded: false,
+    activeState: 'unsupported',
+    subState: 'unsupported',
     mainPid: '0',
     startedAt: null,
     serviceScope: null,
-    serviceName,
+    serviceName: null,
     ...installation,
     message:
-      installation.repairRequired
-        ? 'The Node Service installation is incomplete and must be repaired.'
-        : 'Node Service is not installed.'
+      `Unsupported Node Service platform: ${process.platform}`
   };
 }
 
@@ -3161,9 +3806,15 @@ function writePrivateJsonAtomic(filePath, value) {
     }
   );
 
-  fs.chmodSync(temporaryPath, 0o600);
+  if (!IS_WIN) {
+    fs.chmodSync(temporaryPath, 0o600);
+  }
+
   fs.renameSync(temporaryPath, filePath);
-  fs.chmodSync(filePath, 0o600);
+
+  if (!IS_WIN) {
+    fs.chmodSync(filePath, 0o600);
+  }
 }
 
 function writePrivateTextAtomic(filePath, value) {
@@ -3186,9 +3837,15 @@ function writePrivateTextAtomic(filePath, value) {
     }
   );
 
-  fs.chmodSync(temporaryPath, 0o600);
+  if (!IS_WIN) {
+    fs.chmodSync(temporaryPath, 0o600);
+  }
+
   fs.renameSync(temporaryPath, filePath);
-  fs.chmodSync(filePath, 0o600);
+
+  if (!IS_WIN) {
+    fs.chmodSync(filePath, 0o600);
+  }
 }
 
 function readOperatorAuthorization(filePath, expectedAddress) {
@@ -3302,17 +3959,6 @@ ipcMain.handle(
     try {
       const path = require('node:path');
 
-      if (!IS_LINUX) {
-        return {
-          ok: true,
-          supported: false,
-          installed: false,
-          updateAvailable: false,
-          bundledVersion: null,
-          installedVersion: null
-        };
-      }
-
       const paths =
         getOperatorInstallPaths();
 
@@ -3403,7 +4049,7 @@ ipcMain.handle(
     } catch (error) {
       return {
         ok: false,
-        supported: IS_LINUX,
+        supported: IS_LINUX || IS_MAC || IS_WIN,
         installed: false,
         updateAvailable: false,
         bundledVersion: null,
@@ -3506,12 +4152,15 @@ ipcMain.handle(
         );
       }
 
+      const configuredNodeStakingAddress =
+        configResult.data.contracts?.nodeStaking;
+
       const nodeStakingAddress =
         ethers.isAddress(
-          configResult.data.nodeStakingContract
+          configuredNodeStakingAddress
         )
           ? ethers.getAddress(
-              configResult.data.nodeStakingContract
+              configuredNodeStakingAddress
             )
           : runtime.contracts.NodeStaking;
 
@@ -3679,19 +4328,12 @@ ipcMain.handle(
       }
 
       const restartResult =
-        await runLocalCommand(
-          'systemctl',
-          [
-            '--user',
-            'restart',
-            'crylo-nexus-operator.service'
-          ],
-          15000
+        await controlOperatorService(
+          'restart'
         );
 
       if (!restartResult.ok) {
         throw new Error(
-          restartResult.stderr ||
           'The authorized Node Service could not be started'
         );
       }
@@ -3962,7 +4604,7 @@ ipcMain.handle('nexus-operator-dashboard', async (_, linkedAddress) => {
       await getNexusRuntimeConfig();
 
     const configuredNodeStakingAddress =
-      configResult.data?.nodeStakingContract;
+      configResult.data?.contracts?.nodeStaking;
 
     const nodeStakingAddress =
       ethers.isAddress(configuredNodeStakingAddress)

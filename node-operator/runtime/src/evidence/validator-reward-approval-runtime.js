@@ -1,4 +1,3 @@
-'use strict';
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -155,8 +154,9 @@ async function loadSessionPrivateKey(
   }
 
   if (
+    process.platform !== 'win32' &&
     stat.mode &
-    FORBIDDEN_PERMISSION_MASK
+      FORBIDDEN_PERMISSION_MASK
   ) {
     throw new Error(
       'Validator session key permissions must be 600 or stricter'

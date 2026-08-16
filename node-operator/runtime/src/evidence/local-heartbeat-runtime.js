@@ -1,6 +1,4 @@
-'use strict';
 
-const os = require('node:os');
 const path = require('node:path');
 
 const {
@@ -38,6 +36,10 @@ const {
 const {
   buildSignedOperatorUptimeReport
 } = require('./signed-operator-uptime-report');
+
+const {
+  defaultOperatorDirectory
+} = require('../config');
 
 function requirePlainObject(
   value,
@@ -87,10 +89,7 @@ function requireFunction(
 
 function defaultHeartbeatDirectory() {
   return path.join(
-    os.homedir(),
-    '.config',
-    'crylo-wallet',
-    'operator',
+    defaultOperatorDirectory(),
     'heartbeat'
   );
 }

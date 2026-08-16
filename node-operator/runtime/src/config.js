@@ -1,4 +1,3 @@
-'use strict';
 
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -14,6 +13,29 @@ const {
 } = require('./security');
 
 function defaultOperatorDirectory() {
+  if (process.platform === 'win32') {
+    return path.join(
+      process.env.APPDATA ||
+        path.join(
+          os.homedir(),
+          'AppData',
+          'Roaming'
+        ),
+      'crylo-wallet',
+      'operator'
+    );
+  }
+
+  if (process.platform === 'darwin') {
+    return path.join(
+      os.homedir(),
+      'Library',
+      'Application Support',
+      'crylo-wallet',
+      'operator'
+    );
+  }
+
   return path.join(
     os.homedir(),
     '.config',

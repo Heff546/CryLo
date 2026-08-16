@@ -1,6 +1,4 @@
-'use strict';
 
-const os = require('node:os');
 const path = require('node:path');
 
 const packageJson =
@@ -11,6 +9,7 @@ const {
 } = require('./constants');
 
 const {
+  defaultOperatorDirectory,
   loadConfig
 } = require('./config');
 
@@ -97,10 +96,7 @@ function resolveElectronStatusPath() {
   return (
     process.env.CRYLONEXUS_ELECTRON_STATUS_PATH ||
     path.join(
-      os.homedir(),
-      '.config',
-      'crylo-wallet',
-      'operator',
+      defaultOperatorDirectory(),
       'status.json'
     )
   );
