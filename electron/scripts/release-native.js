@@ -32,21 +32,60 @@ function run(command, args) {
   }
 }
 
-const platform = process.argv[2];
-let arch = process.argv[3] || 'auto';
-
-if (!['win', 'mac'].includes(platform)) {
-  fail('Platform must be win or mac.');
+function detectedPlatform() {
+  switch (process.platform) {
+    case 'linux':
+      return 'linux';
+    case 'win32':
+      return 'win';
+    case 'darwin':
+      return 'mac';
+    default:
+      fail(`Unsupported host platform: ${process.platform}`);
+  }
 }
 
-const requiredHost =
-  platform === 'win' ? 'win32' : 'darwin';
+const requestedPlatform = process.argv[2] || 'auto';
+let arch = process.argv[3] || 'auto';
+
+const platform =
+  requestedPlatform === 'auto'
+    ? detectedPlatform()
+    : requestedPlatform;
+
+if (!['linux', 'win', 'mac'].includes(platform)) {
+  fail('Platform must be auto, linux, win, or mac.');
+}
+
+const requiredHost = {
+  linux: 'linux',
+  win: 'win32',
+  mac: 'darwin'
+}[platform];
 
 if (process.platform !== requiredHost) {
   fail(
     `${platform} releases must be built on their native host. ` +
     `Current host: ${process.platform}; required: ${requiredHost}.`
   );
+}
+
+/*
+ * Linux already has a mature release pipeline that discovers the current
+ * CryLo release binaries and derives the target architecture from those
+ * binaries. Keep that logic authoritative rather than duplicating it here.
+ */
+if (platform === 'linux') {
+  console.log(
+    'Detected Linux host. Delegating to the Linux auto-release pipeline...'
+  );
+
+  run('bash', [
+    path.join(electronDir, 'scripts', 'release-linux.sh'),
+    arch
+  ]);
+
+  process.exit(0);
 }
 
 if (arch === 'auto') {

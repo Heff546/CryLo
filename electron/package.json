@@ -10,6 +10,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "build": "node scripts/release-native.js",
     "build-win": "node scripts/release-native.js win x64",
     "build-linux": "bash scripts/release-linux.sh auto",
     "build-mac": "node scripts/release-native.js mac auto",
