@@ -475,14 +475,24 @@ OAES_RET oaes_sprintf(
 static void oaes_get_seed( char buf[RANDSIZ + 1] )
 {
         #if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__NetBSD__)
+	#if defined(_WIN32)
+	struct timeb timer;
+	#else
 	struct timespec timer;
+	#endif
 	struct tm *gmTimer;
 	char * _test = NULL;
 	int milliseconds;
 	
+	#if defined(_WIN32)
+	ftime(&timer);
+	milliseconds = (int)timer.millitm;
+	gmTimer = gmtime(&timer.time);
+	#else
 	timespec_get(&timer, TIME_UTC);
 	milliseconds = (int)(timer.tv_nsec / 1000000L);
 	gmTimer = gmtime(&timer.tv_sec);
+	#endif
 	_test = (char *) calloc( sizeof( char ), (size_t)milliseconds );
 	sprintf( buf, "%04d%02d%02d%02d%02d%02d%03d%p%d",
 		gmTimer->tm_year + 1900, gmTimer->tm_mon + 1, gmTimer->tm_mday,
@@ -509,15 +519,25 @@ static void oaes_get_seed( char buf[RANDSIZ + 1] )
 static uint32_t oaes_get_seed(void)
 {
         #if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__ANDROID__) && !defined(__NetBSD__)
+	#if defined(_WIN32)
+	struct timeb timer;
+	#else
 	struct timespec timer;
+	#endif
 	struct tm *gmTimer;
 	char * _test = NULL;
 	uint32_t _ret = 0;
 	int milliseconds;
 	
+	#if defined(_WIN32)
+	ftime(&timer);
+	milliseconds = (int)timer.millitm;
+	gmTimer = gmtime(&timer.time);
+	#else
 	timespec_get(&timer, TIME_UTC);
 	milliseconds = (int)(timer.tv_nsec / 1000000L);
 	gmTimer = gmtime(&timer.tv_sec);
+	#endif
 	_test = (char *) calloc( sizeof( char ), (size_t)milliseconds );
 	_ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
 			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + milliseconds +
