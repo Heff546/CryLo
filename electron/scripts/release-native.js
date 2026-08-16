@@ -12,11 +12,15 @@ function fail(message) {
 }
 
 function run(command, args) {
+  const useWindowsCmdShim =
+    process.platform === 'win32' &&
+    command.toLowerCase().endsWith('.cmd');
+
   const result = spawnSync(command, args, {
     cwd: electronDir,
     stdio: 'inherit',
     env: process.env,
-    shell: false
+    shell: useWindowsCmdShim
   });
 
   if (result.error) {
