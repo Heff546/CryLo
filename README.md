@@ -90,7 +90,7 @@ CryLo currently supports three mining methods:
 
 * **Electron Wallet Mining** — Recommended for most users. Open the Mining tab and start mining directly from the wallet.
 * **Daemon Mining** — Mine directly through the CryLo daemon using the built-in mining RPC commands.
-* **CryLo-Proxy Mining** — Intended for lower-end hardware and shared mining environments. CryLo-Proxy is limited to a global hashrate cap of **100 kH/s** to promote fair network participation.
+* **CryLo-Proxy Mining** — Intended for lower-end hardware and shared mining environments. CryLo-Proxy is limited to a global hashrate cap of **20 kH/s** to promote fair network participation.
 
 For maximum network decentralization, miners are encouraged to use Electron Wallet Mining or direct Daemon Mining whenever possible.
 
@@ -286,62 +286,27 @@ curl http://127.0.0.1:22641/stop_mining
 
 ### Option 3 — CryLo-Proxy
 
-CryLo-Proxy is intended for lower-end hardware and resource-constrained systems.
+CryLo-Proxy is intended for lower-end hardware and small groups of miners that need to share access to one local CryLo daemon.
 
-To maintain fair participation and discourage mining centralization, CryLo-Proxy operates with a strict **100 kH/s global hashrate cap**. Once the cap is reached, miners are expected to mine directly through the CryLo daemon or Electron wallet.
+CryLo-Proxy operates with a strict **20 kH/s combined hashrate cap**.
+
+The supported mining topology is:
+
+* Electron Wallet Mining connects to the miner's own local CryLo daemon.
+* Direct Daemon Mining runs against the miner's own local CryLo daemon.
+* CryLo-Proxy may allow multiple lower-hashrate machines to share one local daemon while their combined proxy-connected hashrate remains within the configured cap.
+* A machine or aggregate mining setup that exceeds the CryLo-Proxy cap must use its own CryLo daemon and its own P2P connection to the CryLo network.
+* Public mining gateways, shared public daemon-mining endpoints, pooled template distribution, and Stratum-style shared mining infrastructure are not part of the CryLo mining architecture.
 
 CryLo-Proxy provides:
 
-* Shared mining access for lower-end systems
+* Controlled shared access to a local CryLo daemon
 * Hashrate monitoring
 * Connection management
 * Grace-period enforcement
-* LAN and remote deployment support
+* A capped path for lower-end mining hardware
 
-### LAN Mining Setup
-
-If you have multiple miners on the same local network, you can run a single CryLo node and allow other systems to mine against it.
-
-This setup is ideal for home mining, small testnet deployments, and multi-machine CPU mining environments.
-
-**On the node machine** — start the CryLo Testnet daemon with RPC access enabled:
-
-```bash
-./build/bin/CryLo-daemon \
-  --testnet \
-  --data-dir ~/.CryLo-testnet-v2 \
-  --rpc-bind-ip=0.0.0.0 \
-  --confirm-external-bind \
-  --log-level=1
-```
-
-**On LAN miner machines** — configure the miner to connect to the local IP address of the machine running the CryLo daemon.
-
-Replace `192.168.X.X` with the node machine's actual LAN IP address. Port `22641` is the CryLo Testnet RPC port and should not be changed.
-
-```json
-{
-  "url": "192.168.X.X:22641",
-  "daemon": true
-}
-```
-
-Example:
-
-```json
-{
-  "url": "192.168.1.100:22641",
-  "daemon": true
-}
-```
-
-Requirements:
-
-* The CryLo daemon must be running on the node machine.
-* The daemon must be started with `--rpc-bind-ip=0.0.0.0`.
-* TCP port `22641` must be accessible from other machines on the local network.
-* No additional node is required on miner-only systems.
-
+For maximum decentralization, miners should use Electron Wallet Mining or direct Daemon Mining with their own local CryLo daemon whenever practical.
 
 ## Network Configuration
 
