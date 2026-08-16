@@ -37,4 +37,23 @@ FIND_PATH(UNBOUND_INCLUDE_DIR
   /usr/
 )
 
-find_library(UNBOUND_LIBRARIES unbound)
+find_library(UNBOUND_LIBRARY unbound)
+
+set(UNBOUND_LIBRARIES ${UNBOUND_LIBRARY})
+
+# Static libunbound builds may require libevent symbols that are not
+# propagated automatically by the archive itself.
+if(UNBOUND_LIBRARY MATCHES "\\.a$")
+  find_library(UNBOUND_EVENT_LIBRARY event)
+  if(UNBOUND_EVENT_LIBRARY)
+    list(APPEND UNBOUND_LIBRARIES ${UNBOUND_EVENT_LIBRARY})
+    message(STATUS "Static libunbound requires libevent: ${UNBOUND_EVENT_LIBRARY}")
+  endif()
+endif()
+
+set(
+  UNBOUND_LIBRARIES
+  "${UNBOUND_LIBRARIES}"
+  CACHE STRING "Libraries required to link libunbound"
+  FORCE
+)
