@@ -1,4 +1,6 @@
 #!/bin/bash
 
-rlwrap monero-wallet-cli --wallet-file wallet_m --password "" --testnet --trusted-daemon --daemon-address 127.0.0.1:38081  --log-file wallet_m.log
+DAEMON_ADDRESS="${TESTNET_DAEMON_ADDRESS:-127.0.0.1:22641}"
+
+rlwrap CryLo-wallet --wallet-file wallet_m --password "" --testnet --trusted-daemon --daemon-address "$DAEMON_ADDRESS"  --log-file wallet_m.log
 

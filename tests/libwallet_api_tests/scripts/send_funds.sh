@@ -1,11 +1,13 @@
 #!/bin/bash
 
+DAEMON_ADDRESS="${TESTNET_DAEMON_ADDRESS:-127.0.0.1:22641}"
+
 function send_funds {
     local amount=$1
     local dest=$(cat "$2.address.txt")
 
-    monero-wallet-cli --wallet-file wallet_m --password "" \
-        --testnet --trusted-daemon --daemon-address localhost:38081  --log-file wallet_m.log \
+    CryLo-wallet --wallet-file wallet_m --password "" \
+        --testnet --trusted-daemon --daemon-address "$DAEMON_ADDRESS"  --log-file wallet_m.log \
         --command transfer $dest $amount 
 }
 

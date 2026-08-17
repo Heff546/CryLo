@@ -1,2 +1,23 @@
-## Fish shell completions for Monero
-This folder has basic Fish completions for `monerod`, `monero-wallet-cli`, and `monero-wallet-rpc`. To use them, put those files (or symlink them) inside `~/.config/fish/completions/` or wherever your Fish completion files are (see [https://fishshell.com/docs/current/completions.html#where-to-put-completions](https://fishshell.com/docs/current/completions.html#where-to-put-completions))
+# Fish Shell Completions for CryLo
+
+This directory contains Fish shell completion definitions for CryLo command-line tools.
+
+The current CryLo executable names are:
+
+```text
+CryLo-daemon
+CryLo-wallet
+CryLo-wallet-rpc
+```
+
+Fish completion files should use the same executable names as the binaries they describe.
+
+To install a completion file, copy or symlink it into:
+
+```text
+~/.config/fish/completions/
+```
+
+or another Fish completion directory configured for your system.
+
+See the Fish shell documentation for additional information about completion-file locations.

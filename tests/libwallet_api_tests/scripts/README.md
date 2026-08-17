@@ -1,24 +1,83 @@
-# Running libwallet_api tests
+# Running libwallet_api Tests
 
-## Environment for the tests
-* Running monero node, linked to private/public testnet. 
-  By default, tests expect daemon running at ```localhost:38081```,
-  can be overridden with environment variable ```TESTNET_DAEMON_ADDRESS=<your_daemon_address>```
-  [Manual](https://github.com/moneroexamples/private-testnet) explaining how to run private testnet.
+These helper scripts support the CryLo libwallet API test environment.
 
-* Directory with pre-generated wallets
-  (wallet_01.bin, wallet_02.bin,...,wallet_06.bin, some of these wallets might not be used in the tests currently). 
-  By default, tests expect these wallets to be in ```/var/monero/testnet_pvt```. 
-  Directory can be overriden with environment variable ```WALLETS_ROOT_DIR=<your_directory_with_wallets>```.
-  Directory and files should be writable for the user running tests.
+## Environment for the Tests
 
+A CryLo daemon must be available for the test environment.
 
-## Generating test wallets
-* ```create_wallets.sh``` - this script will create wallets (wallet_01.bin, wallet_02.bin,...,wallet_06.bin) in current directory. 
-  when running first time, please uncomment line ```#create_wallet wallet_m``` to create miner wallet as well. 
-  This wallet should be used for mining and all test wallets supposed to be seed from this miner wallet
+The daemon address used by the test suite may be overridden with:
 
-* ```mining_start.sh``` and ```mining_stop.sh``` - helper scripts to start and stop mining on miner wallet
+```bash
+TESTNET_DAEMON_ADDRESS=<your_daemon_address>
+```
 
-* ```send_funds.sh``` - script for seeding test wallets. Please run this script when you have enough money on miner wallet
+CryLo network ports are defined by the active network configuration.
 
+Current CryLo mainnet and testnet defaults are:
+
+- P2P: `22640`
+- RPC: `22641`
+- ZMQ RPC: `22642`
+
+CryLo stagenet uses its separately defined stagenet ports.
+
+The tests also require a directory containing pre-generated test wallets such as:
+
+```text
+wallet_01.bin
+wallet_02.bin
+wallet_03.bin
+wallet_04.bin
+wallet_05.bin
+wallet_06.bin
+```
+
+The wallet directory may be overridden with:
+
+```bash
+WALLETS_ROOT_DIR=<your_directory_with_wallets>
+```
+
+The directory and wallet files must be writable by the user running the tests.
+
+## Generating Test Wallets
+
+`create_wallets.sh` creates the test wallets in the current directory.
+
+The current CryLo command-line wallet executable is:
+
+```text
+CryLo-wallet
+```
+
+To create the miner wallet as well, enable the corresponding `wallet_m` creation line in `create_wallets.sh`.
+
+The miner wallet is used to mine test funds that can then be distributed to the other test wallets.
+
+## Mining Helpers
+
+The following scripts control mining through the miner wallet:
+
+```text
+mining_start.sh
+mining_stop.sh
+```
+
+## Seeding Test Wallets
+
+`send_funds.sh` distributes test funds from the miner wallet to the generated test wallets.
+
+Only run the funding helper after the miner wallet contains sufficient test funds.
+
+## CryLo Executables
+
+The current CryLo executable names relevant to these tests are:
+
+```text
+CryLo-daemon
+CryLo-wallet
+CryLo-wallet-rpc
+```
+
+The helper scripts in this directory must use CryLo executable names and the appropriate CryLo network configuration.
