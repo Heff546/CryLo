@@ -248,7 +248,7 @@ struct options {
   const command_line::arg_descriptor<bool> untrusted_daemon = {"untrusted-daemon", tools::wallet2::tr("Disable commands which rely on a trusted daemon"), false};
   const command_line::arg_descriptor<std::string> password = {"password", tools::wallet2::tr("Wallet password (escape/quote as needed)"), "", true};
   const command_line::arg_descriptor<std::string> password_file = wallet_args::arg_password_file();
-  const command_line::arg_descriptor<int> daemon_port = {"daemon-port", tools::wallet2::tr("Use daemon instance at port <arg> instead of 18081"), 0};
+  const command_line::arg_descriptor<int> daemon_port = {"daemon-port", tools::wallet2::tr("Use daemon instance at port <arg> instead of 22641"), 0};
   const command_line::arg_descriptor<std::string> daemon_login = {"daemon-login", tools::wallet2::tr("Specify username[:password] for daemon RPC client"), "", true};
   const command_line::arg_descriptor<std::string> daemon_ssl = {"daemon-ssl", tools::wallet2::tr("Enable SSL on daemon RPC connections: enabled|disabled|autodetect"), "autodetect"};
   const command_line::arg_descriptor<std::string> daemon_ssl_private_key = {"daemon-ssl-private-key", tools::wallet2::tr("Path to a PEM format private key"), ""};
@@ -7380,7 +7380,7 @@ bool wallet2::is_tx_spendtime_unlocked(uint64_t unlock_time, uint64_t block_heig
     catch(...) { adjusted_time = time(NULL); } // use local time if no daemon to report blockchain time
     // XXX: this needs to be fast, so we'd need to get the starting heights
     // from the daemon to be correct once voting kicks in
-    uint64_t v2height = 0; // CryLo Chain: always post-V2 (Wownero heights removed)
+    uint64_t v2height = 0; // CryLo Chain: legacy fork heights are not used
     uint64_t leeway = block_height < v2height ? CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V1 : CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2;
     if(adjusted_time + leeway >= unlock_time)
       return true;

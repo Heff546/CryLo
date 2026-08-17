@@ -1,0 +1,20 @@
+[Unit]
+Description=CryLo Full Node
+After=network-online.target
+
+[Service]
+User=crylo
+Group=crylo
+WorkingDirectory=/var/lib/crylo
+StateDirectory=crylo
+LogsDirectory=crylo
+
+Type=simple
+ExecStart=/usr/bin/CryLo-daemon --config-file /etc/CryLo-daemon.conf --non-interactive
+StandardOutput=null
+StandardError=null
+
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
