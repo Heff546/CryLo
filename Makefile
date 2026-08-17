@@ -107,7 +107,7 @@ release-static:
 	cd $(builddir)/release && cmake -D STATIC=ON -D BUILD_64=ON -D CMAKE_BUILD_TYPE=Release $(topdir) && $(MAKE)
 
 release-minimal:
-	@echo "Starting minimal Wownero build... for full build, run: make release-all"
+	@echo "Starting minimal CryLo build... for full build, run: make release-all"
 	mkdir -p $(builddir)/release
 	cd $(builddir)/release && cmake -Wno-dev -D BUILD_TAG="minimal" -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF -D BUILD_DOCUMENTATION=OFF -D BUILD_DEBUG_UTILITIES=OFF -D USE_DEVICE_TREZOR=OFF -D TREZOR_DEBUG=OFF -D BUILD_GUI_DEPS=OFF $(topdir) && $(MAKE) daemon simplewallet wallet_rpc_server
 	@echo "\n===== Build complete =====\n"

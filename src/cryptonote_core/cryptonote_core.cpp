@@ -497,7 +497,7 @@ namespace cryptonote
       if (boost::filesystem::exists(old_files / "blockchain.bin"))
       {
         MWARNING("Found old-style blockchain.bin in " << old_files.string());
-        MWARNING("Wownero now uses a new format. You can either remove blockchain.bin to start syncing");
+        MWARNING("CryLo now uses a new format. You can either remove blockchain.bin to start syncing");
         MWARNING("the blockchain anew, or use CryLo-blockchain-export and CryLo-blockchain-import to");
         MWARNING("convert your existing blockchain.bin to the new format. See README.md for instructions.");
         return false;

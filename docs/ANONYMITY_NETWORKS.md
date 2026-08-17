@@ -1,233 +1,184 @@
-# Anonymity Networks with Monero
+# Anonymity Networks with CryLo
 
-Currently only Tor and I2P have been integrated into Monero. The usage of
-these networks is still considered experimental - there are a few pessimistic
-cases where privacy is leaked. The design is intended to maximize privacy of
-the source of a transaction by broadcasting it over an anonymity network, while
-relying on IPv4 for the remainder of messages to make surrounding node attacks
-(via sybil) more difficult.
+CryLo supports Tor and I2P for selected peer-to-peer and transaction-broadcast activity.
 
+These anonymity-network features are inherited from the underlying CryptoNote networking stack and should be considered advanced functionality.
 
 ## Behavior
 
-If _any_ anonymity network is enabled, transactions being broadcast that lack
-a valid "context" (i.e. the transaction did not come from a p2p connection),
-will only be sent to peers on anonymity networks. If an anonymity network is
-enabled but no peers over an anonymity network are available, an error is
-logged and the transaction is kept for future broadcasting over an anonymity
-network. The transaction will not be broadcast unless an anonymity connection
-is made or until `monerod` is shutdown and restarted with only public
-connections enabled.
+When an anonymity network is enabled, locally created transactions can be routed through the configured anonymity network instead of being broadcast directly over the public P2P network.
 
-Anonymity networks can also be used with `monero-wallet-cli` and
-`monero-wallet-rpc` - the wallets will connect to a daemon through a proxy. The
-daemon must provide a hidden service for the RPC itself, which is separate from
-the hidden service for P2P connections.
+If an anonymity network is enabled but no suitable anonymity-network peer is available, the transaction may remain pending for later broadcast rather than being immediately sent over the public network.
 
+CryLo wallets may also connect to a CryLo daemon through a SOCKS proxy.
+
+The daemon RPC hidden service is separate from any hidden service used for P2P connections.
 
 ## P2P Commands
 
-Only handshakes, peer timed syncs and transaction broadcast messages are
-supported over anonymity networks. If one `--add-exclusive-node` p2p address
-is specified, then no syncing will take place and only transaction broadcasting
-can occur. It is therefore recommended that `--add-exclusive-node` be combined
-with additional exclusive IPv4 address(es).
+Only selected P2P traffic is supported over anonymity networks.
 
+The primary CryLo daemon options are:
 
-## Usage
-
-### Outbound Connections
-
-Connecting to an anonymous address requires the command line option
-`--tx-proxy` which tells `monerod` the ip/port of a socks proxy provided by a
-separate process. On most systems the configuration will look like:
-
+```text
+--tx-proxy
+--anonymous-inbound
 ```
+
+The current source accepts transaction proxy configuration in this form:
+
+```text
+--tx-proxy <network-type>,<socks-ip:port>[,max_connections][,disable_noise]
+```
+
+Example:
+
+```text
 --tx-proxy tor,127.0.0.1:9050,10
+```
+
+For I2P:
+
+```text
 --tx-proxy i2p,127.0.0.1:9000
 ```
 
-which tells `monerod` that ".onion" p2p addresses can be forwarded to a socks
-proxy at IP 127.0.0.1 port 9050 with a max of 10 outgoing connections and
-".b32.i2p" p2p addresses can be forwarded to a socks proxy at IP 127.0.0.1 port
-9000 with the default max outgoing connections.
+The current CryLo implementation supports Tor and I2P network types for anonymity-network routing.
 
-If desired, peers can be manually specified:
+## Outbound Connections
 
-```
---add-exclusive-node rveahdfho7wo4b2m.onion:28083
---add-peer rveahdfho7wo4b2m.onion:28083
-```
+Connecting to anonymous peers requires `--tx-proxy`.
 
-Either option can be listed multiple times, and can specify any mix of Tor,
-I2P, and IPv4 addresses. Using `--add-exclusive-node` will prevent the usage of
-seed nodes on ALL networks, which will typically be undesirable.
+Example Tor configuration:
 
-### Inbound Connections
-
-Receiving anonymity connections is done through the option
-`--anonymous-inbound`. This option tells `monerod` the inbound address, network
-type, and max connections:
-
-```
---anonymous-inbound rveahdfho7wo4b2m.onion:28083,127.0.0.1:28083,25
---anonymous-inbound cmeua5767mz2q5jsaelk2rxhf67agrwuetaso5dzbenyzwlbkg2q.b32.i2p,127.0.0.1:30000
+```text
+CryLo-daemon \
+  --tx-proxy tor,127.0.0.1:9050,10
 ```
 
-which tells `monerod` that a max of 25 inbound Tor connections are being
-received at address "rveahdfho7wo4b2m.onion:28083" and forwarded to `monerod`
-localhost port 28083, and a default max I2P connections are being received at
-address "cmeua5767mz2q5jsaelk2rxhf67agrwuetaso5dzbenyzwlbkg2q.b32.i2p" and
-forwarded to `monerod` localhost port 30000.
-These addresses will be shared with outgoing peers, over the same network type,
-otherwise the peer will not be notified of the peer address by the proxy.
+Example I2P configuration:
 
-### Wallet RPC
-
-An anonymity network can be configured to forward incoming connections to a
-`monerod` RPC port - which is independent from the configuration for incoming
-P2P anonymity connections. The anonymity network (Tor/i2p) is
-[configured in the same manner](#configuration), except the localhost port
-must be the RPC port (typically 18081 for mainnet) instead of the p2p port:
-
-```
-HiddenServiceDir /var/lib/tor/data/monero
-HiddenServicePort 18081 127.0.0.1:18081
+```text
+CryLo-daemon \
+  --tx-proxy i2p,127.0.0.1:9000
 ```
 
-Then the wallet will be configured to use a Tor/i2p address:
-```
---proxy 127.0.0.1:9050
---daemon-address rveahdfho7wo4b2m.onion
-```
+Multiple `--tx-proxy` options may be configured when using more than one anonymity network.
 
-The proxy must match the address type - a Tor proxy will not work properly with
-i2p addresses, etc.
+Peer addresses may also be specified manually with normal CryLo peer options such as:
 
-i2p and onion addresses provide the information necessary to authenticate and
-encrypt the connection from end-to-end. If desired, SSL can also be applied to
-the connection with `--daemon-address https://rveahdfho7wo4b2m.onion` which
-requires a server certificate that is signed by a "root" certificate on the
-machine running the wallet. Alternatively, `--daemon-cert-file` can be used to
-specify a certificate to authenticate the server.
-
-Proxies can also be used to connect to "clearnet" (ipv4 addresses or ICANN
-domains), but `--daemon-cert-file` _must_ be used for authentication and
-encryption.
-
-### Network Types
-
-#### Tor & I2P
-
-Options `--add-exclusive-node` and `--add-peer` recognize ".onion" and
-".b32.i2p" addresses, and will properly forward those addresses to the proxy
-provided with `--tx-proxy tor,...` or `--tx-proxy i2p,...`.
-
-Option `--anonymous-inbound` also recognizes ".onion" and ".b32.i2p" addresses,
-and will automatically be sent out to outgoing Tor/I2P connections so the peer
-can distribute the address to its other peers.
-
-##### Configuration
-
-Tor must be configured for hidden services. An example configuration ("torrc")
-might look like:
-
-```
-HiddenServiceDir /var/lib/tor/data/monero
-HiddenServicePort 28083 127.0.0.1:28083
+```text
+--add-exclusive-node
+--add-peer
 ```
 
-This will store key information in `/var/lib/tor/data/monero` and will forward
-"Tor port" 28083 to port 28083 of ip 127.0.0.1. The file
-`/usr/lib/tor/data/monero/hostname` will contain the ".onion" address for use
-with `--anonymous-inbound`.
+Using exclusive peers can prevent normal seed-node discovery and should therefore be used deliberately.
 
-I2P must be configured with a standard server tunnel. Configuration differs by
-I2P implementation.
+## Inbound Connections
+
+CryLo supports anonymous inbound P2P connections through:
+
+```text
+--anonymous-inbound <hidden-service-address>,<[bind-ip:]port>[,max_connections]
+```
+
+Example:
+
+```text
+--anonymous-inbound example.onion,127.0.0.1:22640,25
+```
+
+The CryLo source requires an appropriate `--tx-proxy` configuration when anonymous inbound networking is configured, because locally created transactions still require an anonymity-network route for outbound transmission.
+
+The default CryLo P2P port is `22640`.
+
+## Wallet RPC Through Tor or I2P
+
+A Tor or I2P hidden service may also forward connections to the CryLo daemon RPC interface.
+
+The default CryLo RPC port is `22641`.
+
+For example, a Tor hidden service may forward an onion service to:
+
+```text
+127.0.0.1:22641
+```
+
+The wallet can then connect through a SOCKS proxy:
+
+```text
+CryLo-wallet \
+  --proxy 127.0.0.1:9050 \
+  --daemon-address <hidden-service-address>:22641
+```
+
+For wallet RPC operation, use the corresponding `CryLo-wallet-rpc` executable.
+
+## CryLo Network Ports
+
+Current default CryLo ports are:
+
+| Service | Port |
+| --- | ---: |
+| P2P | 22640 |
+| RPC | 22641 |
+| ZMQ RPC | 22642 |
+
+These values are defined by the current CryLo network configuration.
+
+## Tor Hidden-Service Example
+
+A minimal Tor hidden-service configuration for CryLo P2P may resemble:
+
+```text
+HiddenServiceDir /var/lib/tor/data/crylo
+HiddenServicePort 22640 127.0.0.1:22640
+```
+
+A separate hidden service can be configured for daemon RPC if required:
+
+```text
+HiddenServiceDir /var/lib/tor/data/crylo-rpc
+HiddenServicePort 22641 127.0.0.1:22641
+```
+
+The generated hidden-service hostname can then be supplied to CryLo through `--anonymous-inbound`, peer options, or wallet daemon configuration as appropriate.
+
+## I2P
+
+I2P may be configured with a suitable SOCKS proxy and server tunnel.
+
+The exact I2P tunnel configuration depends on the I2P implementation in use.
+
+Example CryLo daemon proxy configuration:
+
+```text
+CryLo-daemon \
+  --tx-proxy i2p,127.0.0.1:9000
+```
 
 ## Privacy Limitations
 
-There are currently some techniques that could be used to _possibly_ identify
-the machine that broadcast a transaction over an anonymity network.
+Anonymity networks improve resistance to direct network-level observation but do not guarantee complete anonymity.
 
-### Timestamps
+Potential information leaks can include timing correlation, peer behavior, connection reuse, traffic analysis, and other metadata.
 
-The peer timed sync command sends the current time in the message. This value
-can be used to link an onion address to an IPv4/IPv6 address. If a peer first
-sees a transaction over Tor, it could _assume_ (possibly incorrectly) that the
-transaction originated from the peer. If both the Tor connection and an
-IPv4/IPv6 connection have timestamps that are approximately close in value they
-could be used to link the two connections. This is less likely to happen if the
-system clock is fairly accurate - many peers on the Monero network should have
-similar timestamps.
+Users relying on Tor or I2P should understand the limitations of the anonymity network itself as well as the CryLo networking behavior layered on top of it.
 
-#### Mitigation
+Keeping the system clock accurate can reduce some forms of timing fingerprinting.
 
-Keep the system clock accurate so that fingerprinting is more difficult. In
-the future a random offset might be applied to anonymity networks so that if
-the system clock is noticeably off (and therefore more fingerprintable),
-linking the public IPv4/IPv6 connections with the anonymity networks will be
-more difficult.
+Running the CryLo daemon consistently rather than only when sending transactions can also reduce obvious timing correlation between local network activity and transaction broadcast.
 
-### Intermittent Monero Syncing
+## Operational Notes
 
-If a user only runs `monerod` to send a transaction then quit, this can also
-be used by an ISP to link a user to a transaction.
+CryLo's anonymity-network implementation is advanced functionality.
 
-#### Mitigation
+Before exposing a daemon RPC interface through Tor or I2P:
 
-Run `monerod` as often as possible to conceal when transactions are being sent.
-Future versions will also have peers that first receive a transaction over an
-anonymity network delay the broadcast to public peers by a randomized amount.
-This will not completely mitigate a user who syncs up sends then quits, in
-part because this rule is not enforceable, so this mitigation strategy is
-simply a best effort attempt.
+- keep the RPC interface authenticated where appropriate
+- avoid exposing unrestricted administrative RPC access
+- verify the hidden service forwards only the intended local port
+- confirm the wallet is using the expected SOCKS proxy
+- verify the configured hidden-service address before relying on it
 
-### Active Bandwidth Shaping
-
-An attacker could attempt to bandwidth shape traffic in an attempt to determine
-the source of a Tor/I2P connection. There isn't great mitigation against
-this, but I2P should provide better protection against this attack since
-the connections are not circuit based.
-
-#### Mitigation
-
-The best mitigation is to use I2P instead of Tor. However, I2P
-has a smaller set of users (less cover traffic) and academic reviews, so there
-is a trade off in potential issues. Also, anyone attempting this strategy really
-wants to uncover a user, it seems unlikely that this would be performed against
-every Tor/I2P user.
-
-### I2P/Tor Stream Used Twice
-
-If a single I2P/Tor stream is used 2+ times for transmitting a transaction, the
-operator of the hidden service can conclude that both transactions came from the
-same source. If the subsequent transactions spend a change output from the
-earlier transactions, this will also reveal the "real" spend in the ring
-signature. This issue was (primarily) raised by @secparam on Twitter.
-
-#### Mitigation
-
-`monerod` currently selects two outgoing connections every 5 minutes for
-transmitting transactions over I2P/Tor. Using outgoing connections prevents an
-adversary from making many incoming connections to obtain information (this
-technique was taken from Dandelion). Outgoing connections also do not have a
-persistent public key identity - the creation of a new circuit will generate
-a new public key identity. The lock time on a change address is ~20 minutes, so
-`monerod` will have rotated its selected outgoing connections several times in
-most cases. However, the number of outgoing connections is typically a small
-fixed number, so there is a decent probability of re-use with the same public
-key identity.
-
-@secparam (twitter) recommended changing circuits (Tor) as an additional
-precaution. This is likely not a good idea - forcibly requesting Tor to change
-circuits is observable by the ISP. Instead, `monerod` should likely disconnect
-from peers occasionally. Tor will rotate circuits every ~10 minutes, so
-establishing new connections will use a new public key identity and make it
-more difficult for the hidden service to link information. This process will
-have to be done carefully because closing/reconnecting connections can also
-leak information to hidden services if done improperly.
-
-At the current time, if users need to frequently make transactions, I2P/Tor
-will improve privacy from ISPs and other common adversaries, but still have
-some metadata leakages to unknown hidden service operators.
+For public CryLo networking, normal daemon-to-daemon P2P connectivity remains the standard configuration.
