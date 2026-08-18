@@ -105,7 +105,9 @@ console.log(
 );
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
+console.log('Restoring pinned Electron release dependencies...');
+run(npmCommand, ['ci']);
 
 run(npmCommand, [
   '--prefix',
@@ -135,7 +137,16 @@ const builderArgs =
     ? ['electron-builder', '--win', `--${arch}`]
     : ['electron-builder', '--mac', `--${arch}`];
 
+const builderCommand =
+  process.platform === 'win32'
+    ? path.join(electronDir, 'node_modules', '.bin', 'electron-builder.cmd')
+    : path.join(electronDir, 'node_modules', '.bin', 'electron-builder');
+
+if (!fs.existsSync(builderCommand)) {
+  fail(`Pinned electron-builder is missing: ${builderCommand}`);
+}
+
 console.log(`Building CryLo Wallet for ${platform}/${arch}...`);
-run(npxCommand, builderArgs);
+run(builderCommand, builderArgs.slice(1));
 
 console.log(`Completed ${platform}/${arch} Electron release.`);

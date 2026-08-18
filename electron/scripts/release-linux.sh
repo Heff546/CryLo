@@ -38,6 +38,9 @@ fi
 
 cd "$ELECTRON"
 
+echo "Restoring pinned Electron release dependencies..."
+npm ci
+
 # The Node Service is installed outside Electron, but its complete runtime
 # must be bundled into every Linux wallet release so Operator and Validator
 # registrations can install the same tier-aware service locally.
@@ -62,11 +65,11 @@ echo "Building CryLo Wallet for $TARGET_ARCH..."
 if [[ "$TARGET_ARCH" == "arm64" ]]; then
   # electron-builder's DEB/FPM helper is x86-only in this toolchain.
   # ARM64 AppImage is the supported native release artifact.
-  npx electron-builder \
+  ./node_modules/.bin/electron-builder \
     --linux AppImage \
     --arm64
 else
-  npx electron-builder \
+  ./node_modules/.bin/electron-builder \
     --linux AppImage deb \
     --x64
 fi
