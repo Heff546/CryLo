@@ -5,8 +5,8 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT"
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "ERROR: Node.js is required to build CryLo." >&2
+  echo "ERROR: Node.js is required to run CryLo." >&2
   exit 1
 fi
 
-exec node "$ROOT/scripts/release/crylo-release.js" "$@"
+exec node "$ROOT/scripts/crylo.js" "$@"
