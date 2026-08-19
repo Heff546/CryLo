@@ -1,7 +1,23 @@
 #!/usr/bin/env sh
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT="$0"
+
+while [ -L "$SCRIPT" ]; do
+  DIR=$(CDPATH= cd -- "$(dirname -- "$SCRIPT")" && pwd)
+  LINK=$(readlink "$SCRIPT")
+
+  case "$LINK" in
+    /*)
+      SCRIPT="$LINK"
+      ;;
+    *)
+      SCRIPT="$DIR/$LINK"
+      ;;
+  esac
+done
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$SCRIPT")" && pwd)
 cd "$ROOT"
 
 if ! command -v node >/dev/null 2>&1; then

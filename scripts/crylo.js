@@ -613,6 +613,65 @@ function start() {
   console.log('CryLo daemon started successfully.');
 }
 
+function daemonUI() {
+  console.log('===== CRYLO DAEMON UI =====');
+
+  if (runningDaemon()) {
+    fail(
+      'CryLo daemon is already running. ' +
+      'Stop it before opening the daemon UI.'
+    );
+  }
+
+  const daemon = nativeDaemonPath();
+
+  if (!fs.existsSync(daemon)) {
+    fail(
+      'CryLo is not installed yet. Run "crylo install" first.'
+    );
+  }
+
+  const daemonArgs = [
+    '--testnet',
+    '--add-priority-node',
+    network.entryRelay
+  ];
+
+  console.log(
+    `Entry relay: ${network.entryRelay}`
+  );
+  console.log(
+    'Starting CryLo daemon UI...'
+  );
+  console.log();
+
+  const result = spawnSync(
+    daemon,
+    daemonArgs,
+    {
+      cwd: root,
+      env: process.env,
+      stdio: 'inherit',
+      shell: false
+    }
+  );
+
+  if (result.error) {
+    fail(
+      `Unable to start the CryLo daemon UI: ${result.error.message}`
+    );
+  }
+
+  if (
+    result.status !== null &&
+    result.status !== 0
+  ) {
+    fail(
+      `CryLo daemon UI exited with code ${result.status}.`
+    );
+  }
+}
+
 function stop() {
   console.log('===== CRYLO STOP =====');
 
@@ -802,8 +861,9 @@ CryLo
 Usage:
   crylo install       Install CryLo
   crylo update        Update CryLo
-  crylo start         Start CryLo
-  crylo stop          Stop CryLo
+  crylo start         Start CryLo in the background
+  crylo daemon UI     Start the CryLo daemon UI
+  crylo stop          Stop background CryLo
   crylo status        Show CryLo status
   crylo release       Build a native CryLo release
   crylo --check       Check release build prerequisites
@@ -849,6 +909,16 @@ switch (command) {
 
   case 'start':
     start();
+    break;
+
+  case 'daemon':
+    if (args.length !== 2 || args[1] !== 'UI') {
+      fail(
+        'Unknown CryLo daemon command. Use "crylo daemon UI".'
+      );
+    }
+
+    daemonUI();
     break;
 
   case 'stop':
