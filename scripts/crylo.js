@@ -805,7 +805,6 @@ Usage:
   crylo start         Start CryLo
   crylo stop          Stop CryLo
   crylo status        Show CryLo status
-  crylo nexus         Manage CryLoNexus
   crylo release       Build a native CryLo release
   crylo --check       Check release build prerequisites
   crylo help          Show this help
@@ -854,12 +853,6 @@ switch (command) {
 
   case 'stop':
     stop();
-    break;
-
-  case 'nexus':
-    fail(
-      '"crylo nexus" is reserved but not implemented yet.'
-    );
     break;
 
   default:
