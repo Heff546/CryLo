@@ -12,6 +12,22 @@ const releaseScript = path.join(
   'crylo-release.js'
 );
 
+const network = {
+  mode: 'testnet',
+  entryRelay: 'relay-us-1.crylo.network:22640'
+};
+
+const runtimeDirectory = path.join(
+  root,
+  'build',
+  '.crylo-runtime'
+);
+
+const daemonPidFile = path.join(
+  runtimeDirectory,
+  'daemon.pid'
+);
+
 function fail(message) {
   console.error(`ERROR: ${message}`);
   process.exit(1);
@@ -338,6 +354,222 @@ function runningDaemon() {
     : null;
 }
 
+function nativeDaemonPath() {
+  const native = expectedNativeBin();
+
+  if (!native) {
+    fail(
+      `CryLo does not currently support ${process.platform}/${process.arch}.`
+    );
+  }
+
+  return path.join(
+    native.directory,
+    native.daemon
+  );
+}
+
+function install() {
+  console.log('===== CRYLO INSTALL =====');
+  console.log(
+    `Preparing CryLo for ${process.platform}/${process.arch}...`
+  );
+  console.log();
+
+  const result = spawnSync(
+    process.execPath,
+    [releaseScript],
+    {
+      cwd: root,
+      env: process.env,
+      stdio: 'inherit',
+      shell: false
+    }
+  );
+
+  if (result.error) {
+    fail(result.error.message);
+  }
+
+  if (result.status !== 0) {
+    fail('CryLo installation build failed.');
+  }
+
+  const daemon = nativeDaemonPath();
+
+  if (!fs.existsSync(daemon)) {
+    fail(
+      `CryLo release completed but the daemon was not found: ${daemon}`
+    );
+  }
+
+  console.log();
+  console.log('CryLo installation completed successfully.');
+  console.log('Run "crylo start" to start CryLo.');
+}
+
+function start() {
+  console.log('===== CRYLO START =====');
+
+  if (runningDaemon()) {
+    console.log('CryLo daemon is already running.');
+    return;
+  }
+
+  const daemon = nativeDaemonPath();
+
+  if (!fs.existsSync(daemon)) {
+    fail(
+      'CryLo is not installed yet. Run "crylo install" first.'
+    );
+  }
+
+  const daemonArgs = [
+    '--testnet',
+    '--add-priority-node',
+    network.entryRelay
+  ];
+
+  console.log(
+    `Entry relay: ${network.entryRelay}`
+  );
+
+  fs.mkdirSync(
+    runtimeDirectory,
+    { recursive: true }
+  );
+
+  const child = require('child_process').spawn(
+    daemon,
+    daemonArgs,
+    {
+      cwd: root,
+      env: process.env,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: process.platform === 'win32',
+      shell: false
+    }
+  );
+
+  if (!child.pid) {
+    fail('CryLo daemon did not return a process ID.');
+  }
+
+  fs.writeFileSync(
+    daemonPidFile,
+    `${child.pid}\n`,
+    'utf8'
+  );
+
+  child.unref();
+
+  const started = (() => {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const wait = spawnSync(
+        process.execPath,
+        ['-e', 'setTimeout(() => {}, 250)'],
+        {
+          stdio: 'ignore',
+          shell: false
+        }
+      );
+
+      if (wait.error) {
+        break;
+      }
+
+      if (runningDaemon()) {
+        return true;
+      }
+    }
+
+    return false;
+  })();
+
+  if (!started) {
+    try {
+      fs.unlinkSync(daemonPidFile);
+    } catch (_) {
+      // Nothing to clean up.
+    }
+
+    fail(
+      'CryLo daemon did not remain running after startup.'
+    );
+  }
+
+  console.log('CryLo daemon started successfully.');
+}
+
+function stop() {
+  console.log('===== CRYLO STOP =====');
+
+  const daemon = runningDaemon();
+
+  if (!daemon) {
+    try {
+      fs.unlinkSync(daemonPidFile);
+    } catch (_) {
+      // No stale PID file to remove.
+    }
+
+    console.log('CryLo daemon is not running.');
+    return;
+  }
+
+  if (!fs.existsSync(daemonPidFile)) {
+    fail(
+      'A CryLo daemon is running, but it was not started by "crylo start". ' +
+      'It was left running for safety.'
+    );
+  }
+
+  const pidText = fs
+    .readFileSync(daemonPidFile, 'utf8')
+    .trim();
+
+  if (!/^\d+$/.test(pidText)) {
+    fail(
+      'CryLo daemon PID file is invalid. ' +
+      'The running daemon was left untouched.'
+    );
+  }
+
+  const pid = Number(pidText);
+
+  try {
+    process.kill(pid, 0);
+  } catch (_) {
+    try {
+      fs.unlinkSync(daemonPidFile);
+    } catch (_) {
+      // Nothing else to clean up.
+    }
+
+    fail(
+      'The recorded CryLo daemon is no longer running. ' +
+      'The stale PID record was removed.'
+    );
+  }
+
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch (error) {
+    fail(
+      `Unable to stop the CryLo daemon: ${error.message}`
+    );
+  }
+
+  try {
+    fs.unlinkSync(daemonPidFile);
+  } catch (_) {
+    // Daemon termination has already been requested.
+  }
+
+  console.log('CryLo daemon stop requested.');
+}
+
 function status() {
   console.log('===== CRYLO STATUS =====');
 
@@ -471,11 +703,15 @@ switch (command) {
     break;
 
   case 'install':
+    install();
+    break;
+
   case 'start':
+    start();
+    break;
+
   case 'stop':
-    fail(
-      `"crylo ${command}" is reserved but not implemented yet.`
-    );
+    stop();
     break;
 
   case 'nexus':
