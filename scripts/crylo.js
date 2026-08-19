@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -222,6 +223,204 @@ function update() {
   console.log('CryLo update completed successfully.');
 }
 
+function probe(command, args = []) {
+  const result = spawnSync(
+    command,
+    args,
+    {
+      cwd: root,
+      env: process.env,
+      encoding: 'utf8',
+      shell: false
+    }
+  );
+
+  return {
+    ok: !result.error && result.status === 0,
+    stdout: String(result.stdout || '').trim(),
+    stderr: String(result.stderr || '').trim()
+  };
+}
+
+function expectedNativeBin() {
+  if (process.platform === 'win32') {
+    return {
+      directory: path.join(root, 'build', 'win-x64', 'bin'),
+      daemon: 'CryLo-daemon.exe',
+      walletRpc: 'CryLo-wallet-rpc.exe'
+    };
+  }
+
+  if (process.platform === 'linux') {
+    const arch =
+      process.arch === 'arm64'
+        ? 'arm64'
+        : 'x64';
+
+    return {
+      directory: path.join(root, 'build', `linux-${arch}`, 'bin'),
+      daemon: 'CryLo-daemon',
+      walletRpc: 'CryLo-wallet-rpc'
+    };
+  }
+
+  if (process.platform === 'darwin') {
+    const arch =
+      process.arch === 'arm64'
+        ? 'arm64'
+        : 'x64';
+
+    return {
+      directory: path.join(root, 'build', `mac-${arch}`, 'bin'),
+      daemon: 'CryLo-daemon',
+      walletRpc: 'CryLo-wallet-rpc'
+    };
+  }
+
+  return null;
+}
+
+function binaryVersion(binary) {
+  if (!fs.existsSync(binary)) {
+    return null;
+  }
+
+  const result = probe(binary, ['--version']);
+
+  if (!result.ok) {
+    return 'present, version unavailable';
+  }
+
+  return result.stdout.split(/\r?\n/)[0] || 'present';
+}
+
+function runningDaemon() {
+  if (process.platform === 'win32') {
+    const result = probe(
+      process.env.ComSpec || 'cmd.exe',
+      [
+        '/d',
+        '/s',
+        '/c',
+        'tasklist /FI "IMAGENAME eq CryLo-daemon.exe" /FO CSV /NH'
+      ]
+    );
+
+    if (
+      !result.ok ||
+      !result.stdout ||
+      /No tasks are running/i.test(result.stdout)
+    ) {
+      return null;
+    }
+
+    return result.stdout;
+  }
+
+  const result = probe(
+    'ps',
+    ['-eo', 'pid=,args=']
+  );
+
+  if (!result.ok) {
+    return null;
+  }
+
+  const matches = result.stdout
+    .split(/\r?\n/)
+    .filter((line) =>
+      line.includes('CryLo-daemon') &&
+      !line.includes('scripts/crylo.js')
+    );
+
+  return matches.length
+    ? matches.join('\n')
+    : null;
+}
+
+function status() {
+  console.log('===== CRYLO STATUS =====');
+
+  const branch = probe(
+    'git',
+    ['branch', '--show-current']
+  );
+
+  const head = probe(
+    'git',
+    ['rev-parse', '--short=9', 'HEAD']
+  );
+
+  const workTree = probe(
+    'git',
+    ['status', '--porcelain']
+  );
+
+  console.log(
+    `Platform: ${process.platform}/${process.arch}`
+  );
+
+  console.log(
+    `Source: ${branch.stdout || 'unknown'} ` +
+    `${head.stdout || 'unknown'}`
+  );
+
+  console.log(
+    `Repository: ${
+      workTree.ok && !workTree.stdout
+        ? 'clean'
+        : 'local changes present'
+    }`
+  );
+
+  const native = expectedNativeBin();
+
+  if (native) {
+    const daemonPath = path.join(
+      native.directory,
+      native.daemon
+    );
+
+    const walletRpcPath = path.join(
+      native.directory,
+      native.walletRpc
+    );
+
+    const daemonVersion = binaryVersion(daemonPath);
+    const walletVersion = binaryVersion(walletRpcPath);
+
+    console.log();
+    console.log('Universal release binaries:');
+
+    console.log(
+      `  Daemon: ${
+        daemonVersion || 'not built'
+      }`
+    );
+
+    console.log(
+      `  Wallet RPC: ${
+        walletVersion || 'not built'
+      }`
+    );
+
+    console.log(
+      `  Directory: ${native.directory}`
+    );
+  }
+
+  const daemon = runningDaemon();
+
+  console.log();
+  console.log(
+    `Daemon: ${daemon ? 'running' : 'not running'}`
+  );
+
+  if (daemon) {
+    console.log(daemon);
+  }
+}
+
 function help() {
   console.log(`
 CryLo
@@ -267,10 +466,13 @@ switch (command) {
     update();
     break;
 
+  case 'status':
+    status();
+    break;
+
   case 'install':
   case 'start':
   case 'stop':
-  case 'status':
     fail(
       `"crylo ${command}" is reserved but not implemented yet.`
     );
