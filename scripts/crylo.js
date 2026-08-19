@@ -369,12 +369,123 @@ function nativeDaemonPath() {
   );
 }
 
+function ensureLinuxBuildDependencies() {
+  if (process.platform !== 'linux') {
+    return;
+  }
+
+  if (
+    !fs.existsSync('/etc/debian_version') ||
+    !fs.existsSync('/usr/bin/dpkg-query') ||
+    !fs.existsSync('/usr/bin/apt-get')
+  ) {
+    console.log(
+      'Automatic build dependency installation is not available ' +
+      'for this Linux distribution.'
+    );
+    return;
+  }
+
+  const requiredPackages = [
+    'libzstd-dev',
+    'libusb-1.0-0-dev',
+    'libudev-dev',
+    'nettle-dev',
+    'libgmp-dev'
+  ];
+
+  const missingPackages = requiredPackages.filter((packageName) => {
+    const result = spawnSync(
+      '/usr/bin/dpkg-query',
+      [
+        '-W',
+        '-f=${Status}',
+        packageName
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    return (
+      result.error ||
+      result.status !== 0 ||
+      String(result.stdout || '').trim() !==
+        'install ok installed'
+    );
+  });
+
+  if (!missingPackages.length) {
+    console.log('Linux build dependencies are ready.');
+    return;
+  }
+
+  console.log(
+    `Installing required CryLo build dependencies: ` +
+    `${missingPackages.join(', ')}`
+  );
+
+  const installer =
+    typeof process.getuid === 'function' &&
+    process.getuid() === 0
+      ? '/usr/bin/apt-get'
+      : 'sudo';
+
+  const installerArgs =
+    installer === '/usr/bin/apt-get'
+      ? [
+          'install',
+          '-y',
+          '--no-install-recommends',
+          ...missingPackages
+        ]
+      : [
+          '/usr/bin/apt-get',
+          'install',
+          '-y',
+          '--no-install-recommends',
+          ...missingPackages
+        ];
+
+  const result = spawnSync(
+    installer,
+    installerArgs,
+    {
+      cwd: root,
+      env: process.env,
+      stdio: 'inherit',
+      shell: false
+    }
+  );
+
+  if (result.error) {
+    fail(
+      `Unable to install CryLo build dependencies: ` +
+      `${result.error.message}`
+    );
+  }
+
+  if (result.status !== 0) {
+    fail(
+      'Required CryLo build dependency installation failed.'
+    );
+  }
+
+  console.log('CryLo build dependencies installed successfully.');
+  console.log();
+}
+
 function install() {
   console.log('===== CRYLO INSTALL =====');
   console.log(
     `Preparing CryLo for ${process.platform}/${process.arch}...`
   );
   console.log();
+
+  ensureLinuxBuildDependencies();
 
   const result = spawnSync(
     process.execPath,
@@ -561,13 +672,44 @@ function stop() {
     );
   }
 
+  let stopped = false;
+
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const wait = spawnSync(
+      process.execPath,
+      ['-e', 'setTimeout(() => {}, 250)'],
+      {
+        stdio: 'ignore',
+        shell: false
+      }
+    );
+
+    if (wait.error) {
+      break;
+    }
+
+    try {
+      process.kill(pid, 0);
+    } catch (_) {
+      stopped = true;
+      break;
+    }
+  }
+
+  if (!stopped) {
+    fail(
+      'CryLo daemon did not stop within 10 seconds. ' +
+      'The PID record was preserved.'
+    );
+  }
+
   try {
     fs.unlinkSync(daemonPidFile);
   } catch (_) {
-    // Daemon termination has already been requested.
+    // Daemon is already stopped.
   }
 
-  console.log('CryLo daemon stop requested.');
+  console.log('CryLo daemon stopped successfully.');
 }
 
 function status() {
