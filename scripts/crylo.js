@@ -480,6 +480,151 @@ function ensureLinuxBuildDependencies() {
 
 function installUserCommand() {
   if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA;
+
+    if (!localAppData) {
+      fail(
+        'Unable to determine the current Windows user application directory.'
+      );
+    }
+
+    const launcher = path.join(root, 'crylo.cmd');
+
+    if (!fs.existsSync(launcher)) {
+      fail(
+        `CryLo Windows launcher was not found: ${launcher}`
+      );
+    }
+
+    const commandDirectory = path.join(
+      localAppData,
+      'CryLo',
+      'bin'
+    );
+
+    const commandPath = path.join(
+      commandDirectory,
+      'crylo.cmd'
+    );
+
+    fs.mkdirSync(
+      commandDirectory,
+      { recursive: true }
+    );
+
+    const marker = ':: CryLo managed launcher';
+
+    if (fs.existsSync(commandPath)) {
+      const existing = fs.readFileSync(
+        commandPath,
+        'utf8'
+      );
+
+      if (!existing.includes(marker)) {
+        fail(
+          `Cannot replace existing CryLo command: ${commandPath}`
+        );
+      }
+    }
+
+    const wrapper = [
+      '@echo off',
+      marker,
+      `call "${launcher}" %*`,
+      ''
+    ].join('\r\n');
+
+    fs.writeFileSync(
+      commandPath,
+      wrapper,
+      'utf8'
+    );
+
+    const userPathResult = spawnSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '[Environment]::GetEnvironmentVariable("Path","User")'
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    if (
+      userPathResult.error ||
+      userPathResult.status !== 0
+    ) {
+      fail(
+        'Unable to read the Windows user PATH.'
+      );
+    }
+
+    const userPath = String(
+      userPathResult.stdout || ''
+    ).trim();
+
+    const userEntries = userPath
+      .split(';')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    const alreadyRegistered = userEntries.some(
+      (entry) =>
+        entry.toLowerCase() ===
+        commandDirectory.toLowerCase()
+    );
+
+    if (!alreadyRegistered) {
+      const updatedPath = userEntries.length
+        ? `${userEntries.join(';')};${commandDirectory}`
+        : commandDirectory;
+
+      const pathUpdate = spawnSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `$value = [Environment]::GetEnvironmentVariable("CRYLO_USER_PATH_VALUE","Process"); ` +
+            '[Environment]::SetEnvironmentVariable("Path",$value,"User")'
+        ],
+        {
+          cwd: root,
+          env: {
+            ...process.env,
+            CRYLO_USER_PATH_VALUE: updatedPath
+          },
+          stdio: 'inherit',
+          shell: false
+        }
+      );
+
+      if (
+        pathUpdate.error ||
+        pathUpdate.status !== 0
+      ) {
+        fail(
+          'Unable to register CryLo in the Windows user PATH.'
+        );
+      }
+    }
+
+    console.log(
+      `CryLo command registered: ${commandPath}`
+    );
+
+    if (!alreadyRegistered) {
+      console.log(
+        'Open a new terminal to use "crylo" from anywhere.'
+      );
+    }
+
     return;
   }
 
