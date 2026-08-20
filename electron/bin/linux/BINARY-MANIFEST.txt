@@ -1,17 +1,17 @@
 CryLo Electron Linux Binary Manifest
-Generated-UTC: 2026-08-20T00:32:34Z
+Generated-UTC: 2026-08-20T00:46:56Z
 Git-Branch: feature/unified-electron-release-pipeline
-Git-Commit: 3a2df61ff5
+Git-Commit: c9f315709d
 Architecture: arm64
 Source-Directory: build/linux-arm64/bin
 
 File: CryLo-daemon
 Size: 23589008
-SHA256: f2b594075a0cb9704f41d77973e1d1f6fbddc4941ab48f16ec9936629029e0e0
-Version: CryLo Chain 'Testnet' (v1.0.0-3a2df61ff)
+SHA256: 47e24172b9717906fbeb9f03a7d46f01d6fb6b01c986775e4b717eda1997eb6f
+Version: CryLo Chain 'Testnet' (v1.0.0-c9f315709)
 
 File: CryLo-wallet-rpc
 Size: 23095488
-SHA256: 425f614b73a11d06319b69e64cf19b776931bf1239671bbeeefa3ab5c4cbe779
-Version: CryLo Chain 'Testnet' (v1.0.0-3a2df61ff)
+SHA256: 51e2f0a7c44e91a83e98ae5b262c47c8d568ce1e4354a3085f1807a196296fe4
+Version: CryLo Chain 'Testnet' (v1.0.0-c9f315709)
 

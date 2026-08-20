@@ -478,6 +478,109 @@ function ensureLinuxBuildDependencies() {
   console.log();
 }
 
+function installUserCommand() {
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  const home = process.env.HOME;
+
+  if (!home) {
+    fail(
+      'Unable to determine the current user home directory.'
+    );
+  }
+
+  const launcher = path.join(root, 'crylo');
+
+  if (!fs.existsSync(launcher)) {
+    fail(
+      `CryLo launcher was not found: ${launcher}`
+    );
+  }
+
+  const candidates = [
+    path.join(home, 'bin'),
+    path.join(home, '.local', 'bin')
+  ];
+
+  const pathEntries = String(process.env.PATH || '')
+    .split(path.delimiter)
+    .filter(Boolean);
+
+  let commandDirectory = candidates.find(
+    (candidate) => pathEntries.includes(candidate)
+  );
+
+  if (!commandDirectory) {
+    commandDirectory = path.join(home, '.local', 'bin');
+
+    console.log(
+      `NOTE: ${commandDirectory} is not currently in PATH.`
+    );
+  }
+
+  fs.mkdirSync(
+    commandDirectory,
+    { recursive: true }
+  );
+
+  const commandPath = path.join(
+    commandDirectory,
+    'crylo'
+  );
+
+  let existing = null;
+
+  try {
+    existing = fs.lstatSync(commandPath);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      fail(
+        `Unable to inspect existing CryLo command: ${error.message}`
+      );
+    }
+  }
+
+  if (existing) {
+    if (!existing.isSymbolicLink()) {
+      fail(
+        `Cannot register CryLo command because ${commandPath} ` +
+        'already exists and is not a symbolic link.'
+      );
+    }
+
+    const existingTarget = fs.readlinkSync(commandPath);
+    const resolvedTarget = path.resolve(
+      path.dirname(commandPath),
+      existingTarget
+    );
+
+    if (resolvedTarget !== launcher) {
+      fail(
+        `Cannot replace existing CryLo command link: ${commandPath}`
+      );
+    }
+
+    fs.unlinkSync(commandPath);
+  }
+
+  fs.symlinkSync(
+    launcher,
+    commandPath
+  );
+
+  console.log(
+    `CryLo command registered: ${commandPath}`
+  );
+
+  if (!pathEntries.includes(commandDirectory)) {
+    console.log(
+      `Add ${commandDirectory} to PATH to run "crylo" from anywhere.`
+    );
+  }
+}
+
 function install() {
   console.log('===== CRYLO INSTALL =====');
   console.log(
@@ -513,6 +616,8 @@ function install() {
       `CryLo release completed but the daemon was not found: ${daemon}`
     );
   }
+
+  installUserCommand();
 
   console.log();
   console.log('CryLo installation completed successfully.');
