@@ -570,7 +570,6 @@ namespace cryptonote
     bool cn_allocated = false;
 
     MLOG_SET_THREAD_NAME(std::string("[miner ") + std::to_string(th_local_index) + "]");
-    MGINFO_GREEN("*Spins roulette wheel*... Mining started. Good luck!");
     uint32_t nonce = m_starter_nonce + th_local_index;
     uint64_t height = 0;
     difficulty_type local_diff = 0;

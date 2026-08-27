@@ -193,6 +193,60 @@ bool t_daemon::run(bool interactive)
 
   try
   {
+#ifdef _WIN32
+    // Windows-only daemon lifecycle.
+    //
+    // Keep all Windows console/dashboard behavior isolated here so the
+    // proven POSIX/Linux daemon lifecycle below remains unchanged.
+    if (!mp_internals->core.run())
+      return false;
+
+    for(auto& rpc: mp_internals->rpcs)
+      rpc->run();
+
+    if (mp_internals->zmq)
+      mp_internals->zmq->server.run();
+    else
+      MINFO("ZMQ server disabled");
+
+    if (public_rpc_port > 0)
+    {
+      mp_internals->p2p.get().set_rpc_port(public_rpc_port);
+    }
+
+    if (!interactive)
+    {
+      // Background operation has no terminal UI. P2P owns the daemon
+      // lifetime exactly as required by the Windows background launcher.
+      mp_internals->p2p.run();
+      return true;
+    }
+
+    // Interactive Windows operation uses the native CryLo dashboard.
+    // RPC and ZMQ are already active. Run P2P on a worker while the
+    // dashboard owns the console on this thread.
+    crylotui::install_tui_log_callback();
+
+    std::thread p2p_thread([this]() {
+      mp_internals->p2p.run();
+    });
+
+    crylotui::run_tui(stop);
+
+    shutdown.store(true);
+    this->stop_p2p();
+
+    if (p2p_thread.joinable())
+      p2p_thread.join();
+
+    if (mp_internals->zmq)
+      mp_internals->zmq->server.stop();
+
+    for(auto& rpc : mp_internals->rpcs)
+      rpc->stop();
+
+    return true;
+#else
     // CryLo Chain: Play Datasette animation (uses raw ANSI on stderr)
     crylotui::play_datasette_animation();
 
@@ -248,6 +302,7 @@ bool t_daemon::run(bool interactive)
     for(auto& rpc : mp_internals->rpcs)
       rpc->stop();
     return true;
+#endif
   }
   catch (std::exception const & ex)
   {

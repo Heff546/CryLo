@@ -13,3 +13,7 @@ crylo-gas-treasury-wallet.address.txt
 crylo-gas-treasury-wallet.*.locked.*
 *.locked.*
 electron/bin/linux/*.old-*
+# Project-owned Windows installer customization
+!electron/build/
+electron/build/*
+!electron/build/installer.nsh

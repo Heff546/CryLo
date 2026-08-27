@@ -6333,7 +6333,6 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
   uint64_t tier_unlocked[4] = {0, 0, 0, 0};
   uint64_t pre_vesting_amount = 0;
   uint64_t pre_vesting_count = 0;
-  uint64_t vesting_outputs = 0;
 
   // Map: unlock_block -> amount (for timeline)
   std::map<uint64_t, uint64_t> unlock_schedule;
@@ -6370,7 +6369,6 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
     int tier = td.m_internal_output_index;  // 0=tier1, 1=tier2, 2=tier3, 3=tier4
     uint64_t real_unlock_block = td.m_block_height + tier_delays[tier];
 
-    vesting_outputs++;
     if (unlocked)
       tier_unlocked[tier] += amount;
     else
@@ -7194,14 +7192,12 @@ bool simple_wallet::transfer_main(const std::vector<std::string> &args_, bool ca
         uint64_t total_fee = 0;
         uint64_t dust_not_in_fee = 0;
         uint64_t dust_in_fee = 0;
-        uint64_t change = 0;
         for (size_t n = 0; n < ptx_vector.size(); ++n)
         {
           total_fee += ptx_vector[n].fee;
           for (auto i: ptx_vector[n].selected_transfers)
             total_sent += m_wallet->get_transfer_details(i).amount();
           total_sent -= ptx_vector[n].change_dts.amount + ptx_vector[n].fee;
-          change += ptx_vector[n].change_dts.amount;
 
           if (ptx_vector[n].dust_added_to_fee)
             dust_in_fee += ptx_vector[n].dust;

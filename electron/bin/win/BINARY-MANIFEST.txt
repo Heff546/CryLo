@@ -1,17 +1,17 @@
 CryLo Electron win Binary Manifest
-Generated-UTC: 2026-08-20T02:04:16.658Z
+Generated-UTC: 2026-08-26T02:32:26.760Z
 Platform: win
 Architecture: x64
 Network: testnet
 Source-Directory: C:\Users\matth\CryLo\build\win-x64\bin
 
 File: CryLo-daemon.exe
-Size: 32473912
-SHA256: cb28c48d01da0e76911e98bf47c3a107692a7a9a52406c73ee58d3425470ac45
-Version: CryLo Chain 'Testnet' (v1.0.0-4ad27c2c5)
+Size: 33515807
+SHA256: ec29ba39dacdd10abe003e8f5365f9892a795bb5689972193f8c63da4e15ca6a
+Version: CryLo Chain 'Testnet' (v1.0.0-6b4460dae)
 
 File: CryLo-wallet-rpc.exe
-Size: 32881413
-SHA256: 858e83c7d230c4d58c272b41a5132d4972091c4c2e4d23a45569f91e8af7bc90
-Version: CryLo Chain 'Testnet' (v1.0.0-4ad27c2c5)
+Size: 33891654
+SHA256: 97114eed66dddf99dfabd37d2f365b24fc7180683967f184850272058d6cf5ad
+Version: CryLo Chain 'Testnet' (v1.0.0-6b4460dae)
 
