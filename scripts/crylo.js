@@ -220,6 +220,10 @@ function update() {
   }
 
   console.log();
+  console.log('Preparing build dependencies...');
+
+  ensureLinuxBuildDependencies();
+
   console.log('Building the current native CryLo and Electron release...');
 
   const result = spawnSync(
