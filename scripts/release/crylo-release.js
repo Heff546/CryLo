@@ -158,8 +158,8 @@ function verifyPrerequisites(target) {
           ['/d', '/s', '/c', 'npm.cmd --version'])
       : capture('npm', ['--version']);
 
-  if (major(npmVersion) < 10) {
-    fail(`npm 10 or newer is required. Found ${npmVersion || 'unknown'}.`);
+  if (major(npmVersion) < 9) {
+    fail(`npm 9 or newer is required. Found ${npmVersion || 'unknown'}.`);
   }
 
   console.log('===== CRYLO BUILD HOST =====');
