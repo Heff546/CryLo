@@ -139,25 +139,39 @@ function restartSystemService(service) {
   );
 }
 
-function deployAnchorRelease() {
+function deployInfrastructureRelease() {
   if (process.platform !== 'linux') {
     return;
   }
 
-  const service = 'crylo-anchor.service';
-  const active = probe(
-    'systemctl',
-    ['is-active', '--quiet', service]
+  const roles = [
+    {
+      service: 'crylo-anchor.service',
+      label: 'Canonical Anchor'
+    },
+    {
+      service: 'crylo-relay.service',
+      label: 'Public Relay'
+    }
+  ];
+
+  const role = roles.find(
+    (candidate) => probe(
+      'systemctl',
+      ['is-active', '--quiet', candidate.service]
+    ).ok
   );
 
-  if (!active.ok) {
+  if (!role) {
     return;
   }
+
+  const { service, label } = role;
 
   const native = expectedNativeBin();
 
   if (!native) {
-    fail('Unable to determine the Anchor release binary.');
+    fail(`Unable to determine the ${label} release binary.`);
   }
 
   const source = path.join(
@@ -169,16 +183,16 @@ function deployAnchorRelease() {
   const staged = `${target}.new`;
 
   if (!fs.existsSync(source)) {
-    fail(`The new Anchor daemon was not found: ${source}`);
+    fail(`The new ${label} daemon was not found: ${source}`);
   }
 
   if (!fs.existsSync(target)) {
-    fail(`The deployed Anchor daemon was not found: ${target}`);
+    fail(`The deployed ${label} daemon was not found: ${target}`);
   }
 
   if (probe('cmp', ['-s', source, target]).ok) {
     console.log(
-      'Canonical Anchor already runs the current daemon binary.'
+      `${label} already runs the current daemon binary.`
     );
     return;
   }
@@ -198,7 +212,7 @@ function deployAnchorRelease() {
 
   function rollback(message) {
     console.error(`ERROR: ${message}`);
-    console.error('Restoring the previous Anchor daemon...');
+    console.error(`Restoring the previous ${label} daemon...`);
 
     run('sudo', ['cp', '-a', backup, target]);
 
@@ -209,18 +223,18 @@ function deployAnchorRelease() {
       rollbackRestart.status !== 0
     ) {
       fail(
-        'Anchor rollback was copied into place, but its service ' +
+        `${label} rollback was copied into place, but its service ` +
         'could not be restarted.'
       );
     }
 
     fail(
-      'The previous Anchor daemon was restored and restarted.'
+      `${label}: the previous daemon was restored and restarted.`
     );
   }
 
   console.log();
-  console.log('===== DEPLOYING CANONICAL ANCHOR RELEASE =====');
+  console.log(`===== DEPLOYING ${label.toUpperCase()} RELEASE =====`);
   console.log(`Source: ${source}`);
   console.log(`Target: ${target}`);
   console.log(`Backup: ${backup}`);
@@ -241,7 +255,7 @@ function deployAnchorRelease() {
   const restart = restartSystemService(service);
 
   if (restart.error || restart.status !== 0) {
-    rollback('The canonical Anchor service restart failed.');
+    rollback(`The ${label} service restart failed.`);
   }
 
   const serviceReady = waitForProbe(
@@ -254,7 +268,7 @@ function deployAnchorRelease() {
 
   if (!serviceReady) {
     rollback(
-      'The canonical Anchor service did not become active.'
+      `${label}: the service did not become active.`
     );
   }
 
@@ -270,7 +284,7 @@ function deployAnchorRelease() {
 
   if (!mainPid.ok || !/^\d+$/.test(mainPid.stdout)) {
     rollback(
-      'The canonical Anchor service did not report a valid process ID.'
+      `${label}: the service did not report a valid process ID.`
     );
   }
 
@@ -281,7 +295,7 @@ function deployAnchorRelease() {
 
   if (!executable.ok || executable.stdout !== target) {
     rollback(
-      'The canonical Anchor service is not running the deployed daemon.'
+      `${label}: the service is not running the deployed daemon.`
     );
   }
 
@@ -319,11 +333,11 @@ function deployAnchorRelease() {
 
   if (!rpcReady) {
     rollback(
-      'The canonical Anchor RPC did not become healthy.'
+      `${label}: RPC did not become healthy.`
     );
   }
 
-  console.log('Canonical Anchor deployment verified successfully.');
+  console.log(`${label} deployment verified successfully.`);
   console.log(`Running daemon: ${binaryVersion(target)}`);
 }
 
@@ -521,7 +535,7 @@ function update() {
     );
   }
 
-  deployAnchorRelease();
+  deployInfrastructureRelease();
   installUserCommand();
 
   console.log();
