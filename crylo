@@ -20,8 +20,26 @@ done
 ROOT=$(CDPATH= cd -- "$(dirname -- "$SCRIPT")" && pwd)
 cd "$ROOT"
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "ERROR: Node.js is required to run CryLo." >&2
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  if [ -f /etc/debian_version ] && [ -x /usr/bin/apt-get ]; then
+    echo "Installing the CryLo Node.js build prerequisites..."
+
+    if [ "$(id -u)" -eq 0 ]; then
+      /usr/bin/apt-get install -y --no-install-recommends nodejs npm
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo /usr/bin/apt-get install -y --no-install-recommends nodejs npm
+    else
+      echo "ERROR: sudo is required to install Node.js and npm." >&2
+      exit 1
+    fi
+  else
+    echo "ERROR: Node.js and npm are required to run CryLo." >&2
+    exit 1
+  fi
+fi
+
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  echo "ERROR: Node.js or npm is unavailable after installation." >&2
   exit 1
 fi
 
