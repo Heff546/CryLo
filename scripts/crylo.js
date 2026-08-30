@@ -28,6 +28,12 @@ const daemonPidFile = path.join(
   'daemon.pid'
 );
 
+const generatedElectronInputs = [
+  'electron/bin/linux/BINARY-MANIFEST.txt',
+  'electron/bin/linux/CryLo-daemon',
+  'electron/bin/linux/CryLo-wallet-rpc'
+];
+
 function fail(message) {
   console.error(`ERROR: ${message}`);
   process.exit(1);
@@ -109,10 +115,40 @@ function update() {
     fail('This CryLo installation is not a Git working tree.');
   }
 
-  const status = git(
+  let status = git(
     ['status', '--porcelain'],
     true
   );
+
+  if (status) {
+    const changedPaths = status
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => line.slice(3));
+
+    const generatedOnly = changedPaths.every(
+      (changedPath) =>
+        generatedElectronInputs.includes(changedPath)
+    );
+
+    if (generatedOnly) {
+      console.log(
+        'Restoring generated Electron binary staging files...'
+      );
+
+      git([
+        'restore',
+        '--source=HEAD',
+        '--',
+        ...generatedElectronInputs
+      ]);
+
+      status = git(
+        ['status', '--porcelain'],
+        true
+      );
+    }
+  }
 
   if (status) {
     fail(
@@ -240,6 +276,16 @@ function update() {
       shell: false
     }
   );
+
+  console.log();
+  console.log('Restoring generated Electron binary staging files...');
+
+  git([
+    'restore',
+    '--source=HEAD',
+    '--',
+    ...generatedElectronInputs
+  ]);
 
   if (result.error) {
     fail(result.error.message);
