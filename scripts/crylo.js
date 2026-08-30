@@ -103,6 +103,230 @@ function git(args, capture = false) {
   );
 }
 
+function waitForProbe(check, attempts = 40) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (check()) {
+      return true;
+    }
+
+    const wait = spawnSync(
+      process.execPath,
+      ['-e', 'setTimeout(() => {}, 250)'],
+      {
+        stdio: 'ignore',
+        shell: false
+      }
+    );
+
+    if (wait.error) {
+      break;
+    }
+  }
+
+  return false;
+}
+
+function restartSystemService(service) {
+  return spawnSync(
+    'sudo',
+    ['systemctl', 'restart', service],
+    {
+      cwd: root,
+      env: process.env,
+      stdio: 'inherit',
+      shell: false
+    }
+  );
+}
+
+function deployAnchorRelease() {
+  if (process.platform !== 'linux') {
+    return;
+  }
+
+  const service = 'crylo-anchor.service';
+  const active = probe(
+    'systemctl',
+    ['is-active', '--quiet', service]
+  );
+
+  if (!active.ok) {
+    return;
+  }
+
+  const native = expectedNativeBin();
+
+  if (!native) {
+    fail('Unable to determine the Anchor release binary.');
+  }
+
+  const source = path.join(
+    native.directory,
+    native.daemon
+  );
+
+  const target = '/opt/crylo/bin/CryLo-daemon';
+  const staged = `${target}.new`;
+
+  if (!fs.existsSync(source)) {
+    fail(`The new Anchor daemon was not found: ${source}`);
+  }
+
+  if (!fs.existsSync(target)) {
+    fail(`The deployed Anchor daemon was not found: ${target}`);
+  }
+
+  if (probe('cmp', ['-s', source, target]).ok) {
+    console.log(
+      'Canonical Anchor already runs the current daemon binary.'
+    );
+    return;
+  }
+
+  const commit = git(
+    ['rev-parse', '--short=10', 'HEAD'],
+    true
+  );
+
+  const generated = new Date()
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}Z$/, 'Z');
+
+  const backup =
+    `${target}.before-${commit}.${generated}.bak`;
+
+  function rollback(message) {
+    console.error(`ERROR: ${message}`);
+    console.error('Restoring the previous Anchor daemon...');
+
+    run('sudo', ['cp', '-a', backup, target]);
+
+    const rollbackRestart = restartSystemService(service);
+
+    if (
+      rollbackRestart.error ||
+      rollbackRestart.status !== 0
+    ) {
+      fail(
+        'Anchor rollback was copied into place, but its service ' +
+        'could not be restarted.'
+      );
+    }
+
+    fail(
+      'The previous Anchor daemon was restored and restarted.'
+    );
+  }
+
+  console.log();
+  console.log('===== DEPLOYING CANONICAL ANCHOR RELEASE =====');
+  console.log(`Source: ${source}`);
+  console.log(`Target: ${target}`);
+  console.log(`Backup: ${backup}`);
+
+  run('sudo', [
+    'install',
+    '-o', 'root',
+    '-g', 'root',
+    '-m', '0755',
+    source,
+    staged
+  ]);
+
+  run('sudo', [staged, '--version']);
+  run('sudo', ['cp', '-a', target, backup]);
+  run('sudo', ['mv', staged, target]);
+
+  const restart = restartSystemService(service);
+
+  if (restart.error || restart.status !== 0) {
+    rollback('The canonical Anchor service restart failed.');
+  }
+
+  const serviceReady = waitForProbe(
+    () => probe(
+      'systemctl',
+      ['is-active', '--quiet', service]
+    ).ok,
+    40
+  );
+
+  if (!serviceReady) {
+    rollback(
+      'The canonical Anchor service did not become active.'
+    );
+  }
+
+  const mainPid = probe(
+    'systemctl',
+    [
+      'show',
+      service,
+      '--property=MainPID',
+      '--value'
+    ]
+  );
+
+  if (!mainPid.ok || !/^\d+$/.test(mainPid.stdout)) {
+    rollback(
+      'The canonical Anchor service did not report a valid process ID.'
+    );
+  }
+
+  const executable = probe(
+    'readlink',
+    ['-f', `/proc/${mainPid.stdout}/exe`]
+  );
+
+  if (!executable.ok || executable.stdout !== target) {
+    rollback(
+      'The canonical Anchor service is not running the deployed daemon.'
+    );
+  }
+
+  const rpcReady = waitForProbe(() => {
+    const response = probe(
+      'curl',
+      [
+        '--fail',
+        '--silent',
+        '--max-time', '2',
+        '-H', 'Content-Type: application/json',
+        '-d',
+        '{"jsonrpc":"2.0","id":"0","method":"get_info"}',
+        'http://127.0.0.1:22641/json_rpc'
+      ]
+    );
+
+    if (!response.ok) {
+      return false;
+    }
+
+    try {
+      const body = JSON.parse(response.stdout);
+
+      return (
+        body &&
+        body.result &&
+        body.result.status === 'OK' &&
+        body.result.offline === false
+      );
+    } catch (_) {
+      return false;
+    }
+  }, 120);
+
+  if (!rpcReady) {
+    rollback(
+      'The canonical Anchor RPC did not become healthy.'
+    );
+  }
+
+  console.log('Canonical Anchor deployment verified successfully.');
+  console.log(`Running daemon: ${binaryVersion(target)}`);
+}
+
 function update() {
   console.log('===== CRYLO UPDATE =====');
 
@@ -296,6 +520,9 @@ function update() {
       'CryLo source was updated successfully, but the release build failed.'
     );
   }
+
+  deployAnchorRelease();
+  installUserCommand();
 
   console.log();
   console.log('CryLo update completed successfully.');
