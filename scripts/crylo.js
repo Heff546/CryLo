@@ -149,18 +149,22 @@ function update() {
     }
   );
 
+  let upstream;
+
   if (
     upstreamResult.error ||
     upstreamResult.status !== 0
   ) {
-    fail(
-      `Branch "${branch}" does not have a configured upstream.`
-    );
-  }
+    upstream = `origin/${branch}`;
 
-  const upstream = String(
-    upstreamResult.stdout || ''
-  ).trim();
+    console.log(
+      `No configured upstream; using "${upstream}".`
+    );
+  } else {
+    upstream = String(
+      upstreamResult.stdout || ''
+    ).trim();
+  }
 
   if (!upstream.startsWith('origin/')) {
     fail(
