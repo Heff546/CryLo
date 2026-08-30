@@ -176,43 +176,51 @@ function update() {
   console.log(`Branch: ${branch}`);
   console.log('Checking for CryLo updates...');
 
-  git(['fetch', 'origin']);
+  const remoteBranch = upstream.slice('origin/'.length);
+
+  git([
+    'fetch',
+    'origin',
+    `+refs/heads/${remoteBranch}:refs/remotes/${upstream}`
+  ]);
 
   const remote = git(
     ['rev-parse', upstream],
     true
   );
 
+  let after = before;
+
   if (before === remote) {
     console.log();
-    console.log('CryLo is already up to date.');
-    return;
-  }
-
-  const base = git(
-    ['merge-base', 'HEAD', upstream],
-    true
-  );
-
-  if (base !== before) {
-    fail(
-      'The local and remote CryLo histories have diverged. ' +
-      'Update stopped without modifying the source tree.'
+    console.log('CryLo source is already up to date.');
+  } else {
+    const base = git(
+      ['merge-base', 'HEAD', upstream],
+      true
     );
+
+    if (base !== before) {
+      fail(
+        'The local and remote CryLo histories have diverged. ' +
+        'Update stopped without modifying the source tree.'
+      );
+    }
+
+    console.log('Updating CryLo source...');
+    git(['merge', '--ff-only', upstream]);
+
+    after = git(
+      ['rev-parse', 'HEAD'],
+      true
+    );
+
+    console.log();
+    console.log(`Updated CryLo: ${before.slice(0, 9)} -> ${after.slice(0, 9)}`);
   }
 
-  console.log('Updating CryLo source...');
-  git(['merge', '--ff-only', upstream]);
-
-  const after = git(
-    ['rev-parse', 'HEAD'],
-    true
-  );
-
   console.log();
-  console.log(`Updated CryLo: ${before.slice(0, 9)} -> ${after.slice(0, 9)}`);
-  console.log();
-  console.log('Building the updated native CryLo and Electron release...');
+  console.log('Building the current native CryLo and Electron release...');
 
   const result = spawnSync(
     process.execPath,
