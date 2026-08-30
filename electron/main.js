@@ -37,7 +37,7 @@ function formatNexusGasUnits(amount) {
 
 const BRIDGE_API_URL =
   process.env.CRYLONEXUS_API_URL ||
-  'http://35.203.86.91/crylonexus-api';
+  'http://34.19.201.107/crylonexus-api';
 
 const NEXUS_RUNTIME_CACHE_MS = 60_000;
 
