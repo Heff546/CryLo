@@ -1679,6 +1679,7 @@ Usage:
   crylo start         Start CryLo in the background
   crylo stop          Stop background CryLo
   crylo status        Show CryLo status
+  crylo desktop       Install Wallet and Daemon desktop icons
   crylo release       Build a native CryLo release
   crylo --check       Check release build prerequisites
   crylo help          Show this help
@@ -1715,6 +1716,11 @@ switch (command) {
 
   case 'status':
     status();
+    break;
+
+  case 'desktop':
+    installUserCommand();
+    installLinuxDesktopLaunchers();
     break;
 
   case 'install':
