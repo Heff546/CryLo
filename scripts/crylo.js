@@ -1510,41 +1510,90 @@ function start() {
     { recursive: true }
   );
 
-  const daemonLogDescriptor = fs.openSync(
-    daemonLog,
-    'a'
-  );
+  const userSystemd =
+    process.platform === 'linux' &&
+    probe(
+      'systemctl',
+      ['--user', 'show-environment']
+    ).ok;
 
-  const child = require('child_process').spawn(
-    daemon,
-    daemonArgs,
-    {
-      cwd: root,
-      env: process.env,
-      detached: true,
-      stdio: [
-        'ignore',
-        daemonLogDescriptor,
-        daemonLogDescriptor
+  let childPid = null;
+
+  if (userSystemd) {
+    spawnSync(
+      'systemctl',
+      ['--user', 'stop', 'crylo-daemon.service'],
+      { stdio: 'ignore', shell: false }
+    );
+
+    spawnSync(
+      'systemctl',
+      ['--user', 'reset-failed', 'crylo-daemon.service'],
+      { stdio: 'ignore', shell: false }
+    );
+
+    const serviceStart = spawnSync(
+      'systemd-run',
+      [
+        '--user',
+        '--unit=crylo-daemon',
+        '--collect',
+        '--service-type=simple',
+        '--property=Restart=on-failure',
+        '--property=RestartSec=5s',
+        `--property=WorkingDirectory=${root}`,
+        '--',
+        daemon,
+        ...daemonArgs
       ],
-      windowsHide: process.platform === 'win32',
-      shell: false
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (
+      serviceStart.error ||
+      serviceStart.status !== 0
+    ) {
+      fail(
+        'Unable to start the CryLo current-user daemon service.'
+      );
     }
-  );
+  } else {
+    const daemonLogDescriptor = fs.openSync(
+      daemonLog,
+      'a'
+    );
 
-  fs.closeSync(daemonLogDescriptor);
+    const child = require('child_process').spawn(
+      daemon,
+      daemonArgs,
+      {
+        cwd: root,
+        env: process.env,
+        detached: true,
+        stdio: [
+          'ignore',
+          daemonLogDescriptor,
+          daemonLogDescriptor
+        ],
+        windowsHide: process.platform === 'win32',
+        shell: false
+      }
+    );
 
-  if (!child.pid) {
-    fail('CryLo daemon did not return a process ID.');
+    fs.closeSync(daemonLogDescriptor);
+
+    if (!child.pid) {
+      fail('CryLo daemon did not return a process ID.');
+    }
+
+    childPid = child.pid;
+    child.unref();
   }
-
-  fs.writeFileSync(
-    daemonPidFile,
-    `${child.pid}\n`,
-    'utf8'
-  );
-
-  child.unref();
 
   const rpcProbeSource = [
     "const http = require('http');",
@@ -1623,10 +1672,18 @@ function start() {
   );
 
   if (!rpcReady) {
-    try {
-      process.kill(child.pid, 'SIGTERM');
-    } catch (_) {
-      // The failed daemon may already have exited.
+    if (userSystemd) {
+      spawnSync(
+        'systemctl',
+        ['--user', 'stop', 'crylo-daemon.service'],
+        { stdio: 'ignore', shell: false }
+      );
+    } else if (childPid) {
+      try {
+        process.kill(childPid, 'SIGTERM');
+      } catch (_) {
+        // The failed daemon may already have exited.
+      }
     }
 
     try {
@@ -1642,13 +1699,100 @@ function start() {
     );
   }
 
+  if (userSystemd) {
+    const mainPid = probe(
+      'systemctl',
+      [
+        '--user',
+        'show',
+        'crylo-daemon.service',
+        '--property=MainPID',
+        '--value'
+      ]
+    );
+
+    if (
+      !mainPid.ok ||
+      !/^\d+$/.test(mainPid.stdout) ||
+      mainPid.stdout === '0'
+    ) {
+      spawnSync(
+        'systemctl',
+        ['--user', 'stop', 'crylo-daemon.service'],
+        { stdio: 'ignore', shell: false }
+      );
+
+      fail(
+        'CryLo current-user daemon service did not report a valid process ID.'
+      );
+    }
+
+    childPid = Number(mainPid.stdout);
+  }
+
+  fs.writeFileSync(
+    daemonPidFile,
+    `${childPid}\n`,
+    'utf8'
+  );
+
   console.log(
     'CryLo daemon started successfully and local RPC is ready.'
   );
+
+  if (userSystemd) {
+    console.log(
+      'Background manager: current-user systemd service'
+    );
+  }
 }
 
 function stop() {
   console.log('===== CRYLO STOP =====');
+
+  const userSystemd =
+    process.platform === 'linux' &&
+    probe(
+      'systemctl',
+      ['--user', 'show-environment']
+    ).ok;
+
+  if (
+    userSystemd &&
+    probe(
+      'systemctl',
+      ['--user', 'is-active', '--quiet', 'crylo-daemon.service']
+    ).ok
+  ) {
+    const stopped = spawnSync(
+      'systemctl',
+      ['--user', 'stop', 'crylo-daemon.service'],
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (
+      stopped.error ||
+      stopped.status !== 0
+    ) {
+      fail(
+        'Unable to stop the CryLo current-user daemon service.'
+      );
+    }
+
+    try {
+      fs.unlinkSync(daemonPidFile);
+    } catch (_) {
+      // No PID record to remove.
+    }
+
+    console.log('CryLo daemon stopped successfully.');
+    return;
+  }
 
   const daemon = runningDaemon();
 
@@ -1740,7 +1884,7 @@ function stop() {
   try {
     fs.unlinkSync(daemonPidFile);
   } catch (_) {
-    // Daemon is already stopped.
+    // Nothing else to clean up.
   }
 
   console.log('CryLo daemon stopped successfully.');
