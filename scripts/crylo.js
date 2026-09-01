@@ -1539,6 +1539,7 @@ function start() {
         '--unit=crylo-daemon',
         '--collect',
         '--service-type=simple',
+        '--setenv=TERM=dumb',
         '--property=Restart=on-failure',
         '--property=RestartSec=5s',
         `--property=WorkingDirectory=${root}`,
@@ -1573,7 +1574,10 @@ function start() {
       daemonArgs,
       {
         cwd: root,
-        env: process.env,
+        env: {
+          ...process.env,
+          TERM: 'dumb'
+        },
         detached: true,
         stdio: [
           'ignore',
