@@ -598,6 +598,7 @@ function update() {
 
   deployInfrastructureRelease();
   installUserCommand();
+  installLinuxDesktopLaunchers();
 
   console.log();
   console.log('CryLo update completed successfully.');
@@ -1090,6 +1091,263 @@ function installUserCommand() {
   }
 }
 
+function installLinuxDesktopLaunchers() {
+  if (process.platform !== 'linux') {
+    return;
+  }
+
+  const infrastructureServices = [
+    'crylo-anchor.service',
+    'crylo-relay.service'
+  ];
+
+  const infrastructureHost = infrastructureServices.some(
+    (service) => probe(
+      'systemctl',
+      ['is-active', '--quiet', service]
+    ).ok
+  );
+
+  if (infrastructureHost) {
+    console.log(
+      'Skipping desktop launchers on CryLo infrastructure host.'
+    );
+    return;
+  }
+
+  const home = process.env.HOME;
+
+  if (!home) {
+    fail(
+      'Unable to determine the current user home directory ' +
+      'for CryLo desktop launchers.'
+    );
+  }
+
+  const electronDirectory = path.join(root, 'electron');
+  const distDirectory = path.join(electronDirectory, 'dist');
+  const sourceIcon = path.join(
+    electronDirectory,
+    'assets',
+    'icon.png'
+  );
+
+  if (!fs.existsSync(sourceIcon)) {
+    fail(`CryLo desktop icon was not found: ${sourceIcon}`);
+  }
+
+  if (!fs.existsSync(distDirectory)) {
+    fail(
+      `CryLo Electron release directory was not found: ${distDirectory}`
+    );
+  }
+
+  const appImages = fs.readdirSync(distDirectory)
+    .filter((name) => name.endsWith('.AppImage'))
+    .filter((name) => {
+      const lower = name.toLowerCase();
+
+      if (process.arch === 'arm64') {
+        return lower.includes('arm64');
+      }
+
+      return (
+        !lower.includes('arm64') &&
+        !lower.includes('aarch64')
+      );
+    })
+    .map((name) => {
+      const filePath = path.join(distDirectory, name);
+
+      return {
+        filePath,
+        modified: fs.statSync(filePath).mtimeMs
+      };
+    })
+    .sort((left, right) => right.modified - left.modified);
+
+  if (!appImages.length) {
+    fail(
+      `No ${process.arch} CryLo Wallet AppImage was found in ` +
+      `${distDirectory}.`
+    );
+  }
+
+  const walletAppImage = appImages[0].filePath;
+
+  fs.chmodSync(walletAppImage, 0o755);
+
+  const localBin = path.join(home, '.local', 'bin');
+  const applicationsDirectory = path.join(
+    home,
+    '.local',
+    'share',
+    'applications'
+  );
+  const iconsDirectory = path.join(
+    home,
+    '.local',
+    'share',
+    'icons',
+    'hicolor',
+    '512x512',
+    'apps'
+  );
+
+  fs.mkdirSync(localBin, { recursive: true });
+  fs.mkdirSync(applicationsDirectory, { recursive: true });
+  fs.mkdirSync(iconsDirectory, { recursive: true });
+
+  const walletIcon = path.join(
+    iconsDirectory,
+    'crylo-wallet.png'
+  );
+  const daemonIcon = path.join(
+    iconsDirectory,
+    'crylo-daemon.png'
+  );
+
+  fs.copyFileSync(sourceIcon, walletIcon);
+  fs.copyFileSync(sourceIcon, daemonIcon);
+  fs.chmodSync(walletIcon, 0o644);
+  fs.chmodSync(daemonIcon, 0o644);
+
+  const cryloCommand = path.join(localBin, 'crylo');
+  const daemonLauncher = path.join(
+    localBin,
+    'crylo-daemon-launcher'
+  );
+
+  if (!fs.existsSync(cryloCommand)) {
+    fail(
+      `CryLo command must be installed before desktop launchers: ` +
+      `${cryloCommand}`
+    );
+  }
+
+  const shellQuote = (value) =>
+    "'" + String(value).replace(/'/g, "'\\''") + "'";
+
+  const daemonLauncherText = [
+    '#!/usr/bin/env bash',
+    'set +e',
+    `CRYLO_COMMAND=${shellQuote(cryloCommand)}`,
+    '"$CRYLO_COMMAND" start',
+    'START_STATUS=$?',
+    'echo',
+    '"$CRYLO_COMMAND" status',
+    'echo',
+    'if [ -t 0 ]; then',
+    '  read -r -p "Press Enter to close this window..." _',
+    'fi',
+    'exit "$START_STATUS"',
+    ''
+  ].join('\n');
+
+  fs.writeFileSync(
+    daemonLauncher,
+    daemonLauncherText,
+    { encoding: 'utf8', mode: 0o755 }
+  );
+  fs.chmodSync(daemonLauncher, 0o755);
+
+  const desktopExecQuote = (value) =>
+    '"' + String(value)
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"') + '"';
+
+  const walletDesktop = [
+    '[Desktop Entry]',
+    'Type=Application',
+    'Version=1.0',
+    'Name=CryLo Wallet',
+    'Comment=Open the CryLo Wallet',
+    `Exec=${desktopExecQuote(walletAppImage)}`,
+    `Icon=${walletIcon}`,
+    'Terminal=false',
+    'Categories=Finance;',
+    'StartupNotify=true',
+    ''
+  ].join('\n');
+
+  const daemonDesktop = [
+    '[Desktop Entry]',
+    'Type=Application',
+    'Version=1.0',
+    'Name=CryLo Daemon',
+    'Comment=Start the local CryLo Layer 1 daemon',
+    `Exec=${desktopExecQuote(daemonLauncher)}`,
+    `Icon=${daemonIcon}`,
+    'Terminal=true',
+    'Categories=Finance;',
+    'StartupNotify=true',
+    ''
+  ].join('\n');
+
+  const walletDesktopPath = path.join(
+    applicationsDirectory,
+    'crylo-wallet.desktop'
+  );
+  const daemonDesktopPath = path.join(
+    applicationsDirectory,
+    'crylo-daemon.desktop'
+  );
+
+  fs.writeFileSync(walletDesktopPath, walletDesktop, 'utf8');
+  fs.writeFileSync(daemonDesktopPath, daemonDesktop, 'utf8');
+  fs.chmodSync(walletDesktopPath, 0o755);
+  fs.chmodSync(daemonDesktopPath, 0o755);
+
+  const desktopProbe = probe(
+    'xdg-user-dir',
+    ['DESKTOP']
+  );
+
+  const desktopDirectory =
+    desktopProbe.ok && desktopProbe.stdout
+      ? desktopProbe.stdout
+      : path.join(home, 'Desktop');
+
+  fs.mkdirSync(desktopDirectory, { recursive: true });
+
+  const desktopWalletPath = path.join(
+    desktopDirectory,
+    'CryLo Wallet.desktop'
+  );
+  const desktopDaemonPath = path.join(
+    desktopDirectory,
+    'CryLo Daemon.desktop'
+  );
+
+  fs.copyFileSync(walletDesktopPath, desktopWalletPath);
+  fs.copyFileSync(daemonDesktopPath, desktopDaemonPath);
+  fs.chmodSync(desktopWalletPath, 0o755);
+  fs.chmodSync(desktopDaemonPath, 0o755);
+
+  spawnSync(
+    'gio',
+    ['set', desktopWalletPath, 'metadata::trusted', 'true'],
+    { stdio: 'ignore', shell: false }
+  );
+
+  spawnSync(
+    'gio',
+    ['set', desktopDaemonPath, 'metadata::trusted', 'true'],
+    { stdio: 'ignore', shell: false }
+  );
+
+  spawnSync(
+    'update-desktop-database',
+    [applicationsDirectory],
+    { stdio: 'ignore', shell: false }
+  );
+
+  console.log();
+  console.log('CryLo desktop launchers installed:');
+  console.log(`  CryLo Wallet: ${desktopWalletPath}`);
+  console.log(`  CryLo Daemon: ${desktopDaemonPath}`);
+}
+
 function install() {
   console.log('===== CRYLO INSTALL =====');
   console.log(
@@ -1127,6 +1385,7 @@ function install() {
   }
 
   installUserCommand();
+  installLinuxDesktopLaunchers();
 
   console.log();
   console.log('CryLo installation completed successfully.');
