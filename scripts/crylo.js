@@ -1435,9 +1435,43 @@ function start() {
     );
   }
 
+  const home =
+    process.env.HOME ||
+    process.env.USERPROFILE;
+
+  if (!home) {
+    fail(
+      'Unable to determine the current user home directory.'
+    );
+  }
+
+  const configRoot =
+    process.platform === 'win32'
+      ? path.join(
+          process.env.APPDATA || path.join(home, 'AppData', 'Roaming'),
+          'crylo-wallet'
+        )
+      : path.join(
+          process.env.XDG_CONFIG_HOME || path.join(home, '.config'),
+          'crylo-wallet'
+        );
+
+  const logDirectory = path.join(configRoot, 'logs');
+  const daemonLog = path.join(logDirectory, 'daemon-background.log');
+
   const daemonArgs = [
     '--testnet',
     '--non-interactive',
+    '--rpc-bind-ip',
+    '127.0.0.1',
+    '--rpc-bind-port',
+    '22641',
+    '--zmq-rpc-bind-ip',
+    '127.0.0.1',
+    '--zmq-rpc-bind-port',
+    '22642',
+    '--log-file',
+    daemonLog,
     '--add-priority-node',
     network.entryRelay
   ];
@@ -1446,9 +1480,23 @@ function start() {
     `Entry relay: ${network.entryRelay}`
   );
 
+  console.log(
+    `Daemon log: ${daemonLog}`
+  );
+
   fs.mkdirSync(
     runtimeDirectory,
     { recursive: true }
+  );
+
+  fs.mkdirSync(
+    logDirectory,
+    { recursive: true }
+  );
+
+  const daemonLogDescriptor = fs.openSync(
+    daemonLog,
+    'a'
   );
 
   const child = require('child_process').spawn(
@@ -1458,11 +1506,17 @@ function start() {
       cwd: root,
       env: process.env,
       detached: true,
-      stdio: 'ignore',
+      stdio: [
+        'ignore',
+        daemonLogDescriptor,
+        daemonLogDescriptor
+      ],
       windowsHide: process.platform === 'win32',
       shell: false
     }
   );
+
+  fs.closeSync(daemonLogDescriptor);
 
   if (!child.pid) {
     fail('CryLo daemon did not return a process ID.');
@@ -1476,30 +1530,56 @@ function start() {
 
   child.unref();
 
-  const started = (() => {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const wait = spawnSync(
-        process.execPath,
-        ['-e', 'setTimeout(() => {}, 250)'],
-        {
-          stdio: 'ignore',
-          shell: false
-        }
-      );
+  const rpcProbeSource = [
+    "const http = require('http');",
+    "const body = JSON.stringify({",
+    "  jsonrpc: '2.0',",
+    "  id: '0',",
+    "  method: 'get_info'",
+    "});",
+    "const request = http.request({",
+    "  hostname: '127.0.0.1',",
+    "  port: 22641,",
+    "  path: '/json_rpc',",
+    "  method: 'POST',",
+    "  headers: {",
+    "    'Content-Type': 'application/json',",
+    "    'Content-Length': Buffer.byteLength(body)",
+    "  },",
+    "  timeout: 2000",
+    "}, (response) => {",
+    "  let data = '';",
+    "  response.on('data', (chunk) => { data += chunk; });",
+    "  response.on('end', () => {",
+    "    try {",
+    "      const parsed = JSON.parse(data);",
+    "      process.exit(parsed.result && parsed.result.status === 'OK' ? 0 : 1);",
+    "    } catch (_) {",
+    "      process.exit(1);",
+    "    }",
+    "  });",
+    "});",
+    "request.on('timeout', () => request.destroy());",
+    "request.on('error', () => process.exit(1));",
+    "request.write(body);",
+    "request.end();"
+  ].join('\n');
 
-      if (wait.error) {
-        break;
-      }
+  const rpcReady = waitForProbe(
+    () => probe(
+      process.execPath,
+      ['-e', rpcProbeSource]
+    ).ok,
+    240
+  );
 
-      if (runningDaemon()) {
-        return true;
-      }
+  if (!rpcReady) {
+    try {
+      process.kill(child.pid, 'SIGTERM');
+    } catch (_) {
+      // The failed daemon may already have exited.
     }
 
-    return false;
-  })();
-
-  if (!started) {
     try {
       fs.unlinkSync(daemonPidFile);
     } catch (_) {
@@ -1507,11 +1587,15 @@ function start() {
     }
 
     fail(
-      'CryLo daemon did not remain running after startup.'
+      'CryLo daemon did not make local RPC available on ' +
+      '127.0.0.1:22641. ' +
+      `Review the daemon log: ${daemonLog}`
     );
   }
 
-  console.log('CryLo daemon started successfully.');
+  console.log(
+    'CryLo daemon started successfully and local RPC is ready.'
+  );
 }
 
 function stop() {
