@@ -700,7 +700,7 @@ function runningDaemon() {
 
   const result = probe(
     'ps',
-    ['-eo', 'pid=,args=']
+    ['-eo', 'pid=,stat=,args=']
   );
 
   if (!result.ok) {
@@ -711,7 +711,8 @@ function runningDaemon() {
     .split(/\r?\n/)
     .filter((line) =>
       line.includes('CryLo-daemon') &&
-      !line.includes('scripts/crylo.js')
+      !line.includes('scripts/crylo.js') &&
+      !/^\s*\d+\s+Z/.test(line)
     );
 
   return matches.length
@@ -1581,10 +1582,43 @@ function start() {
   ].join('\n');
 
   const rpcReady = waitForProbe(
-    () => probe(
-      process.execPath,
-      ['-e', rpcProbeSource]
-    ).ok,
+    () => {
+      if (process.platform !== 'win32') {
+        const response = probe(
+          'curl',
+          [
+            '--fail',
+            '--silent',
+            '--max-time', '2',
+            '-H', 'Content-Type: application/json',
+            '-d',
+            '{"jsonrpc":"2.0","id":"0","method":"get_info"}',
+            'http://127.0.0.1:22641/json_rpc'
+          ]
+        );
+
+        if (!response.ok) {
+          return false;
+        }
+
+        try {
+          const body = JSON.parse(response.stdout);
+
+          return Boolean(
+            body &&
+            body.result &&
+            !body.error
+          );
+        } catch (_) {
+          return false;
+        }
+      }
+
+      return probe(
+        process.execPath,
+        ['-e', rpcProbeSource]
+      ).ok;
+    },
     240
   );
 
