@@ -147,11 +147,13 @@ function deployInfrastructureRelease() {
   const roles = [
     {
       service: 'crylo-anchor.service',
-      label: 'Canonical Anchor'
+      label: 'Canonical Anchor',
+      config: '/etc/crylo/crylo-anchor.conf'
     },
     {
       service: 'crylo-relay.service',
-      label: 'Public Relay'
+      label: 'Public Relay',
+      config: '/etc/crylo/crylo-relay.conf'
     }
   ];
 
@@ -166,7 +168,212 @@ function deployInfrastructureRelease() {
     return;
   }
 
-  const { service, label } = role;
+  const { service, label, config } = role;
+
+  if (!fs.existsSync(config)) {
+    fail(`The ${label} configuration was not found: ${config}`);
+  }
+
+  const configText = fs.readFileSync(config, 'utf8');
+
+  function configValue(name, fallback) {
+    const expression = new RegExp(
+      `^\\s*${name}\\s*=\\s*(.+?)\\s*'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const root = path.resolve(__dirname, '..');
+const releaseScript = path.join(
+  root,
+  'scripts',
+  'release',
+  'crylo-release.js'
+);
+
+const network = {
+  mode: 'testnet',
+  entryRelay: 'relay-us-1.crylo.network:22640'
+};
+
+const runtimeDirectory = path.join(
+  root,
+  'build',
+  '.crylo-runtime'
+);
+
+const daemonPidFile = path.join(
+  runtimeDirectory,
+  'daemon.pid'
+);
+
+const generatedElectronInputs = [
+  'electron/bin/linux/BINARY-MANIFEST.txt',
+  'electron/bin/linux/CryLo-daemon',
+  'electron/bin/linux/CryLo-wallet-rpc'
+];
+
+function fail(message) {
+  console.error(`ERROR: ${message}`);
+  process.exit(1);
+}
+
+function run(command, args = [], options = {}) {
+  const result = spawnSync(
+    command,
+    args,
+    {
+      cwd: root,
+      env: process.env,
+      stdio: options.capture ? 'pipe' : 'inherit',
+      encoding: options.capture ? 'utf8' : undefined,
+      shell: false
+    }
+  );
+
+  if (result.error) {
+    fail(result.error.message);
+  }
+
+  if (result.status !== 0) {
+    if (options.capture) {
+      if (result.stdout) {
+        process.stdout.write(result.stdout);
+      }
+      if (result.stderr) {
+        process.stderr.write(result.stderr);
+      }
+    }
+
+    fail(
+      `${command} exited with code ${result.status}.`
+    );
+  }
+
+  return options.capture
+    ? String(result.stdout || '').trim()
+    : '';
+}
+
+function runNode(script, args = []) {
+  const result = spawnSync(
+    process.execPath,
+    [script, ...args],
+    {
+      cwd: root,
+      env: process.env,
+      stdio: 'inherit',
+      shell: false
+    }
+  );
+
+  if (result.error) {
+    fail(result.error.message);
+  }
+
+  process.exit(result.status || 0);
+}
+
+function git(args, capture = false) {
+  return run(
+    'git',
+    args,
+    { capture }
+  );
+}
+
+function waitForProbe(check, attempts = 40) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (check()) {
+      return true;
+    }
+
+    const wait = spawnSync(
+      process.execPath,
+      ['-e', 'setTimeout(() => {}, 250)'],
+      {
+        stdio: 'ignore',
+        shell: false
+      }
+    );
+
+    if (wait.error) {
+      break;
+    }
+  }
+
+  return false;
+}
+
+function restartSystemService(service) {
+  return spawnSync(
+    'sudo',
+    ['systemctl', 'restart', service],
+    {
+      cwd: root,
+      env: process.env,
+      stdio: 'inherit',
+      shell: false
+    }
+  );
+}
+
+function deployInfrastructureRelease() {
+  if (process.platform !== 'linux') {
+    return;
+  }
+
+  const roles = [
+    {
+      service: 'crylo-anchor.service',
+      label: 'Canonical Anchor',
+      config: '/etc/crylo/crylo-anchor.conf'
+    },
+    {
+      service: 'crylo-relay.service',
+      label: 'Public Relay',
+      config: '/etc/crylo/crylo-relay.conf'
+    }
+  ];
+
+  const role = roles.find(
+    (candidate) => probe(
+      'systemctl',
+      ['is-active', '--quiet', candidate.service]
+    ).ok
+  );
+
+  if (!role) {
+    return;
+  }
+
+,
+      'm'
+    );
+
+    const match = configText.match(expression);
+
+    return match ? match[1] : fallback;
+  }
+
+  const configuredRpcHost = configValue(
+    'rpc-bind-ip',
+    '127.0.0.1'
+  );
+
+  const rpcHost =
+    configuredRpcHost === '0.0.0.0'
+      ? '127.0.0.1'
+      : configuredRpcHost;
+
+  const rpcPort = configValue(
+    'rpc-bind-port',
+    '22641'
+  );
+
+  const rpcUrl =
+    `http://${rpcHost}:${rpcPort}/json_rpc`;
 
   const native = expectedNativeBin();
 
@@ -188,13 +395,6 @@ function deployInfrastructureRelease() {
 
   if (!fs.existsSync(target)) {
     fail(`The deployed ${label} daemon was not found: ${target}`);
-  }
-
-  if (probe('cmp', ['-s', source, target]).ok) {
-    console.log(
-      `${label} already runs the current daemon binary.`
-    );
-    return;
   }
 
   const commit = git(
@@ -238,6 +438,7 @@ function deployInfrastructureRelease() {
   console.log(`Source: ${source}`);
   console.log(`Target: ${target}`);
   console.log(`Backup: ${backup}`);
+  console.log(`RPC health endpoint: ${rpcUrl}`);
 
   run('sudo', [
     'install',
@@ -309,7 +510,7 @@ function deployInfrastructureRelease() {
         '-H', 'Content-Type: application/json',
         '-d',
         '{"jsonrpc":"2.0","id":"0","method":"get_info"}',
-        'http://127.0.0.1:22641/json_rpc'
+        rpcUrl
       ]
     );
 
