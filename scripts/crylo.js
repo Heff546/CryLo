@@ -528,6 +528,36 @@ function update() {
     console.log(`Updated CryLo: ${before.slice(0, 9)} -> ${after.slice(0, 9)}`);
   }
 
+  if (
+    after !== before &&
+    process.env.CRYLO_UPDATE_RESUMED !== '1'
+  ) {
+    console.log();
+    console.log(
+      'Restarting with the newly updated CryLo updater...'
+    );
+
+    const resumed = spawnSync(
+      process.execPath,
+      [__filename, 'update'],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          CRYLO_UPDATE_RESUMED: '1'
+        },
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (resumed.error) {
+      fail(resumed.error.message);
+    }
+
+    process.exit(resumed.status || 0);
+  }
+
   console.log();
   console.log('Preparing build dependencies...');
 
