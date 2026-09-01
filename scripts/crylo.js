@@ -1212,18 +1212,26 @@ function installLinuxDesktopLaunchers() {
   fs.chmodSync(walletIcon, 0o644);
   fs.chmodSync(daemonIcon, 0o644);
 
-  const cryloCommand = path.join(localBin, 'crylo');
-  const daemonLauncher = path.join(
-    localBin,
-    'crylo-daemon-launcher'
+  const cryloCommandCandidates = [
+    path.join(home, 'bin', 'crylo'),
+    path.join(localBin, 'crylo')
+  ];
+
+  const cryloCommand = cryloCommandCandidates.find(
+    (candidate) => fs.existsSync(candidate)
   );
 
-  if (!fs.existsSync(cryloCommand)) {
+  if (!cryloCommand) {
     fail(
-      `CryLo command must be installed before desktop launchers: ` +
-      `${cryloCommand}`
+      'CryLo command must be installed before desktop launchers. ' +
+      `Checked: ${cryloCommandCandidates.join(', ')}`
     );
   }
+
+  const daemonLauncher = path.join(
+    path.dirname(cryloCommand),
+    'crylo-daemon-launcher'
+  );
 
   const shellQuote = (value) =>
     "'" + String(value).replace(/'/g, "'\\''") + "'";
