@@ -1,0 +1,130 @@
+name: CryLo macOS Test Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch, tag, or commit to build
+        required: true
+        default: feature/unified-electron-release-pipeline
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crylo-macos-test-${{ github.ref }}-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+
+    env:
+      CRYLO_JOBS: "3"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+    steps:
+      - name: Check out requested CryLo source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+
+      - name: Confirm native runner architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Expected: ${{ matrix.arch }}"
+          echo "Runner:   $(uname -m)"
+          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            [[ "$(uname -m)" == "arm64" ]]
+          else
+            [[ "$(uname -m)" == "x86_64" ]]
+          fi
+          sw_vers
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            electron/package-lock.json
+            node-operator/runtime/package-lock.json
+
+      - name: Install native build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install \
+            cmake \
+            pkg-config \
+            boost \
+            openssl@3 \
+            zeromq \
+            libpgm \
+            libsodium \
+            unbound \
+            miniupnpc \
+            readline \
+            hidapi \
+            zstd \
+            libusb \
+            nettle \
+            gmp
+
+      - name: Verify CryLo build prerequisites
+        shell: bash
+        run: node scripts/release/crylo-release.js --check
+
+      - name: Build unsigned native and Electron release
+        shell: bash
+        run: node scripts/release/crylo-release.js
+
+      - name: Record checksums
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-checksums
+          find electron/dist -maxdepth 1 -type f \
+            \( -name '*.dmg' -o -name '*.zip' \) \
+            -print0 |
+          while IFS= read -r -d '' artifact; do
+            shasum -a 256 "$artifact"
+          done > "release-checksums/macos-${{ matrix.arch }}.sha256"
+
+          find "build/mac-${{ matrix.arch }}/bin" -maxdepth 1 -type f \
+            \( -name 'CryLo-daemon' -o -name 'CryLo-wallet-rpc' \) \
+            -print0 |
+          while IFS= read -r -d '' binary; do
+            shasum -a 256 "$binary"
+          done >> "release-checksums/macos-${{ matrix.arch }}.sha256"
+
+          cat "release-checksums/macos-${{ matrix.arch }}.sha256"
+
+      - name: Upload macOS test release
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crylo-macos-${{ matrix.arch }}-unsigned
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            electron/dist/*.dmg
+            electron/dist/*.zip
+            build/mac-${{ matrix.arch }}/bin/CryLo-daemon
+            build/mac-${{ matrix.arch }}/bin/CryLo-wallet-rpc
+            release-checksums/macos-${{ matrix.arch }}.sha256
