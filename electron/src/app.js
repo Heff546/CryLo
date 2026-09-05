@@ -2488,7 +2488,89 @@ function cryloToAtomic(amountText) {
 }
 
 
+function loadCryLoBridgePending() {
+  try {
+    const raw = localStorage.getItem('cryloBridgePending');
+    if (!raw) return null;
+
+    const pending = JSON.parse(raw);
+    const legacyPaymentIds = Array.isArray(pending.paymentIds)
+      ? pending.paymentIds
+      : (pending.paymentId ? [pending.paymentId] : []);
+
+    if (!Array.isArray(pending.deposits) || pending.deposits.length === 0) {
+      pending.deposits = legacyPaymentIds.map(paymentId => ({
+        paymentId,
+        amount: '',
+        cryloTx: '',
+        processed: false,
+        nexusTx: ''
+      }));
+    }
+
+    pending.deposits = pending.deposits
+      .filter(deposit => deposit && deposit.paymentId)
+      .map(deposit => ({
+        ...deposit,
+        processed: !!deposit.processed,
+        nexusTx: deposit.nexusTx || ''
+      }));
+
+    return pending;
+  } catch (error) {
+    console.error('Failed to load pending CryLo bridge state:', error);
+    return null;
+  }
+}
+
+function saveCryLoBridgePending(pending) {
+  if (!pending || !Array.isArray(pending.deposits) || pending.deposits.length === 0) {
+    localStorage.removeItem('cryloBridgePending');
+    return;
+  }
+
+  pending.paymentId = pending.deposits[0]?.paymentId || '';
+  pending.paymentIds = pending.deposits.map(deposit => deposit.paymentId);
+  pending.updatedAt = Date.now();
+
+  localStorage.setItem(
+    'cryloBridgePending',
+    JSON.stringify(pending)
+  );
+}
+
+function sumCryLoBridgeDeposits(deposits) {
+  return (deposits || [])
+    .reduce(
+      (sum, deposit) => sum + Number(deposit.amount || 0),
+      0
+    );
+}
+
+function formatCryLoBridgeAmount(amount) {
+  return Number(amount || 0)
+    .toFixed(11)
+    .replace(/0+$/, '')
+    .replace(/\.$/, '');
+}
+
+function describeCryLoBridgeSubmissionFailure(pending) {
+  const submittedAmount = sumCryLoBridgeDeposits(pending?.deposits);
+  const requestedAmount = Number(pending?.requestedAmount || submittedAmount);
+  const remainingAmount = Math.max(0, requestedAmount - submittedAmount);
+
+  return {
+    submittedAmount,
+    requestedAmount,
+    remainingAmount,
+    submittedText: formatCryLoBridgeAmount(submittedAmount),
+    remainingText: formatCryLoBridgeAmount(remainingAmount)
+  };
+}
+
 async function startCryLoBridgeIn() {
+  let pending = null;
+
   try {
     setBridgeButtonBusy('in', true);
 
@@ -2512,7 +2594,9 @@ async function startCryLoBridgeIn() {
 
     refreshBridgeAddressFields();
 
-    const amountText = document.getElementById('bridge-amount')?.value || '';
+    const amountText =
+      document.getElementById('bridge-amount')?.value || '';
+
     const totalAmount = Number(amountText);
 
     if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
@@ -2520,7 +2604,18 @@ async function startCryLoBridgeIn() {
     }
 
     if (totalAmount > 150) {
-      throw new Error('Bridge limit is currently 150 CryLo per session.');
+      throw new Error(
+        'Bridge limit is currently 150 CryLo per session.'
+      );
+    }
+
+    const existingPending = loadCryLoBridgePending();
+
+    if (existingPending?.deposits?.length) {
+      throw new Error(
+        'A CryLo → wCryLo bridge is already processing. ' +
+        'Wait for it to finish before starting another bridge.'
+      );
     }
 
     const CHUNK_SIZE = 50;
@@ -2533,6 +2628,19 @@ async function startCryLoBridgeIn() {
       remaining = Number((remaining - chunk).toFixed(11));
     }
 
+    pending = {
+      version: 2,
+      requestedAmount: amountText,
+      requestedDepositCount: chunks.length,
+      nexusAddress,
+      cryloAddress: State.address,
+      deposits: [],
+      submissionComplete: false,
+      submissionError: '',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
     setBridgeStatus(
       `preparing ${chunks.length} bridge deposit${chunks.length === 1 ? '' : 's'}`
     );
@@ -2543,8 +2651,6 @@ async function startCryLoBridgeIn() {
       'Preparing bridge',
       `${chunks.length} CryLo deposit${chunks.length === 1 ? '' : 's'} will be created.`
     );
-
-    const sent = [];
 
     for (let i = 0; i < chunks.length; i++) {
       const chunkAmount = chunks[i];
@@ -2568,19 +2674,76 @@ async function startCryLoBridgeIn() {
         amountAtomic
       });
 
-      if (!req.ok) throw new Error(req.error || `Bridge request ${i + 1} failed.`);
+      if (!req.ok) {
+        const message =
+          req.error ||
+          `Bridge request ${i + 1} failed.`;
 
-      const bridgePaymentId = req.paymentId || req.payment_id;
-      const bridgeSendAddress = req.integratedAddress || req.integrated_address;
+        if (pending.deposits.length > 0) {
+          pending.submissionError = message;
+          pending.submissionComplete = false;
+          saveCryLoBridgePending(pending);
+
+          const partial =
+            describeCryLoBridgeSubmissionFailure(pending);
+
+          setBridgeStatus(
+            `partial bridge submitted — ${partial.submittedText} CryLo is processing`
+          );
+
+          setBridgeProgress(
+            'in',
+            3,
+            'Bridge partially submitted',
+            `${partial.submittedText} CryLo was sent and is still processing. ` +
+            `${partial.remainingText} CryLo was not submitted.`
+          );
+
+          pollCryLoBridgeStatus();
+          return;
+        }
+
+        throw new Error(message);
+      }
+
+      const bridgePaymentId =
+        req.paymentId ||
+        req.payment_id;
+
+      const bridgeSendAddress =
+        req.integratedAddress ||
+        req.integrated_address;
 
       if (!bridgePaymentId || !bridgeSendAddress) {
-        throw new Error('Bridge API did not return payment ID and integrated address.');
+        const message =
+          'Bridge API did not return payment ID and integrated address.';
+
+        if (pending.deposits.length > 0) {
+          pending.submissionError = message;
+          pending.submissionComplete = false;
+          saveCryLoBridgePending(pending);
+          pollCryLoBridgeStatus();
+          return;
+        }
+
+        throw new Error(message);
       }
 
       if (i === 0) {
-        setBridgeField('bridge-payment-id', bridgePaymentId);
-        setBridgeField('bridge-integrated-address', bridgeSendAddress);
-        setBridgeField('bridge-nexus-tx', '—');
+        setBridgeField(
+          'bridge-payment-id',
+          bridgePaymentId
+        );
+
+        setBridgeField(
+          'bridge-integrated-address',
+          bridgeSendAddress
+        );
+
+        setBridgeField(
+          'bridge-nexus-tx',
+          '—'
+        );
       }
 
       const transferParams = {
@@ -2605,14 +2768,91 @@ async function startCryLoBridgeIn() {
         `Deposit ${i + 1} of ${chunks.length} is being submitted.`
       );
 
-      let tx = await window.crylo.walletRpc('transfer_split', transferParams, 120000);
+      const tx = await window.crylo.walletRpc(
+        'transfer_split',
+        transferParams,
+        120000
+      );
 
       if (!tx.ok) {
-        throw new Error(
-          (tx.error || '').includes('not enough money')
+        const txError =
+          tx.error ||
+          `CryLo transfer ${i + 1} failed.`;
+
+        const isTimeout =
+          /timeout|timed out/i.test(txError);
+
+        if (isTimeout) {
+          /*
+           * A wallet-RPC timeout is ambiguous: the RPC response can be lost
+           * after the wallet has accepted the transfer. Preserve this payment
+           * ID and reconcile it with the authoritative bridge API instead of
+           * declaring the bridge failed.
+           */
+          pending.deposits.push({
+            paymentId: bridgePaymentId,
+            integratedAddress: bridgeSendAddress,
+            cryloTx: '',
+            amount: chunkText,
+            processed: false,
+            nexusTx: '',
+            submissionState: 'unknown',
+            lastStatusError: ''
+          });
+
+          pending.submissionError =
+            `Deposit ${i + 1} wallet response timed out. ` +
+            'Electron is checking the bridge before deciding whether it was sent.';
+
+          pending.submissionComplete = false;
+          saveCryLoBridgePending(pending);
+
+          setBridgeStatus(
+            `deposit ${i + 1} response timed out — reconciling bridge status`
+          );
+
+          setBridgeProgress(
+            'in',
+            3,
+            'Checking submitted bridge',
+            'The wallet response timed out. Electron will keep checking the bridge ' +
+            'instead of reporting a false failure.'
+          );
+
+          pollCryLoBridgeStatus();
+          return;
+        }
+
+        const message =
+          txError.includes('not enough money')
             ? 'Not enough unlocked CryLo. Try a smaller amount.'
-            : (tx.error || `CryLo transfer ${i + 1} failed.`)
-        );
+            : txError;
+
+        if (pending.deposits.length > 0) {
+          pending.submissionError = message;
+          pending.submissionComplete = false;
+          saveCryLoBridgePending(pending);
+
+          const partial =
+            describeCryLoBridgeSubmissionFailure(pending);
+
+          setBridgeStatus(
+            `partial bridge submitted — ${partial.submittedText} CryLo is processing`
+          );
+
+          setBridgeProgress(
+            'in',
+            3,
+            'Bridge partially submitted',
+            `${partial.submittedText} CryLo was sent and is still processing. ` +
+            `${partial.remainingText} CryLo was not submitted.`
+          );
+
+          pollCryLoBridgeStatus();
+          return;
+        }
+
+        throw new Error(message);
       }
 
       const txHash =
@@ -2623,154 +2863,368 @@ async function startCryLoBridgeIn() {
         tx.result?.txid ||
         '';
 
-      sent.push({
+      pending.deposits.push({
         paymentId: bridgePaymentId,
+        integratedAddress: bridgeSendAddress,
         cryloTx: txHash,
-        amount: chunkText
+        amount: chunkText,
+        processed: false,
+        nexusTx: '',
+        submissionState: 'submitted',
+        lastStatusError: ''
       });
 
-      setBridgeField('bridge-crylo-tx', sent.map(x => x.cryloTx || 'sent').join(', '));
+      /*
+       * Persist after EVERY successful L1 transfer. If Electron closes or the
+       * next bridge request fails, already-sent funds remain recoverable.
+       */
+      saveCryLoBridgePending(pending);
+
+      setBridgeField(
+        'bridge-crylo-tx',
+        pending.deposits
+          .map(deposit => deposit.cryloTx || 'sent')
+          .join(', ')
+      );
     }
 
-    localStorage.setItem('cryloBridgePending', JSON.stringify({
-      paymentId: sent[0]?.paymentId,
-      paymentIds: sent.map(x => x.paymentId),
-      deposits: sent,
-      createdAt: Date.now()
-    }));
+    pending.submissionComplete = true;
+    pending.submissionError = '';
+    saveCryLoBridgePending(pending);
 
     setBridgeStatus(
-      `waiting for CryLo confirmations on ${sent.length} deposit${sent.length === 1 ? '' : 's'}`
+      `waiting for CryLo confirmations on ${pending.deposits.length} deposit${pending.deposits.length === 1 ? '' : 's'}`
     );
 
     setBridgeProgress(
       'in',
       3,
       'Waiting for confirmations',
-      `${sent.length} deposit${sent.length === 1 ? '' : 's'} sent. Confirming and minting wCryLo.`
+      `${pending.deposits.length} deposit${pending.deposits.length === 1 ? '' : 's'} sent. ` +
+      'Confirming and minting wCryLo.'
     );
 
-    pollCryLoBridgeStatus(
-      sent[0]?.paymentId
-    );
+    pollCryLoBridgeStatus();
   } catch (e) {
     console.error(e);
 
+    /*
+     * Only report a hard failure when no L1 deposit has been submitted.
+     * Once a deposit exists, its result must be reconciled instead.
+     */
+    if (pending?.deposits?.length) {
+      pending.submissionError =
+        e.message ||
+        'Bridge submission stopped after one or more deposits were sent.';
+
+      pending.submissionComplete = false;
+      saveCryLoBridgePending(pending);
+
+      const partial =
+        describeCryLoBridgeSubmissionFailure(pending);
+
+      setBridgeStatus(
+        `partial bridge submitted — ${partial.submittedText} CryLo is processing`
+      );
+
+      setBridgeProgress(
+        'in',
+        3,
+        'Bridge partially submitted',
+        `${partial.submittedText} CryLo was sent and is still processing. ` +
+        `${partial.remainingText} CryLo was not submitted.`
+      );
+
+      pollCryLoBridgeStatus();
+      return;
+    }
+
     setBridgeStatus(
-      e.message || 'Bridge failed.'
+      e.message ||
+      'Bridge failed.'
     );
 
     setBridgeFailure(
       'in',
-      e.message || 'Bridge failed.'
+      e.message ||
+      'Bridge failed.'
     );
   }
 }
 
 let cryloBridgePollTimer = null;
+let cryloBridgePollBusy = false;
 
-function pollCryLoBridgeStatus(paymentId) {
-  if (cryloBridgePollTimer) clearInterval(cryloBridgePollTimer);
+function pollCryLoBridgeStatus() {
+  if (cryloBridgePollTimer) {
+    clearInterval(cryloBridgePollTimer);
+    cryloBridgePollTimer = null;
+  }
 
-  cryloBridgePollTimer = setInterval(async () => {
+  const pollOnce = async () => {
+    if (cryloBridgePollBusy) return;
+    cryloBridgePollBusy = true;
+
     try {
-      const res = await window.crylo.bridgeStatus(paymentId);
+      const pending = loadCryLoBridgePending();
 
-      if (!res.ok) {
-        setBridgeStatus(res.error || 'status check failed');
+      if (!pending?.deposits?.length) {
+        if (cryloBridgePollTimer) {
+          clearInterval(cryloBridgePollTimer);
+          cryloBridgePollTimer = null;
+        }
+
+        setBridgeButtonBusy('in', false);
         return;
       }
 
-      if (res.processed) {
-        clearInterval(cryloBridgePollTimer);
-        cryloBridgePollTimer = null;
+      let changed = false;
 
-        const mintTx =
-          res.processed.nexus_tx_hash ||
-          res.processed.nexusTxHash ||
-          res.processed.txHash ||
-          res.processed.mintTxHash ||
-          'processed';
-
-        setBridgeField(
-          'bridge-nexus-tx',
-          mintTx
-        );
-
-        const pendingRaw =
-          localStorage.getItem(
-            'cryloBridgePending'
-          );
-
-        let pendingAmount = '';
+      for (const deposit of pending.deposits) {
+        if (deposit.processed || !deposit.paymentId) continue;
 
         try {
-          const pending =
-            JSON.parse(pendingRaw || '{}');
+          const res =
+            await window.crylo.bridgeStatus(
+              deposit.paymentId
+            );
 
-          pendingAmount =
-            (pending.deposits || [])
-              .reduce(
-                (sum, deposit) =>
-                  sum + Number(deposit.amount || 0),
-                0
-              )
-              .toFixed(11)
-              .replace(/0+$/, '')
-              .replace(/\.$/, '');
-        } catch (_) {}
+          if (!res.ok) {
+            deposit.lastStatusError =
+              res.error ||
+              'status check failed';
+            changed = true;
+            continue;
+          }
 
-        setBridgeStatus(
-          '✅ Mint completed — wCryLo received.'
+          deposit.lastStatusError = '';
+
+          if (res.processed) {
+            deposit.processed = true;
+            deposit.nexusTx =
+              res.processed.nexus_tx_hash ||
+              res.processed.nexusTxHash ||
+              res.processed.txHash ||
+              res.processed.mintTxHash ||
+              'processed';
+
+            deposit.submissionState = 'processed';
+            changed = true;
+          }
+        } catch (error) {
+          deposit.lastStatusError =
+            error?.message ||
+            String(error);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        saveCryLoBridgePending(pending);
+      }
+
+      const total =
+        pending.deposits.length;
+
+      const processed =
+        pending.deposits.filter(
+          deposit => deposit.processed
         );
 
-        setBridgeComplete(
-          'in',
-          pendingAmount || 'Deposited amount',
-          'CryLo',
-          'wCryLo',
-          `Nexus TX: ${mintTx}`
+      const processedCount =
+        processed.length;
+
+      const allProcessed =
+        total > 0 &&
+        processedCount === total;
+
+      const mintTxs =
+        processed
+          .map(deposit => deposit.nexusTx)
+          .filter(Boolean);
+
+      if (mintTxs.length) {
+        setBridgeField(
+          'bridge-nexus-tx',
+          mintTxs.join(', ')
+        );
+      }
+
+      if (allProcessed) {
+        if (cryloBridgePollTimer) {
+          clearInterval(cryloBridgePollTimer);
+          cryloBridgePollTimer = null;
+        }
+
+        const submittedAmount =
+          sumCryLoBridgeDeposits(
+            pending.deposits
+          );
+
+        const submittedText =
+          formatCryLoBridgeAmount(
+            submittedAmount
+          );
+
+        const requestedAmount =
+          Number(
+            pending.requestedAmount ||
+            submittedAmount
+          );
+
+        const requestedText =
+          formatCryLoBridgeAmount(
+            requestedAmount
+          );
+
+        const wasPartial =
+          !pending.submissionComplete ||
+          submittedAmount + 0.00000000001 < requestedAmount;
+
+        if (wasPartial) {
+          const remainingAmount =
+            Math.max(
+              0,
+              requestedAmount - submittedAmount
+            );
+
+          const remainingText =
+            formatCryLoBridgeAmount(
+              remainingAmount
+            );
+
+          setBridgeStatus(
+            `✅ ${submittedText} CryLo minted to wCryLo; ${remainingText} CryLo was not submitted`
+          );
+
+          setBridgeProgress(
+            'in',
+            4,
+            '✅ Partial Bridge Complete',
+            `${submittedText} CryLo → ${submittedText} wCryLo completed. ` +
+            `${remainingText} CryLo from the ${requestedText} CryLo request was not submitted.`
+          );
+
+          setBridgeButtonBusy('in', false);
+        } else {
+          setBridgeStatus(
+            '✅ Mint completed — wCryLo received.'
+          );
+
+          setBridgeComplete(
+            'in',
+            submittedText ||
+            'Deposited amount',
+            'CryLo',
+            'wCryLo',
+            mintTxs.length
+              ? `Nexus TX: ${mintTxs.join(', ')}`
+              : ''
+          );
+
+          resetBridgeFormAfterMint();
+        }
+
+        localStorage.removeItem(
+          'cryloBridgePending'
         );
 
         await refreshBridgeRelatedViews();
-        setTimeout(refreshBridgeRelatedViews, 3000);
-        setTimeout(refreshBridgeRelatedViews, 10000);
-        resetBridgeFormAfterMint();
         await refreshNexusWcryloBalance();
         await refreshNexusGasStatus();
 
-        localStorage.removeItem('cryloBridgePending');
+        if (typeof updateBalance === 'function') {
+          await updateBalance();
+        }
 
-        if (typeof updateBalance === 'function') await updateBalance();
-        await refreshNexusWcryloBalance();
+        setTimeout(
+          refreshBridgeRelatedViews,
+          3000
+        );
+
+        setTimeout(
+          refreshBridgeRelatedViews,
+          10000
+        );
 
         setTimeout(async () => {
-          if (typeof updateBalance === 'function') await updateBalance();
+          if (typeof updateBalance === 'function') {
+            await updateBalance();
+          }
+
           await refreshNexusWcryloBalance();
         }, 5000);
 
         setTimeout(async () => {
-          if (typeof updateBalance === 'function') await updateBalance();
+          if (typeof updateBalance === 'function') {
+            await updateBalance();
+          }
+
           await refreshNexusWcryloBalance();
         }, 15000);
+
         return;
       }
 
+      const submittedAmount =
+        formatCryLoBridgeAmount(
+          sumCryLoBridgeDeposits(
+            pending.deposits
+          )
+        );
+
+      const statusErrors =
+        pending.deposits
+          .map(deposit => deposit.lastStatusError)
+          .filter(Boolean);
+
+      setBridgeButtonBusy('in', true);
+
       setBridgeStatus(
-        'waiting for CryLo confirmations'
+        `${processedCount}/${total} bridge deposit${total === 1 ? '' : 's'} minted`
       );
 
       setBridgeProgress(
         'in',
         3,
         'Waiting for confirmations',
-        'CryLo deposit detected. Confirming and minting wCryLo.'
+        `${submittedAmount} CryLo submitted · ` +
+        `${processedCount}/${total} deposit${total === 1 ? '' : 's'} minted.` +
+        (
+          statusErrors.length
+            ? ' A status check is temporarily unavailable; Electron will retry automatically.'
+            : ''
+        )
       );
     } catch (e) {
-      console.error(e);
-      setBridgeStatus(e.message || 'status error');
+      console.error(
+        'CryLo bridge status reconciliation failed:',
+        e
+      );
+
+      setBridgeStatus(
+        'Bridge is still pending. Status check will retry automatically.'
+      );
+
+      setBridgeProgress(
+        'in',
+        3,
+        'Waiting for confirmations',
+        'Electron could not read the bridge status on this check. ' +
+        'The pending bridge has been preserved and will be checked again.'
+      );
+    } finally {
+      cryloBridgePollBusy = false;
     }
-  }, 10000);
+  };
+
+  pollOnce();
+
+  cryloBridgePollTimer =
+    setInterval(
+      pollOnce,
+      10000
+    );
 }
 
 
@@ -4930,21 +5384,28 @@ function resumePendingBridgeOperations() {
     if (inboundRaw) {
       const inbound = JSON.parse(inboundRaw);
 
-      const paymentId =
-        inbound.paymentId ||
-        inbound.paymentIds?.[0];
+      const paymentIds =
+        Array.isArray(inbound.deposits)
+          ? inbound.deposits
+              .map(deposit => deposit?.paymentId)
+              .filter(Boolean)
+          : (
+              Array.isArray(inbound.paymentIds)
+                ? inbound.paymentIds.filter(Boolean)
+                : (inbound.paymentId ? [inbound.paymentId] : [])
+            );
 
-      if (paymentId) {
+      if (paymentIds.length > 0) {
         setBridgeButtonBusy('in', true);
 
         setBridgeProgress(
           'in',
           3,
           'Waiting for confirmations',
-          'Resuming the pending CryLo → wCryLo bridge.'
+          `Resuming ${paymentIds.length} pending CryLo → wCryLo bridge deposit${paymentIds.length === 1 ? '' : 's'}.`
         );
 
-        pollCryLoBridgeStatus(paymentId);
+        pollCryLoBridgeStatus();
       }
     }
   } catch (error) {
