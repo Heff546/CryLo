@@ -628,6 +628,7 @@ function expectedNativeBin() {
     return {
       directory: path.join(root, 'build', 'win-x64', 'bin'),
       daemon: 'CryLo-daemon.exe',
+      walletCli: 'CryLo-wallet.exe',
       walletRpc: 'CryLo-wallet-rpc.exe'
     };
   }
@@ -641,6 +642,7 @@ function expectedNativeBin() {
     return {
       directory: path.join(root, 'build', `linux-${arch}`, 'bin'),
       daemon: 'CryLo-daemon',
+      walletCli: 'CryLo-wallet',
       walletRpc: 'CryLo-wallet-rpc'
     };
   }
@@ -654,6 +656,7 @@ function expectedNativeBin() {
     return {
       directory: path.join(root, 'build', `mac-${arch}`, 'bin'),
       daemon: 'CryLo-daemon',
+      walletCli: 'CryLo-wallet',
       walletRpc: 'CryLo-wallet-rpc'
     };
   }
@@ -757,7 +760,8 @@ function ensureLinuxBuildDependencies() {
     'libusb-1.0-0-dev',
     'libudev-dev',
     'nettle-dev',
-    'libgmp-dev'
+    'libgmp-dev',
+    'libminiupnpc-dev'
   ];
 
   const missingPackages = requiredPackages.filter((packageName) => {
@@ -1937,13 +1941,19 @@ function status() {
       native.daemon
     );
 
+    const walletCliPath = path.join(
+      native.directory,
+      native.walletCli
+    );
+
     const walletRpcPath = path.join(
       native.directory,
       native.walletRpc
     );
 
     const daemonVersion = binaryVersion(daemonPath);
-    const walletVersion = binaryVersion(walletRpcPath);
+    const walletCliVersion = binaryVersion(walletCliPath);
+    const walletRpcVersion = binaryVersion(walletRpcPath);
 
     console.log();
     console.log('Universal release binaries:');
@@ -1955,8 +1965,14 @@ function status() {
     );
 
     console.log(
+      `  Wallet: ${
+        walletCliVersion || 'not built'
+      }`
+    );
+
+    console.log(
       `  Wallet RPC: ${
-        walletVersion || 'not built'
+        walletRpcVersion || 'not built'
       }`
     );
 

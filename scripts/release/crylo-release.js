@@ -82,6 +82,7 @@ function detectTarget() {
         buildTag: 'win-x64',
         buildDir: path.join(root, 'build', 'win-x64'),
         daemon: 'CryLo-daemon.exe',
+        walletCli: 'CryLo-wallet.exe',
         walletRpc: 'CryLo-wallet-rpc.exe'
       };
 
@@ -92,6 +93,7 @@ function detectTarget() {
         buildTag: arch === 'arm64' ? 'linux-armv8' : 'linux-x64',
         buildDir: path.join(root, 'build', `linux-${arch}`),
         daemon: 'CryLo-daemon',
+        walletCli: 'CryLo-wallet',
         walletRpc: 'CryLo-wallet-rpc'
       };
 
@@ -102,6 +104,7 @@ function detectTarget() {
         buildTag: arch === 'arm64' ? 'mac-arm64' : 'mac-x64',
         buildDir: path.join(root, 'build', `mac-${arch}`),
         daemon: 'CryLo-daemon',
+        walletCli: 'CryLo-wallet',
         walletRpc: 'CryLo-wallet-rpc'
       };
 
@@ -271,10 +274,15 @@ function buildUnix(target, jobs) {
 function verifyNativePair(target) {
   const bin = path.join(target.buildDir, 'bin');
   const daemon = path.join(bin, target.daemon);
+  const walletCli = path.join(bin, target.walletCli);
   const walletRpc = path.join(bin, target.walletRpc);
 
   if (!fs.existsSync(daemon)) {
     fail(`Native daemon was not produced: ${daemon}`);
+  }
+
+  if (!fs.existsSync(walletCli)) {
+    fail(`Native wallet CLI was not produced: ${walletCli}`);
   }
 
   if (!fs.existsSync(walletRpc)) {
