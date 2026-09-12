@@ -247,6 +247,31 @@ bool t_daemon::run(bool interactive)
 
     return true;
 #else
+    // Headless POSIX/Linux operation must not initialize ncurses or /dev/tty.
+    // Consensus, RPC, ZMQ, and P2P remain fully active; only the terminal UI
+    // is skipped when the daemon was explicitly started non-interactively.
+    if (!interactive)
+    {
+      if (!mp_internals->core.run())
+        return false;
+
+      for(auto& rpc: mp_internals->rpcs)
+        rpc->run();
+
+      if (mp_internals->zmq)
+        mp_internals->zmq->server.run();
+      else
+        MINFO("ZMQ server disabled");
+
+      if (public_rpc_port > 0)
+      {
+        mp_internals->p2p.get().set_rpc_port(public_rpc_port);
+      }
+
+      mp_internals->p2p.run();
+      return true;
+    }
+
     // CryLo Chain: Play Datasette animation (uses raw ANSI on stderr)
     crylotui::play_datasette_animation();
 
