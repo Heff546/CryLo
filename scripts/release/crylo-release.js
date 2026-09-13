@@ -30,6 +30,37 @@ function run(command, args, options = {}) {
   }
 }
 
+function runCapture(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: options.cwd || root,
+    env: options.env || process.env,
+    encoding: 'utf8',
+    shell: false
+  });
+
+  if (result.stdout) {
+    process.stdout.write(result.stdout);
+  }
+
+  if (result.stderr) {
+    process.stderr.write(result.stderr);
+  }
+
+  if (result.error) {
+    fail(`${command}: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    process.exit(result.status || 1);
+  }
+
+  return (
+    String(result.stdout || '') +
+    '\n' +
+    String(result.stderr || '')
+  );
+}
+
 function capture(command, args) {
   const result = spawnSync(command, args, {
     cwd: root,
@@ -147,8 +178,21 @@ function verifyPrerequisites(target) {
   const nodeVersion = process.version;
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-  if (major(nodeVersion) < 20) {
-    fail(`Node.js 20 or newer is required. Found ${nodeVersion}.`);
+  const minimumNodeMajor =
+    target.platform === 'linux'
+      ? 24
+      : 20;
+
+  const minimumNpmMajor =
+    target.platform === 'linux'
+      ? 12
+      : 9;
+
+  if (major(nodeVersion) < minimumNodeMajor) {
+    fail(
+      `Node.js ${minimumNodeMajor} or newer is required for ` +
+      `${target.platform}. Found ${nodeVersion}.`
+    );
   }
 
   if (!commandAvailable(npmCommand)) {
@@ -161,8 +205,11 @@ function verifyPrerequisites(target) {
           ['/d', '/s', '/c', 'npm.cmd --version'])
       : capture('npm', ['--version']);
 
-  if (major(npmVersion) < 9) {
-    fail(`npm 9 or newer is required. Found ${npmVersion || 'unknown'}.`);
+  if (major(npmVersion) < minimumNpmMajor) {
+    fail(
+      `npm ${minimumNpmMajor} or newer is required for ` +
+      `${target.platform}. Found ${npmVersion || 'unknown'}.`
+    );
   }
 
   console.log('===== CRYLO BUILD HOST =====');
@@ -171,20 +218,85 @@ function verifyPrerequisites(target) {
   console.log(`Node: ${nodeVersion}`);
   console.log(`npm: ${npmVersion}`);
   console.log(`CPU threads: ${os.cpus().length}`);
-  console.log();
 
   if (target.platform === 'win') {
     const bash = findWindowsBash();
     console.log(`MSYS2: ${bash}`);
-  } else {
-    if (!commandAvailable('cmake')) {
-      fail('cmake was not found.');
+    console.log();
+    return;
+  }
+
+  if (!commandAvailable('cmake')) {
+    fail('cmake was not found.');
+  }
+
+  if (!commandAvailable('make')) {
+    fail('make was not found.');
+  }
+
+  if (target.platform === 'linux') {
+    if (!commandAvailable('python3')) {
+      fail('python3 was not found. Trezor support requires Python 3.');
     }
 
-    if (!commandAvailable('make')) {
-      fail('make was not found.');
+    if (!commandAvailable('protoc')) {
+      fail('protoc was not found. Trezor support requires protobuf-compiler.');
     }
+
+    if (!commandAvailable('pkg-config')) {
+      fail('pkg-config was not found.');
+    }
+
+    const protobufProbe = spawnSync(
+      'pkg-config',
+      ['--exists', 'protobuf'],
+      { shell: false }
+    );
+
+    if (
+      protobufProbe.error ||
+      protobufProbe.status !== 0
+    ) {
+      fail('protobuf development support was not detected.');
+    }
+
+    const usbProbe = spawnSync(
+      'pkg-config',
+      ['--exists', 'libusb-1.0'],
+      { shell: false }
+    );
+
+    if (usbProbe.status !== 0) {
+      fail('LibUSB development support was not detected.');
+    }
+
+    const hidrawProbe = spawnSync(
+      'pkg-config',
+      ['--exists', 'hidapi-hidraw'],
+      { shell: false }
+    );
+
+    const hidusbProbe = spawnSync(
+      'pkg-config',
+      ['--exists', 'hidapi-libusb'],
+      { shell: false }
+    );
+
+    if (
+      hidrawProbe.status !== 0 &&
+      hidusbProbe.status !== 0
+    ) {
+      fail('HIDAPI development support was not detected.');
+    }
+
+    console.log('Python: ready');
+    console.log(`protoc: ${capture('protoc', ['--version'])}`);
+    console.log('Protobuf: ready');
+    console.log('LibUSB: ready');
+    console.log('HIDAPI: ready');
   }
+
+  console.log();
 }
 
 function buildWindows(target, jobs) {
@@ -234,6 +346,8 @@ cmake --build . \
 }
 
 function buildUnix(target, jobs) {
+  const trezorRequired = target.platform === 'linux';
+
   const args = [
     '-S', root,
     '-B', target.buildDir,
@@ -242,7 +356,7 @@ function buildUnix(target, jobs) {
     '-D', 'BUILD_TESTS=OFF',
     '-D', 'BUILD_DOCUMENTATION=OFF',
     '-D', 'BUILD_DEBUG_UTILITIES=OFF',
-    '-D', 'USE_DEVICE_TREZOR=OFF',
+    '-D', `USE_DEVICE_TREZOR=${trezorRequired ? 'ON' : 'OFF'}`,
     '-D', 'TREZOR_DEBUG=OFF',
     '-D', 'BUILD_GUI_DEPS=OFF',
     '-D', 'CMAKE_BUILD_TYPE=Release',
@@ -259,7 +373,20 @@ function buildUnix(target, jobs) {
     args.push('-D', 'ARCH=x86-64');
   }
 
-  run('cmake', args);
+  if (trezorRequired) {
+    const configureOutput = runCapture('cmake', args);
+
+    if (!configureOutput.includes('Trezor support enabled')) {
+      fail(
+        'CryLo requires Trezor support on Linux, but CMake did not ' +
+        'confirm "Trezor support enabled".'
+      );
+    }
+
+    console.log('Trezor support.... ENABLED');
+  } else {
+    run('cmake', args);
+  }
 
   run('cmake', [
     '--build', target.buildDir,
@@ -317,11 +444,22 @@ function packageElectron(target, nativeBin) {
 
 const target = detectTarget();
 
-const requestedJobs = Number(process.env.CRYLO_JOBS || '1');
+const defaultJobs =
+  target.platform === 'linux' && target.arch === 'arm64'
+    ? 1
+    : target.platform === 'linux' && target.arch === 'x64'
+      ? Math.max(1, Math.min(2, os.cpus().length))
+      : 1;
+
+const requestedJobs =
+  process.env.CRYLO_JOBS === undefined
+    ? defaultJobs
+    : Number(process.env.CRYLO_JOBS);
+
 const jobs =
   Number.isInteger(requestedJobs) && requestedJobs > 0
     ? requestedJobs
-    : 1;
+    : defaultJobs;
 
 verifyPrerequisites(target);
 

@@ -738,6 +738,313 @@ function nativeDaemonPath() {
   );
 }
 
+function versionMajor(value) {
+  const match = String(value || '').match(/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function runAsRoot(command, args = []) {
+  if (
+    typeof process.getuid === 'function' &&
+    process.getuid() === 0
+  ) {
+    run(command, args);
+    return;
+  }
+
+  run('sudo', [command, ...args]);
+}
+
+function installedDebianPackage(packageName) {
+  const result = spawnSync(
+    '/usr/bin/dpkg-query',
+    [
+      '-W',
+      '-f=${Status}',
+      packageName
+    ],
+    {
+      cwd: root,
+      env: process.env,
+      encoding: 'utf8',
+      shell: false
+    }
+  );
+
+  return (
+    !result.error &&
+    result.status === 0 &&
+    String(result.stdout || '').trim() ===
+      'install ok installed'
+  );
+}
+
+function ensureLinuxNodeRuntime() {
+  const trustedNodeSourceFingerprint =
+    '6F71F525282841EEDAF851B42F59B5F99B1BE0B4';
+
+  let node = probe('node', ['--version']);
+  let nodeVersion = node.ok ? node.stdout : '';
+  let npm = probe('npm', ['--version']);
+  let npmVersion = npm.ok ? npm.stdout : '';
+
+  if (versionMajor(nodeVersion) < 24) {
+    console.log(
+      `Node.js ${nodeVersion || 'not found'} does not meet ` +
+      'the CryLo Node.js 24+ requirement.'
+    );
+
+    console.log(
+      'Preparing authenticated NodeSource Node.js 24 repository...'
+    );
+
+    const tempDirectory = fs.mkdtempSync(
+      '/tmp/crylo-nodesource-'
+    );
+
+    const downloadedKey = path.join(
+      tempDirectory,
+      'nodesource-repo.gpg.key'
+    );
+
+    const keyring = path.join(
+      tempDirectory,
+      'nodesource-repo.gpg'
+    );
+
+    const gpgHome = path.join(
+      tempDirectory,
+      'gnupg'
+    );
+
+    try {
+      fs.mkdirSync(gpgHome, {
+        mode: 0o700
+      });
+
+      run('curl', [
+        '--fail',
+        '--silent',
+        '--show-error',
+        '--location',
+        '--proto', '=https',
+        '--tlsv1.2',
+        'https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key',
+        '--output',
+        downloadedKey
+      ]);
+
+      const fingerprintResult = spawnSync(
+        'gpg',
+        [
+          '--batch',
+          '--homedir', gpgHome,
+          '--with-colons',
+          '--import-options', 'show-only',
+          '--import',
+          downloadedKey
+        ],
+        {
+          cwd: root,
+          env: process.env,
+          encoding: 'utf8',
+          shell: false
+        }
+      );
+
+      if (
+        fingerprintResult.error ||
+        fingerprintResult.status !== 0
+      ) {
+        fail(
+          'Unable to inspect the NodeSource repository signing key.'
+        );
+      }
+
+      const fingerprints = String(
+        fingerprintResult.stdout || ''
+      )
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('fpr:'))
+        .map((line) => line.split(':')[9])
+        .filter(Boolean);
+
+      if (
+        !fingerprints.includes(trustedNodeSourceFingerprint)
+      ) {
+        fail(
+          'NodeSource repository signing key fingerprint mismatch.\n' +
+          `Expected: ${trustedNodeSourceFingerprint}\n` +
+          `Received: ${
+            fingerprints.length
+              ? fingerprints.join(', ')
+              : 'none'
+          }`
+        );
+      }
+
+      console.log(
+        `NodeSource key..... VERIFIED  ${trustedNodeSourceFingerprint}`
+      );
+
+      const dearmor = spawnSync(
+        'gpg',
+        [
+          '--batch',
+          '--yes',
+          '--dearmor',
+          '--output', keyring,
+          downloadedKey
+        ],
+        {
+          cwd: root,
+          env: process.env,
+          stdio: 'inherit',
+          shell: false
+        }
+      );
+
+      if (dearmor.error || dearmor.status !== 0) {
+        fail(
+          'Unable to create the authenticated NodeSource keyring.'
+        );
+      }
+
+      runAsRoot('/usr/bin/install', [
+        '-o', 'root',
+        '-g', 'root',
+        '-m', '0644',
+        keyring,
+        '/usr/share/keyrings/crylo-nodesource.gpg'
+      ]);
+
+      const dpkgArchitecture = probe(
+        'dpkg',
+        ['--print-architecture']
+      );
+
+      if (
+        !dpkgArchitecture.ok ||
+        !['arm64', 'amd64'].includes(dpkgArchitecture.stdout)
+      ) {
+        fail(
+          'CryLo authenticated Node.js repository setup supports ' +
+          `Debian arm64/amd64; found ${
+            dpkgArchitecture.stdout || 'unknown'
+          }.`
+        );
+      }
+
+      const sourceLine =
+        `deb [arch=${dpkgArchitecture.stdout} ` +
+        'signed-by=/usr/share/keyrings/crylo-nodesource.gpg] ' +
+        'https://deb.nodesource.com/node_24.x nodistro main\n';
+
+      const sourceFile = path.join(
+        tempDirectory,
+        'crylo-nodesource.list'
+      );
+
+      fs.writeFileSync(
+        sourceFile,
+        sourceLine,
+        {
+          encoding: 'utf8',
+          mode: 0o644
+        }
+      );
+
+      runAsRoot('/usr/bin/install', [
+        '-o', 'root',
+        '-g', 'root',
+        '-m', '0644',
+        sourceFile,
+        '/etc/apt/sources.list.d/crylo-nodesource.list'
+      ]);
+
+      console.log(
+        'Refreshing package metadata with repository signature verification...'
+      );
+
+      runAsRoot('/usr/bin/apt-get', [
+        'update'
+      ]);
+
+      runAsRoot('/usr/bin/apt-get', [
+        'install',
+        '-y',
+        '--no-install-recommends',
+        'nodejs'
+      ]);
+    } finally {
+      try {
+        fs.rmSync(
+          tempDirectory,
+          {
+            recursive: true,
+            force: true
+          }
+        );
+      } catch (_) {
+        // Temporary authenticated bootstrap cleanup is best effort.
+      }
+    }
+
+    node = probe('node', ['--version']);
+    nodeVersion = node.ok ? node.stdout : '';
+
+    if (versionMajor(nodeVersion) < 24) {
+      fail(
+        'Node.js 24+ installation completed, but the active ' +
+        `Node.js is still ${nodeVersion || 'unavailable'}.`
+      );
+    }
+  }
+
+  npm = probe('npm', ['--version']);
+  npmVersion = npm.ok ? npm.stdout : '';
+
+  if (versionMajor(npmVersion) < 12) {
+    console.log(
+      `npm ${npmVersion || 'not found'} does not meet ` +
+      'the CryLo npm 12+ requirement.'
+    );
+
+    console.log('Installing/upgrading npm 12.x...');
+
+    if (
+      typeof process.getuid === 'function' &&
+      process.getuid() === 0
+    ) {
+      run('npm', [
+        'install',
+        '--global',
+        'npm@12'
+      ]);
+    } else {
+      run('sudo', [
+        'npm',
+        'install',
+        '--global',
+        'npm@12'
+      ]);
+    }
+
+    npm = probe('npm', ['--version']);
+    npmVersion = npm.ok ? npm.stdout : '';
+
+    if (versionMajor(npmVersion) < 12) {
+      fail(
+        'npm 12+ installation completed, but the active npm is still ' +
+        `${npmVersion || 'unavailable'}.`
+      );
+    }
+  }
+
+  console.log(`Node.js........... OK  ${nodeVersion}`);
+  console.log(`npm............... OK  ${npmVersion}`);
+}
+
 function ensureLinuxBuildDependencies() {
   if (process.platform !== 'linux') {
     return;
@@ -748,103 +1055,128 @@ function ensureLinuxBuildDependencies() {
     !fs.existsSync('/usr/bin/dpkg-query') ||
     !fs.existsSync('/usr/bin/apt-get')
   ) {
-    console.log(
-      'Automatic build dependency installation is not available ' +
-      'for this Linux distribution.'
+    fail(
+      'Automatic CryLo Linux dependency preparation currently requires ' +
+      'a Debian/Ubuntu-compatible system with dpkg and apt.'
     );
-    return;
   }
 
+  console.log('===== CRYLO LINUX BUILD ENVIRONMENT =====');
+  console.log(`Architecture....... ${process.arch}`);
+
   const requiredPackages = [
-    'libzstd-dev',
+    'build-essential',
+    'ca-certificates',
+    'cmake',
+    'curl',
+    'gnupg',
+    'pkg-config',
+    'python3',
+    'protobuf-compiler',
+    'libprotobuf-dev',
     'libusb-1.0-0-dev',
+    'libhidapi-dev',
     'libudev-dev',
+    'libzstd-dev',
     'nettle-dev',
     'libgmp-dev',
     'libminiupnpc-dev'
   ];
 
-  const missingPackages = requiredPackages.filter((packageName) => {
-    const result = spawnSync(
-      '/usr/bin/dpkg-query',
-      [
-        '-W',
-        '-f=${Status}',
-        packageName
-      ],
-      {
-        cwd: root,
-        env: process.env,
-        encoding: 'utf8',
-        shell: false
-      }
+  let missingPackages = requiredPackages.filter(
+    (packageName) => !installedDebianPackage(packageName)
+  );
+
+  if (missingPackages.length) {
+    console.log(
+      'Installing required CryLo build dependencies: ' +
+      missingPackages.join(', ')
     );
 
-    return (
-      result.error ||
-      result.status !== 0 ||
-      String(result.stdout || '').trim() !==
-        'install ok installed'
-    );
-  });
+    runAsRoot('/usr/bin/apt-get', [
+      'install',
+      '-y',
+      '--no-install-recommends',
+      ...missingPackages
+    ]);
 
-  if (!missingPackages.length) {
-    console.log('Linux build dependencies are ready.');
-    return;
+    missingPackages = requiredPackages.filter(
+      (packageName) => !installedDebianPackage(packageName)
+    );
+
+    if (missingPackages.length) {
+      fail(
+        'Required CryLo build packages are still missing after installation: ' +
+        missingPackages.join(', ')
+      );
+    }
   }
+
+  console.log('APT packages....... OK');
+
+  ensureLinuxNodeRuntime();
+
+  const python = probe('python3', ['--version']);
+  if (!python.ok) {
+    fail('python3 is required for CryLo Trezor protobuf generation.');
+  }
+  console.log(`Python............. OK  ${python.stdout || python.stderr}`);
+
+  const cmake = probe('cmake', ['--version']);
+  if (!cmake.ok) {
+    fail('cmake is required for the CryLo native build.');
+  }
+  console.log(
+    `CMake.............. OK  ${
+      cmake.stdout.split(/\r?\n/)[0]
+    }`
+  );
+
+  const make = probe('make', ['--version']);
+  if (!make.ok) {
+    fail('make is required for the CryLo native build.');
+  }
+  console.log('make............... OK');
+
+  const protoc = probe('protoc', ['--version']);
+  if (!protoc.ok) {
+    fail('protoc is required for CryLo Trezor support.');
+  }
+  console.log(`protoc............. OK  ${protoc.stdout}`);
+
+  const pkgConfig = probe('pkg-config', ['--version']);
+  if (!pkgConfig.ok) {
+    fail('pkg-config is required for CryLo hardware-wallet checks.');
+  }
+  console.log(`pkg-config......... OK  ${pkgConfig.stdout}`);
+
+  if (!probe('pkg-config', ['--exists', 'protobuf']).ok) {
+    fail('The protobuf development library was not detected by pkg-config.');
+  }
+  console.log('Protobuf dev....... OK');
+
+  if (!probe('pkg-config', ['--exists', 'libusb-1.0']).ok) {
+    fail('LibUSB development support was not detected by pkg-config.');
+  }
+  console.log('LibUSB............. OK');
+
+  const hidapiReady =
+    probe('pkg-config', ['--exists', 'hidapi-hidraw']).ok ||
+    probe('pkg-config', ['--exists', 'hidapi-libusb']).ok;
+
+  if (!hidapiReady) {
+    fail('HIDAPI development support was not detected by pkg-config.');
+  }
+  console.log('HIDAPI............. OK');
 
   console.log(
-    `Installing required CryLo build dependencies: ` +
-    `${missingPackages.join(', ')}`
+    `Build jobs......... ${
+      process.arch === 'arm64'
+        ? '1  (ARM64 safe mode)'
+        : 'up to 2 by default on Linux x64'
+    }`
   );
 
-  const installer =
-    typeof process.getuid === 'function' &&
-    process.getuid() === 0
-      ? '/usr/bin/apt-get'
-      : 'sudo';
-
-  const installerArgs =
-    installer === '/usr/bin/apt-get'
-      ? [
-          'install',
-          '-y',
-          '--no-install-recommends',
-          ...missingPackages
-        ]
-      : [
-          '/usr/bin/apt-get',
-          'install',
-          '-y',
-          '--no-install-recommends',
-          ...missingPackages
-        ];
-
-  const result = spawnSync(
-    installer,
-    installerArgs,
-    {
-      cwd: root,
-      env: process.env,
-      stdio: 'inherit',
-      shell: false
-    }
-  );
-
-  if (result.error) {
-    fail(
-      `Unable to install CryLo build dependencies: ` +
-      `${result.error.message}`
-    );
-  }
-
-  if (result.status !== 0) {
-    fail(
-      'Required CryLo build dependency installation failed.'
-    );
-  }
-
-  console.log('CryLo build dependencies installed successfully.');
   console.log();
 }
 
