@@ -123,7 +123,8 @@
             "BINARY-MANIFEST.txt"
           ]
         }
-      ]
+      ],
+      "syncDesktopName": true
     },
     "mac": {
       "target": [
@@ -160,5 +161,6 @@
   "allowScripts": {
     "electron@44.3.0": true,
     "electron-winstaller": false
-  }
+  },
+  "desktopName": "com.crylo.wallet"
 }
