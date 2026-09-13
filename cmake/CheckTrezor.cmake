@@ -122,7 +122,7 @@ if(Protobuf_FOUND AND USE_DEVICE_TREZOR AND TREZOR_PYTHON AND Protobuf_COMPILE_T
     set(ENV{PROTOBUF_PROTOC_EXECUTABLE} "${Protobuf_PROTOC_EXECUTABLE}")
     set(TREZOR_PROTOBUF_PARAMS "")
     if (USE_DEVICE_TREZOR_DEBUG)
-        set(TREZOR_PROTOBUF_PARAMS "--debug")
+        set(TREZOR_PROTOBUF_PARAMS "--debug-msg")
     endif()
     
     execute_process(COMMAND ${TREZOR_PYTHON} tools/build_protob.py ${TREZOR_PROTOBUF_PARAMS} WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/../src/device_trezor/trezor RESULT_VARIABLE RET OUTPUT_VARIABLE OUT ERROR_VARIABLE ERR)
@@ -132,6 +132,39 @@ if(Protobuf_FOUND AND USE_DEVICE_TREZOR AND TREZOR_PYTHON AND Protobuf_COMPILE_T
                 "Please read src/device_trezor/trezor/tools/README.md")
     else()
         message(STATUS "Trezor protobuf messages regenerated out: \"${OUT}.\"")
+        # Protobuf generates deprecated enum aliases that trigger warnings
+        # merely by including the generated headers. Keep those generated
+        # compatibility aliases from polluting CryLo release builds.
+        set(TREZOR_PROTOBUF_OUT_DIR
+            "${CMAKE_CURRENT_LIST_DIR}/../src/device_trezor/trezor/messages")
+
+        set(_deprecated_enum_files
+                "messages-common.pb.h"
+                "messages-management.pb.h"
+        )
+
+        foreach(file IN LISTS _deprecated_enum_files)
+            file(READ "${TREZOR_PROTOBUF_OUT_DIR}/${file}" file_content)
+
+            string(REPLACE "PROTOBUF_DEPRECATED_ENUM" ""
+                    updated_content "${file_content}")
+
+            string(PREPEND updated_content
+                    "#if defined(__GNUC__)\n"
+                    "#pragma GCC diagnostic push\n"
+                    "#pragma GCC diagnostic ignored \"-Wdeprecated-declarations\"\n"
+                    "#endif\n")
+
+            string(APPEND updated_content
+                    "#if defined(__GNUC__)\n"
+                    "#pragma GCC diagnostic pop\n"
+                    "#endif\n")
+
+            file(WRITE
+                    "${TREZOR_PROTOBUF_OUT_DIR}/${file}"
+                    "${updated_content}")
+        endforeach()
+
         set(DEVICE_TREZOR_READY 1)
         add_definitions(-DDEVICE_TREZOR_READY=1)
         add_definitions(-DPROTOBUF_INLINE_NOT_IN_HEADERS=0)

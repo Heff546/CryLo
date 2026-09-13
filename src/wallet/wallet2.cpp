@@ -10870,6 +10870,7 @@ void wallet2::light_wallet_get_address_txs()
     address_tx.m_timestamp = t.timestamp;
     address_tx.m_coinbase  = t.coinbase;
     address_tx.m_mempool  = t.mempool;
+    address_tx.m_subaddr_index = {};
     m_light_wallet_address_txs.emplace(tx_hash,address_tx);
 
     // populate data needed for history (m_payments, m_unconfirmed_payments, m_confirmed_txs)
@@ -10883,6 +10884,7 @@ void wallet2::light_wallet_get_address_txs()
       payment.m_unlock_time  = t.unlock_time;
       payment.m_timestamp = t.timestamp;
       payment.m_coinbase = t.coinbase;
+      payment.m_subaddr_index = {};
         
       if (t.mempool) {   
         if (std::find(unconfirmed_payments_txs.begin(), unconfirmed_payments_txs.end(), tx_hash) == unconfirmed_payments_txs.end()) {
