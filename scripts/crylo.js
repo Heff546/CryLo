@@ -2111,6 +2111,17 @@ function update() {
     }
   }
 
+  if (
+    process.platform === 'linux' &&
+    authorization
+  ) {
+    console.log();
+    console.log(
+      'Preparing authenticated CryLo runtime dependencies...'
+    );
+    ensureLinuxRuntimeDependencies();
+  }
+
   let after = before;
 
   if (before === remote) {
@@ -2728,7 +2739,7 @@ function ensureLinuxNodeRuntime() {
   console.log(`npm............... OK  ${npmVersion}`);
 }
 
-function ensureLinuxBuildDependencies() {
+function ensureLinuxRuntimeDependencies() {
   if (process.platform !== 'linux') {
     return;
   }
@@ -2744,15 +2755,64 @@ function ensureLinuxBuildDependencies() {
     );
   }
 
+  console.log('===== CRYLO LINUX RUNTIME ENVIRONMENT =====');
+  console.log(`Architecture....... ${process.arch}`);
+
+  const requiredPackages = [
+    'ca-certificates',
+    'curl',
+    'gnupg',
+    'tar'
+  ];
+
+  let missingPackages = requiredPackages.filter(
+    (packageName) => !installedDebianPackage(packageName)
+  );
+
+  if (missingPackages.length) {
+    console.log(
+      'Installing required CryLo runtime dependencies: ' +
+      missingPackages.join(', ')
+    );
+
+    runAsRoot('/usr/bin/apt-get', [
+      'install',
+      '-y',
+      '--no-install-recommends',
+      ...missingPackages
+    ]);
+
+    missingPackages = requiredPackages.filter(
+      (packageName) => !installedDebianPackage(packageName)
+    );
+
+    if (missingPackages.length) {
+      fail(
+        'Required CryLo runtime packages are still missing after installation: ' +
+        missingPackages.join(', ')
+      );
+    }
+  }
+
+  console.log('Runtime packages.... OK');
+
+  ensureLinuxNodeRuntime();
+  console.log();
+}
+
+function ensureLinuxBuildDependencies() {
+  if (process.platform !== 'linux') {
+    return;
+  }
+
+  ensureLinuxRuntimeDependencies();
+
   console.log('===== CRYLO LINUX BUILD ENVIRONMENT =====');
   console.log(`Architecture....... ${process.arch}`);
 
   const requiredPackages = [
     'build-essential',
-    'ca-certificates',
     'cmake',
-    'curl',
-    'gnupg',
     'pkg-config',
     'python3',
     'protobuf-compiler',
@@ -2795,9 +2855,7 @@ function ensureLinuxBuildDependencies() {
     }
   }
 
-  console.log('APT packages....... OK');
-
-  ensureLinuxNodeRuntime();
+  console.log('Build packages..... OK');
 
   const python = probe('python3', ['--version']);
   if (!python.ok) {
