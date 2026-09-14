@@ -67,6 +67,46 @@ function git(args) {
   return String(result.stdout || '').trim();
 }
 
+function requireReleaseTagAtHead(releaseTag) {
+  const objectType = git([
+    'cat-file',
+    '-t',
+    releaseTag
+  ]);
+
+  if (objectType !== 'tag') {
+    fail(
+      `Official release tag ${releaseTag} must be an annotated Git tag.`
+    );
+  }
+
+  const head = git([
+    'rev-parse',
+    'HEAD'
+  ]);
+
+  const taggedCommit = git([
+    'rev-parse',
+    `${releaseTag}^{}`
+  ]);
+
+  if (taggedCommit !== head) {
+    fail(
+      `Release tag ${releaseTag} does not point to HEAD.\n` +
+      `HEAD: ${head}\n` +
+      `Tag:  ${taggedCommit}`
+    );
+  }
+
+  console.log(
+    `Release tag............ VERIFIED  ${releaseTag}`
+  );
+
+  console.log(
+    `Release commit......... VERIFIED  ${head}`
+  );
+}
+
 function requireCleanReleaseTree() {
   const status = git([
     'status',
@@ -153,6 +193,23 @@ const packageJson = JSON.parse(
     path.join(root, 'electron', 'package.json'),
     'utf8'
   )
+);
+
+const expectedReleaseTag =
+  network === 'testnet'
+    ? `v${packageJson.version}-testnet.${releaseSequence}`
+    : `v${packageJson.version}`;
+
+if (releaseTag !== expectedReleaseTag) {
+  fail(
+    `Release tag does not match the signed release identity.\n` +
+    `Expected: ${expectedReleaseTag}\n` +
+    `Actual:   ${releaseTag}`
+  );
+}
+
+requireReleaseTagAtHead(
+  releaseTag
 );
 
 const artifacts = artifactArguments.map((definition) => {

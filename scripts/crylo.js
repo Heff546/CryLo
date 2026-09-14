@@ -490,14 +490,31 @@ function writeReleaseSecurityState(authorization) {
   if (
     previous &&
     authorization.releaseSequence ===
-      previous.highestAcceptedReleaseSequence &&
-    previous.lastAcceptedGitCommit &&
-    previous.lastAcceptedGitCommit !==
-      authorization.gitCommit
+      previous.highestAcceptedReleaseSequence
   ) {
-    fail(
-      'Refusing release-sequence reuse for a different Git commit.'
-    );
+    const identityMismatch =
+      (
+        previous.lastAcceptedGitCommit &&
+        previous.lastAcceptedGitCommit.toLowerCase() !==
+          authorization.gitCommit.toLowerCase()
+      ) ||
+      (
+        previous.lastAcceptedReleaseTag &&
+        previous.lastAcceptedReleaseTag !==
+          authorization.releaseTag
+      ) ||
+      (
+        previous.lastAcceptedVersion &&
+        previous.lastAcceptedVersion !==
+          authorization.version
+      );
+
+    if (identityMismatch) {
+      fail(
+        'Refusing release-sequence reuse for a different ' +
+        'CryLo release identity.'
+      );
+    }
   }
 
   const state = {
@@ -572,6 +589,36 @@ function writeReleaseSecurityState(authorization) {
   console.log(
     `Release security state: ${statePath}`
   );
+}
+
+function sha256File(file) {
+  const hash = crypto.createHash('sha256');
+  const descriptor = fs.openSync(file, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+
+  try {
+    while (true) {
+      const count = fs.readSync(
+        descriptor,
+        buffer,
+        0,
+        buffer.length,
+        null
+      );
+
+      if (count === 0) {
+        break;
+      }
+
+      hash.update(
+        buffer.subarray(0, count)
+      );
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
+
+  return hash.digest('hex');
 }
 
 function httpsDownload(url, output) {
@@ -957,12 +1004,28 @@ function authenticateRemoteRelease(
       if (
         existingState &&
         manifest.releaseSequence ===
-          existingState.highestAcceptedReleaseSequence &&
-        existingState.lastAcceptedGitCommit &&
-        existingState.lastAcceptedGitCommit.toLowerCase() !==
-          manifest.gitCommit.toLowerCase()
+          existingState.highestAcceptedReleaseSequence
       ) {
-        continue;
+        const identityMismatch =
+          (
+            existingState.lastAcceptedGitCommit &&
+            existingState.lastAcceptedGitCommit.toLowerCase() !==
+              manifest.gitCommit.toLowerCase()
+          ) ||
+          (
+            existingState.lastAcceptedReleaseTag &&
+            existingState.lastAcceptedReleaseTag !==
+              manifest.releaseTag
+          ) ||
+          (
+            existingState.lastAcceptedVersion &&
+            existingState.lastAcceptedVersion !==
+              manifest.version
+          );
+
+        if (identityMismatch) {
+          continue;
+        }
       }
 
       signedCandidates.push({
@@ -1168,6 +1231,701 @@ function resumedReleaseAuthorization(
     version,
     gitCommit: commit
   };
+}
+
+function downloadAuthorizedLinuxBundle(
+  authorization
+) {
+  const target = releaseTarget();
+
+  if (!target) {
+    fail(
+      'Exact signed release installation is currently Linux-only.'
+    );
+  }
+
+  const publicKeyPath = path.join(
+    root,
+    'scripts',
+    'release',
+    'keys',
+    `crylo-${network.mode}-release-ed25519-public.pem`
+  );
+
+  const apiUrl =
+    `https://api.github.com/repos/${releaseRepository}/releases/tags/` +
+    encodeURIComponent(
+      authorization.releaseTag
+    );
+
+  let release;
+
+  try {
+    release = JSON.parse(
+      httpsText(apiUrl)
+    );
+  } catch (error) {
+    fail(
+      `Unable to retrieve authorized CryLo release: ${error.message}`
+    );
+  }
+
+  if (
+    !release ||
+    release.draft === true ||
+    release.prerelease !== true ||
+    release.tag_name !== authorization.releaseTag ||
+    !Array.isArray(release.assets)
+  ) {
+    fail(
+      'Authorized CryLo release metadata is invalid.'
+    );
+  }
+
+  const temporaryRoot = fs.mkdtempSync(
+    path.join(
+      os.tmpdir(),
+      'crylo-authorized-install-'
+    )
+  );
+
+  try {
+    const manifestPath = path.join(
+      temporaryRoot,
+      'crylo-release-manifest.json'
+    );
+
+    const signaturePath =
+      `${manifestPath}.sig`;
+
+    const manifestAsset = release.assets.find(
+      (asset) =>
+        asset &&
+        asset.name ===
+          'crylo-release-manifest.json'
+    );
+
+    const signatureAsset = release.assets.find(
+      (asset) =>
+        asset &&
+        asset.name ===
+          'crylo-release-manifest.json.sig'
+    );
+
+    if (
+      !manifestAsset ||
+      !signatureAsset ||
+      typeof manifestAsset.browser_download_url !== 'string' ||
+      typeof signatureAsset.browser_download_url !== 'string'
+    ) {
+      throw new Error(
+        'Authorized release is missing its signed manifest.'
+      );
+    }
+
+    httpsDownload(
+      manifestAsset.browser_download_url,
+      manifestPath
+    );
+
+    httpsDownload(
+      signatureAsset.browser_download_url,
+      signaturePath
+    );
+
+    const manifest =
+      verifyManifestWithCurrentTrust(
+        manifestPath,
+        signaturePath,
+        publicKeyPath
+      );
+
+    if (
+      manifest.schema !== 1 ||
+      manifest.product !== 'CryLo' ||
+      manifest.network !== network.mode ||
+      manifest.version !== authorization.version ||
+      manifest.releaseTag !== authorization.releaseTag ||
+      manifest.releaseSequence !== authorization.releaseSequence ||
+      typeof manifest.gitCommit !== 'string' ||
+      manifest.gitCommit.toLowerCase() !==
+        authorization.gitCommit.toLowerCase() ||
+      manifest.signatureAlgorithm !== 'Ed25519' ||
+      manifest.hashAlgorithm !== 'SHA-256'
+    ) {
+      throw new Error(
+        'Authorized release manifest does not match the ' +
+        'previously authenticated release.'
+      );
+    }
+
+    const expectedTag =
+      `v${manifest.version}-testnet.${manifest.releaseSequence}`;
+
+    if (manifest.releaseTag !== expectedTag) {
+      throw new Error(
+        'Authorized release tag does not match its signed identity.'
+      );
+    }
+
+    const matchingArtifacts = Array.isArray(
+      manifest.artifacts
+    )
+      ? manifest.artifacts.filter(
+          (artifact) =>
+            artifact &&
+            artifact.platform === target.platform &&
+            artifact.architecture === target.architecture
+        )
+      : [];
+
+    if (matchingArtifacts.length !== 1) {
+      throw new Error(
+        `Authorized release must contain exactly one ` +
+        `${target.platform}/${target.architecture} artifact.`
+      );
+    }
+
+    const artifact = matchingArtifacts[0];
+
+    const expectedBundleName =
+      `CryLo-Release-${authorization.version}-linux-` +
+      `${target.architecture}.tar`;
+
+    if (artifact.file !== expectedBundleName) {
+      throw new Error(
+        `Authorized release bundle filename mismatch.\n` +
+        `Expected: ${expectedBundleName}\n` +
+        `Actual:   ${artifact.file}`
+      );
+    }
+
+    const remoteBundle = release.assets.find(
+      (asset) =>
+        asset &&
+        asset.name === artifact.file
+    );
+
+    if (
+      !remoteBundle ||
+      typeof remoteBundle.browser_download_url !== 'string'
+    ) {
+      throw new Error(
+        `Authorized signed bundle is missing: ${artifact.file}`
+      );
+    }
+
+    const bundlePath = path.join(
+      temporaryRoot,
+      artifact.file
+    );
+
+    httpsDownload(
+      remoteBundle.browser_download_url,
+      bundlePath
+    );
+
+    const verification = spawnSync(
+      process.execPath,
+      [
+        releaseVerifierScript,
+        '--network', network.mode,
+        '--platform', target.platform,
+        '--architecture', target.architecture,
+        '--minimum-sequence',
+        String(authorization.releaseSequence),
+        '--manifest', manifestPath,
+        '--signature', signaturePath,
+        '--public-key', publicKeyPath
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (verification.error) {
+      throw verification.error;
+    }
+
+    if (verification.status !== 0) {
+      throw new Error(
+        'Authorized CryLo release bundle verification failed.'
+      );
+    }
+
+    return {
+      temporaryRoot,
+      bundlePath
+    };
+  } catch (error) {
+    try {
+      fs.rmSync(
+        temporaryRoot,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+    } catch (_) {
+      // Best-effort authenticated-download cleanup.
+    }
+
+    fail(
+      `Exact CryLo release download failed: ${error.message}`
+    );
+  }
+}
+
+function installAuthorizedLinuxBundle(
+  authorization
+) {
+  if (process.platform !== 'linux') {
+    fail(
+      'Exact CryLo release bundle installation is Linux-only.'
+    );
+  }
+
+  const release =
+    downloadAuthorizedLinuxBundle(
+      authorization
+    );
+
+  let installationError = null;
+
+  try {
+    const native = expectedNativeBin();
+
+    if (!native) {
+      throw new Error(
+        'Unable to determine the Linux native release directory.'
+      );
+    }
+
+    const appImageName =
+      `CryLo-Wallet-${authorization.version}-${process.arch}.AppImage`;
+
+    const expectedEntries = [
+      native.daemon,
+      native.walletCli,
+      native.walletRpc,
+      appImageName
+    ].sort();
+
+    const listing = spawnSync(
+      'tar',
+      [
+        '-tf',
+        release.bundlePath
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    if (
+      listing.error ||
+      listing.status !== 0
+    ) {
+      throw new Error(
+        'Unable to inspect the authenticated CryLo release bundle.'
+      );
+    }
+
+    const entries = String(
+      listing.stdout || ''
+    )
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .sort();
+
+    if (
+      entries.length !== expectedEntries.length ||
+      entries.some(
+        (entry, index) =>
+          entry !== expectedEntries[index] ||
+          entry !== path.basename(entry) ||
+          entry.includes('/') ||
+          entry.includes('\\')
+      )
+    ) {
+      throw new Error(
+        'Authenticated CryLo release bundle contains unexpected entries.'
+      );
+    }
+
+    const extractionDirectory = path.join(
+      release.temporaryRoot,
+      'extracted'
+    );
+
+    fs.mkdirSync(
+      extractionDirectory,
+      {
+        recursive: true,
+        mode: 0o700
+      }
+    );
+
+    const extraction = spawnSync(
+      'tar',
+      [
+        '-xf',
+        release.bundlePath,
+        '-C',
+        extractionDirectory,
+        '--no-same-owner',
+        '--no-same-permissions'
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (
+      extraction.error ||
+      extraction.status !== 0
+    ) {
+      throw new Error(
+        'Unable to extract the authenticated CryLo release bundle.'
+      );
+    }
+
+    for (const entry of expectedEntries) {
+      const extracted = path.join(
+        extractionDirectory,
+        entry
+      );
+
+      const stat = fs.lstatSync(
+        extracted
+      );
+
+      if (!stat.isFile()) {
+        throw new Error(
+          `Authenticated bundle entry is not a regular file: ${entry}`
+        );
+      }
+    }
+
+    fs.mkdirSync(
+      native.directory,
+      {
+        recursive: true
+      }
+    );
+
+    const distDirectory = path.join(
+      root,
+      'electron',
+      'dist'
+    );
+
+    fs.mkdirSync(
+      distDirectory,
+      {
+        recursive: true
+      }
+    );
+
+    const installations = [
+      {
+        source: path.join(
+          extractionDirectory,
+          native.daemon
+        ),
+        destination: path.join(
+          native.directory,
+          native.daemon
+        )
+      },
+      {
+        source: path.join(
+          extractionDirectory,
+          native.walletCli
+        ),
+        destination: path.join(
+          native.directory,
+          native.walletCli
+        )
+      },
+      {
+        source: path.join(
+          extractionDirectory,
+          native.walletRpc
+        ),
+        destination: path.join(
+          native.directory,
+          native.walletRpc
+        )
+      },
+      {
+        source: path.join(
+          extractionDirectory,
+          appImageName
+        ),
+        destination: path.join(
+          distDirectory,
+          appImageName
+        )
+      }
+    ];
+
+    const transactionId =
+      `${process.pid}-${Date.now()}`;
+
+    const staged = [];
+    let transactionSucceeded = false;
+
+    try {
+      /*
+       * Stage and hash every file before replacing anything.
+       * Add each transaction record first so partial staging is
+       * still cleaned if a later copy/hash operation fails.
+       */
+      for (const item of installations) {
+        const temporary =
+          `${item.destination}.new-${transactionId}`;
+
+        const record = {
+          ...item,
+          temporary,
+          expectedHash:
+            sha256File(
+              item.source
+            ),
+          backup:
+            `${item.destination}.before-release-${transactionId}`,
+          hadExisting:
+            fs.existsSync(item.destination),
+          installed: false,
+          rollbackFailed: false
+        };
+
+        staged.push(
+          record
+        );
+
+        fs.copyFileSync(
+          record.source,
+          record.temporary
+        );
+
+        fs.chmodSync(
+          record.temporary,
+          0o755
+        );
+
+        const stagedHash =
+          sha256File(
+            record.temporary
+          );
+
+        if (
+          stagedHash !==
+          record.expectedHash
+        ) {
+          throw new Error(
+            `CryLo staging hash mismatch: ` +
+            `${path.basename(record.destination)}`
+          );
+        }
+      }
+
+      /*
+       * Replace each destination only after every release file
+       * has staged successfully.
+       */
+      for (const item of staged) {
+        if (item.hadExisting) {
+          fs.copyFileSync(
+            item.destination,
+            item.backup
+          );
+        }
+
+        fs.renameSync(
+          item.temporary,
+          item.destination
+        );
+
+        item.installed = true;
+
+        const installedHash =
+          sha256File(
+            item.destination
+          );
+
+        if (
+          installedHash !==
+          item.expectedHash
+        ) {
+          throw new Error(
+            `Installed CryLo artifact hash mismatch: ` +
+            `${path.basename(item.destination)}`
+          );
+        }
+      }
+
+      transactionSucceeded = true;
+    } catch (error) {
+      const rollbackErrors = [];
+
+      for (const item of [...staged].reverse()) {
+        if (!item.installed) {
+          continue;
+        }
+
+        try {
+          if (item.hadExisting) {
+            if (!fs.existsSync(item.backup)) {
+              throw new Error(
+                `rollback backup is missing: ${item.backup}`
+              );
+            }
+
+            fs.copyFileSync(
+              item.backup,
+              item.destination
+            );
+
+            const restoredHash =
+              sha256File(
+                item.destination
+              );
+
+            const backupHash =
+              sha256File(
+                item.backup
+              );
+
+            if (
+              restoredHash !==
+              backupHash
+            ) {
+              throw new Error(
+                'restored file does not match rollback backup'
+              );
+            }
+          } else {
+            fs.rmSync(
+              item.destination,
+              { force: true }
+            );
+          }
+        } catch (rollbackError) {
+          item.rollbackFailed = true;
+
+          rollbackErrors.push(
+            `${path.basename(item.destination)}: ` +
+            `${rollbackError.message}`
+          );
+        }
+      }
+
+      if (rollbackErrors.length) {
+        throw new Error(
+          `Exact release installation failed: ${error.message}\n` +
+          'One or more rollback operations also failed.\n' +
+          'Recovery backups were preserved for those files:\n' +
+          rollbackErrors
+            .map((value) => `  ${value}`)
+            .join('\n')
+        );
+      }
+
+      throw new Error(
+        `Exact release installation rolled back successfully: ` +
+        `${error.message}`
+      );
+    } finally {
+      for (const item of staged) {
+        try {
+          fs.rmSync(
+            item.temporary,
+            { force: true }
+          );
+        } catch (_) {
+          // Best-effort staging cleanup.
+        }
+
+        /*
+         * Never destroy a backup whose rollback failed.
+         * On success, or after a verified successful rollback,
+         * the temporary backup can be removed.
+         */
+        if (
+          transactionSucceeded ||
+          !item.rollbackFailed
+        ) {
+          try {
+            fs.rmSync(
+              item.backup,
+              { force: true }
+            );
+          } catch (_) {
+            // Best-effort successful-transaction cleanup.
+          }
+        }
+      }
+    }
+
+    console.log();
+    console.log(
+      '===== EXACT SIGNED CRYLO RELEASE INSTALLED ====='
+    );
+
+    console.log(
+      `Release................. ${authorization.releaseTag}`
+    );
+
+    console.log(
+      `Sequence................ ${authorization.releaseSequence}`
+    );
+
+    console.log(
+      `Commit.................. ${authorization.gitCommit}`
+    );
+
+    for (const item of installations) {
+      console.log(
+        `Installed............... ${item.destination}`
+      );
+
+      console.log(
+        `SHA256.................. ${sha256File(item.destination)}`
+      );
+    }
+  } catch (error) {
+    installationError = error;
+  } finally {
+    try {
+      fs.rmSync(
+        release.temporaryRoot,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+    } catch (_) {
+      // Best-effort authenticated-release cleanup.
+    }
+  }
+
+  if (installationError) {
+    fail(
+      `Exact CryLo release installation failed: ` +
+      `${installationError.message}`
+    );
+  }
 }
 
 function update() {
@@ -1460,47 +2218,52 @@ function update() {
     );
   }
 
-  console.log();
-  console.log('Preparing build dependencies...');
-
-  ensureLinuxBuildDependencies();
-
-  console.log(
-    'Building the current native CryLo and Electron release...'
-  );
-
-  const result = spawnSync(
-    process.execPath,
-    [releaseScript],
-    {
-      cwd: root,
-      env: process.env,
-      stdio: 'inherit',
-      shell: false
+  if (process.platform === 'linux') {
+    if (!authorization) {
+      fail(
+        'Linux update reached installation without signed authorization.'
+      );
     }
-  );
 
-  console.log();
-  console.log(
-    'Restoring generated Electron binary staging files...'
-  );
-
-  git([
-    'restore',
-    '--source=HEAD',
-    '--',
-    ...generatedElectronInputs
-  ]);
-
-  if (result.error) {
-    fail(result.error.message);
-  }
-
-  if (result.status !== 0) {
-    fail(
-      'CryLo source was authenticated and updated, ' +
-      'but the release build failed.'
+    console.log();
+    console.log(
+      'Installing the exact authenticated CryLo release bundle...'
     );
+
+    installAuthorizedLinuxBundle(
+      authorization
+    );
+  } else {
+    console.log();
+    console.log('Preparing build dependencies...');
+
+    ensureLinuxBuildDependencies();
+
+    console.log(
+      'Building the current native CryLo and Electron release...'
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [releaseScript],
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (result.error) {
+      fail(result.error.message);
+    }
+
+    if (result.status !== 0) {
+      fail(
+        'CryLo source was authenticated and updated, ' +
+        'but the release build failed.'
+      );
+    }
   }
 
   deployInfrastructureRelease();
@@ -2399,38 +3162,65 @@ function installLinuxDesktopLaunchers() {
     );
   }
 
-  const appImages = fs.readdirSync(distDirectory)
-    .filter((name) => name.endsWith('.AppImage'))
-    .filter((name) => {
-      const lower = name.toLowerCase();
+  const packageJson = JSON.parse(
+    fs.readFileSync(
+      path.join(
+        electronDirectory,
+        'package.json'
+      ),
+      'utf8'
+    )
+  );
 
-      if (process.arch === 'arm64') {
-        return lower.includes('arm64');
-      }
+  const canonicalAppImage = path.join(
+    distDirectory,
+    `CryLo-Wallet-${packageJson.version}-${process.arch}.AppImage`
+  );
 
-      return (
-        !lower.includes('arm64') &&
-        !lower.includes('aarch64')
+  let walletAppImage = null;
+
+  /*
+   * Official signed updates install the canonical hyphenated
+   * AppImage name. Prefer it explicitly so the desktop launcher
+   * cannot select a different local AppImage merely because its
+   * modification time is newer.
+   */
+  if (fs.existsSync(canonicalAppImage)) {
+    walletAppImage = canonicalAppImage;
+  } else {
+    const appImages = fs.readdirSync(distDirectory)
+      .filter((name) => name.endsWith('.AppImage'))
+      .filter((name) => {
+        const lower = name.toLowerCase();
+
+        if (process.arch === 'arm64') {
+          return lower.includes('arm64');
+        }
+
+        return (
+          !lower.includes('arm64') &&
+          !lower.includes('aarch64')
+        );
+      })
+      .map((name) => {
+        const filePath = path.join(distDirectory, name);
+
+        return {
+          filePath,
+          modified: fs.statSync(filePath).mtimeMs
+        };
+      })
+      .sort((left, right) => right.modified - left.modified);
+
+    if (!appImages.length) {
+      fail(
+        `No ${process.arch} CryLo Wallet AppImage was found in ` +
+        `${distDirectory}.`
       );
-    })
-    .map((name) => {
-      const filePath = path.join(distDirectory, name);
+    }
 
-      return {
-        filePath,
-        modified: fs.statSync(filePath).mtimeMs
-      };
-    })
-    .sort((left, right) => right.modified - left.modified);
-
-  if (!appImages.length) {
-    fail(
-      `No ${process.arch} CryLo Wallet AppImage was found in ` +
-      `${distDirectory}.`
-    );
+    walletAppImage = appImages[0].filePath;
   }
-
-  const walletAppImage = appImages[0].filePath;
 
   fs.chmodSync(walletAppImage, 0o755);
 

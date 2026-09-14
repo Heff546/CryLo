@@ -8,9 +8,107 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..', '..');
 const electronDir = path.join(root, 'electron');
 
+const packageJson = JSON.parse(
+  fs.readFileSync(
+    path.join(electronDir, 'package.json'),
+    'utf8'
+  )
+);
+
 function fail(message) {
   console.error(`ERROR: ${message}`);
   process.exit(1);
+}
+
+function argument(name, fallback = null) {
+  const index = process.argv.indexOf(name);
+
+  if (index === -1) {
+    return fallback;
+  }
+
+  const value = process.argv[index + 1];
+
+  if (!value || value.startsWith('--')) {
+    fail(`${name} requires a value.`);
+  }
+
+  return value;
+}
+
+function gitCapture(args) {
+  const result = spawnSync(
+    'git',
+    args,
+    {
+      cwd: root,
+      env: process.env,
+      encoding: 'utf8',
+      shell: false
+    }
+  );
+
+  if (result.error || result.status !== 0) {
+    fail(`git ${args.join(' ')} failed.`);
+  }
+
+  return String(result.stdout || '').trim();
+}
+
+function requireOfficialReleaseTag(releaseTag) {
+  if (
+    !/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$/.test(releaseTag)
+  ) {
+    fail(`Invalid official release tag: ${releaseTag}`);
+  }
+
+  const status = gitCapture([
+    'status',
+    '--porcelain',
+    '--untracked-files=all'
+  ]);
+
+  if (status) {
+    fail('Official CryLo release builds require a clean Git tree.');
+  }
+
+  const objectType = gitCapture([
+    'cat-file',
+    '-t',
+    releaseTag
+  ]);
+
+  if (objectType !== 'tag') {
+    fail(
+      `Official release tag ${releaseTag} must be an annotated Git tag.`
+    );
+  }
+
+  const head = gitCapture([
+    'rev-parse',
+    'HEAD'
+  ]);
+
+  const taggedCommit = gitCapture([
+    'rev-parse',
+    `${releaseTag}^{}`
+  ]);
+
+  if (taggedCommit !== head) {
+    fail(
+      `Official release tag ${releaseTag} does not point to HEAD.\n` +
+      `HEAD: ${head}\n` +
+      `Tag:  ${taggedCommit}`
+    );
+  }
+
+  console.log(
+    `Official release tag... VERIFIED  ${releaseTag}`
+  );
+
+  console.log(
+    `Official release commit VERIFIED  ${head}`
+  );
 }
 
 function run(command, args, options = {}) {
@@ -442,6 +540,163 @@ function packageElectron(target, nativeBin) {
   }
 }
 
+function createLinuxReleaseBundle(
+  target,
+  nativeBin,
+  releaseTag
+) {
+  if (target.platform !== 'linux') {
+    fail(
+      'Official exact-artifact bundle creation is currently enabled ' +
+      'for Linux only.'
+    );
+  }
+
+  if (!commandAvailable('tar')) {
+    fail(
+      'tar is required to create the official CryLo Linux release bundle.'
+    );
+  }
+
+  const appImageSource = path.join(
+    electronDir,
+    'dist',
+    `CryLo Wallet-${packageJson.version}-${target.arch}.AppImage`
+  );
+
+  if (!fs.existsSync(appImageSource)) {
+    fail(
+      `Expected Electron AppImage was not produced: ${appImageSource}`
+    );
+  }
+
+  const nativeFiles = [
+    target.daemon,
+    target.walletCli,
+    target.walletRpc
+  ];
+
+  for (const file of nativeFiles) {
+    const source = path.join(nativeBin, file);
+
+    if (!fs.existsSync(source)) {
+      fail(
+        `Required official native release file is missing: ${source}`
+      );
+    }
+  }
+
+  const canonicalAppImage =
+    `CryLo-Wallet-${packageJson.version}-${target.arch}.AppImage`;
+
+  const bundleName =
+    `CryLo-Release-${packageJson.version}-linux-${target.arch}.tar`;
+
+  const bundlePath = path.join(
+    electronDir,
+    'dist',
+    bundleName
+  );
+
+  const staging = fs.mkdtempSync(
+    path.join(
+      os.tmpdir(),
+      'crylo-official-release-'
+    )
+  );
+
+  try {
+    for (const file of nativeFiles) {
+      const source = path.join(nativeBin, file);
+      const destination = path.join(staging, file);
+
+      fs.copyFileSync(source, destination);
+      fs.chmodSync(destination, 0o755);
+    }
+
+    const stagedAppImage = path.join(
+      staging,
+      canonicalAppImage
+    );
+
+    fs.copyFileSync(
+      appImageSource,
+      stagedAppImage
+    );
+
+    fs.chmodSync(
+      stagedAppImage,
+      0o755
+    );
+
+    fs.rmSync(
+      bundlePath,
+      { force: true }
+    );
+
+    const entries = [
+      target.daemon,
+      target.walletCli,
+      target.walletRpc,
+      canonicalAppImage
+    ].sort();
+
+    run(
+      'tar',
+      [
+        '--sort=name',
+        '--format=ustar',
+        '--owner=0',
+        '--group=0',
+        '--numeric-owner',
+        '--mtime=1970-01-01T00:00:00Z',
+        '-cf',
+        bundlePath,
+        ...entries
+      ],
+      {
+        cwd: staging
+      }
+    );
+
+    if (!fs.existsSync(bundlePath)) {
+      fail(
+        `Official CryLo release bundle was not created: ${bundlePath}`
+      );
+    }
+
+    console.log();
+    console.log(
+      '===== OFFICIAL SIGNABLE RELEASE BUNDLE ====='
+    );
+    console.log(`Release tag: ${releaseTag}`);
+    console.log(`Bundle: ${bundlePath}`);
+
+    for (const entry of entries) {
+      console.log(`  ${entry}`);
+    }
+
+    return bundlePath;
+  } finally {
+    fs.rmSync(
+      staging,
+      {
+        recursive: true,
+        force: true
+      }
+    );
+  }
+}
+
+const officialReleaseTag =
+  argument('--release-tag');
+
+if (officialReleaseTag) {
+  requireOfficialReleaseTag(
+    officialReleaseTag
+  );
+}
+
 const target = detectTarget();
 
 const defaultJobs =
@@ -491,6 +746,16 @@ console.log();
 console.log('===== BUILDING MATCHING ELECTRON RELEASE =====');
 packageElectron(target, nativeBin);
 
+let officialBundle = null;
+
+if (officialReleaseTag) {
+  officialBundle = createLinuxReleaseBundle(
+    target,
+    nativeBin,
+    officialReleaseTag
+  );
+}
+
 console.log();
 console.log('========================================');
 console.log('       CRYLO RELEASE COMPLETE');
@@ -498,3 +763,9 @@ console.log('========================================');
 console.log(`Platform: ${target.platform}/${target.arch}`);
 console.log(`Native binaries: ${nativeBin}`);
 console.log(`Electron artifacts: ${path.join(electronDir, 'dist')}`);
+
+if (officialBundle) {
+  console.log(
+    `Official bundle: ${officialBundle}`
+  );
+}

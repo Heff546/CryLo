@@ -293,6 +293,19 @@ if (
   fail('Manifest releaseSequence is invalid.');
 }
 
+const expectedReleaseTag =
+  expectedNetwork === 'testnet'
+    ? `v${manifest.version}-testnet.${manifest.releaseSequence}`
+    : `v${manifest.version}`;
+
+if (manifest.releaseTag !== expectedReleaseTag) {
+  fail(
+    `Manifest releaseTag does not match its signed identity.\n` +
+    `Expected: ${expectedReleaseTag}\n` +
+    `Actual:   ${manifest.releaseTag}`
+  );
+}
+
 if (
   minimumSequence !== null &&
   manifest.releaseSequence < minimumSequence
@@ -327,6 +340,7 @@ if (
 }
 
 const seenArtifactKeys = new Set();
+const seenArtifactFileNames = new Set();
 
 for (const artifact of manifest.artifacts) {
   if (
@@ -354,7 +368,16 @@ for (const artifact of manifest.artifacts) {
     );
   }
 
+  if (seenArtifactFileNames.has(artifact.file)) {
+    fail(
+      `Manifest contains a duplicate artifact filename: ${artifact.file}`
+    );
+  }
+
   seenArtifactKeys.add(key);
+  seenArtifactFileNames.add(
+    artifact.file
+  );
 }
 
 let selectedArtifacts = manifest.artifacts;
