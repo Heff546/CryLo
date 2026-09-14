@@ -1,6 +1,8 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -14,7 +16,8 @@ const releaseScript = path.join(
 
 const network = {
   mode: 'testnet',
-  entryRelay: 'relay-us-1.crylo.network:22640'
+  entryRelay: 'relay-us-1.crylo.network:22640',
+  bootstrapReleaseSequence: 2
 };
 
 const runtimeDirectory = path.join(
@@ -372,6 +375,801 @@ function deployInfrastructureRelease() {
   console.log(`Running daemon: ${binaryVersion(target)}`);
 }
 
+const releaseVerifierScript = path.join(
+  root,
+  'scripts',
+  'release',
+  'verify-release-manifest.js'
+);
+
+const releaseRepository = 'Heff546/CryLo';
+
+function cryloConfigRoot() {
+  const home =
+    process.env.HOME ||
+    process.env.USERPROFILE;
+
+  if (!home) {
+    fail(
+      'Unable to determine the current user home directory.'
+    );
+  }
+
+  if (process.platform === 'win32') {
+    return path.join(
+      process.env.APPDATA ||
+        path.join(home, 'AppData', 'Roaming'),
+      'crylo-wallet'
+    );
+  }
+
+  return path.join(
+    process.env.XDG_CONFIG_HOME ||
+      path.join(home, '.config'),
+    'crylo-wallet'
+  );
+}
+
+function releaseSecurityStatePath() {
+  return path.join(
+    cryloConfigRoot(),
+    'release-security.json'
+  );
+}
+
+function readReleaseSecurityState() {
+  const statePath = releaseSecurityStatePath();
+
+  if (!fs.existsSync(statePath)) {
+    return null;
+  }
+
+  let state;
+
+  try {
+    state = JSON.parse(
+      fs.readFileSync(statePath, 'utf8')
+    );
+  } catch (error) {
+    fail(
+      `CryLo release-security state is invalid: ${error.message}`
+    );
+  }
+
+  if (
+    !state ||
+    state.network !== network.mode ||
+    !Number.isSafeInteger(
+      state.highestAcceptedReleaseSequence
+    ) ||
+    state.highestAcceptedReleaseSequence < 1
+  ) {
+    fail(
+      'CryLo release-security state is invalid or belongs to ' +
+      'a different network.'
+    );
+  }
+
+  if (
+    state.lastAcceptedGitCommit !== undefined &&
+    (
+      typeof state.lastAcceptedGitCommit !== 'string' ||
+      !/^[0-9a-f]{40}$/i.test(
+        state.lastAcceptedGitCommit
+      )
+    )
+  ) {
+    fail(
+      'CryLo release-security state contains an invalid Git commit.'
+    );
+  }
+
+  return state;
+}
+
+function writeReleaseSecurityState(authorization) {
+  const statePath = releaseSecurityStatePath();
+  const directory = path.dirname(statePath);
+
+  fs.mkdirSync(directory, {
+    recursive: true
+  });
+
+  const previous = readReleaseSecurityState();
+
+  if (
+    previous &&
+    authorization.releaseSequence <
+      previous.highestAcceptedReleaseSequence
+  ) {
+    fail(
+      'Refusing to lower the accepted CryLo release sequence.'
+    );
+  }
+
+  if (
+    previous &&
+    authorization.releaseSequence ===
+      previous.highestAcceptedReleaseSequence &&
+    previous.lastAcceptedGitCommit &&
+    previous.lastAcceptedGitCommit !==
+      authorization.gitCommit
+  ) {
+    fail(
+      'Refusing release-sequence reuse for a different Git commit.'
+    );
+  }
+
+  const state = {
+    network: network.mode,
+    highestAcceptedReleaseSequence:
+      authorization.releaseSequence,
+    lastAcceptedVersion:
+      authorization.version,
+    lastAcceptedReleaseTag:
+      authorization.releaseTag,
+    lastAcceptedGitCommit:
+      authorization.gitCommit
+  };
+
+  const temporary =
+    `${statePath}.tmp-${process.pid}-${Date.now()}`;
+
+  let descriptor;
+
+  try {
+    descriptor = fs.openSync(
+      temporary,
+      'wx',
+      0o600
+    );
+
+    fs.writeFileSync(
+      descriptor,
+      JSON.stringify(state, null, 2) + '\n',
+      'utf8'
+    );
+
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = null;
+
+    fs.renameSync(
+      temporary,
+      statePath
+    );
+
+    fs.chmodSync(
+      statePath,
+      0o600
+    );
+  } catch (error) {
+    if (descriptor !== undefined && descriptor !== null) {
+      try {
+        fs.closeSync(descriptor);
+      } catch (_) {
+        // Best-effort cleanup.
+      }
+    }
+
+    try {
+      fs.rmSync(
+        temporary,
+        { force: true }
+      );
+    } catch (_) {
+      // Best-effort cleanup.
+    }
+
+    fail(
+      `Unable to persist CryLo release-security state: ${error.message}`
+    );
+  }
+
+  console.log(
+    `Accepted release sequence: ${authorization.releaseSequence}`
+  );
+  console.log(
+    `Release security state: ${statePath}`
+  );
+}
+
+function httpsDownload(url, output) {
+  let parsed;
+
+  try {
+    parsed = new URL(url);
+  } catch (_) {
+    throw new Error(
+      `Invalid HTTPS download URL: ${url}`
+    );
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(
+      `Refusing non-HTTPS release URL: ${url}`
+    );
+  }
+
+  const result = spawnSync(
+    'curl',
+    [
+      '--fail',
+      '--silent',
+      '--show-error',
+      '--location',
+      '--proto', '=https',
+      '--tlsv1.2',
+      '--connect-timeout', '15',
+      '--max-time', '120',
+      '--output', output,
+      url
+    ],
+    {
+      cwd: root,
+      env: process.env,
+      encoding: 'utf8',
+      shell: false
+    }
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    throw new Error(
+      `HTTPS download failed with code ${result.status}: ${url}`
+    );
+  }
+}
+
+function httpsText(url) {
+  let parsed;
+
+  try {
+    parsed = new URL(url);
+  } catch (_) {
+    throw new Error(
+      `Invalid HTTPS URL: ${url}`
+    );
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(
+      `Refusing non-HTTPS URL: ${url}`
+    );
+  }
+
+  const result = spawnSync(
+    'curl',
+    [
+      '--fail',
+      '--silent',
+      '--show-error',
+      '--location',
+      '--proto', '=https',
+      '--tlsv1.2',
+      '--connect-timeout', '15',
+      '--max-time', '60',
+      '-H', 'Accept: application/vnd.github+json',
+      '-H', 'X-GitHub-Api-Version: 2022-11-28',
+      url
+    ],
+    {
+      cwd: root,
+      env: process.env,
+      encoding: 'utf8',
+      shell: false
+    }
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    throw new Error(
+      `HTTPS request failed with code ${result.status}: ${url}`
+    );
+  }
+
+  return String(result.stdout || '');
+}
+
+function verifyManifestWithCurrentTrust(
+  manifestPath,
+  signaturePath,
+  publicKeyPath
+) {
+  const manifestBytes =
+    fs.readFileSync(manifestPath);
+
+  const publicKey = crypto.createPublicKey(
+    fs.readFileSync(publicKeyPath)
+  );
+
+  if (publicKey.asymmetricKeyType !== 'ed25519') {
+    throw new Error(
+      'The currently trusted CryLo release key is not Ed25519.'
+    );
+  }
+
+  const signatureText =
+    fs.readFileSync(signaturePath, 'utf8').trim();
+
+  if (
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(signatureText)
+  ) {
+    throw new Error(
+      'The release manifest signature is not valid base64.'
+    );
+  }
+
+  const signature = Buffer.from(
+    signatureText,
+    'base64'
+  );
+
+  if (signature.length !== 64) {
+    throw new Error(
+      'The release manifest does not contain a valid ' +
+      'Ed25519 signature length.'
+    );
+  }
+
+  if (
+    !crypto.verify(
+      null,
+      manifestBytes,
+      publicKey,
+      signature
+    )
+  ) {
+    throw new Error(
+      'The release manifest signature does not verify with ' +
+      'the currently trusted CryLo release key.'
+    );
+  }
+
+  let manifest;
+
+  try {
+    manifest = JSON.parse(
+      manifestBytes.toString('utf8')
+    );
+  } catch (error) {
+    throw new Error(
+      `Signed release manifest JSON is invalid: ${error.message}`
+    );
+  }
+
+  return manifest;
+}
+
+function releaseTarget() {
+  if (process.platform !== 'linux') {
+    return null;
+  }
+
+  if (!['arm64', 'x64'].includes(process.arch)) {
+    fail(
+      `Signed CryLo Linux updates do not support architecture ` +
+      `${process.arch}.`
+    );
+  }
+
+  return {
+    platform: 'linux',
+    architecture: process.arch
+  };
+}
+
+function authenticateRemoteRelease(
+  remoteCommit,
+  branch
+) {
+  const target = releaseTarget();
+
+  if (!target) {
+    return null;
+  }
+
+  const currentPublicKey = path.join(
+    root,
+    'scripts',
+    'release',
+    'keys',
+    `crylo-${network.mode}-release-ed25519-public.pem`
+  );
+
+  if (!fs.existsSync(currentPublicKey)) {
+    fail(
+      `The currently trusted CryLo ${network.mode} release key ` +
+      `was not found: ${currentPublicKey}`
+    );
+  }
+
+  if (!fs.existsSync(releaseVerifierScript)) {
+    fail(
+      `The currently trusted CryLo release verifier was not found: ` +
+      `${releaseVerifierScript}`
+    );
+  }
+
+  const existingState =
+    readReleaseSecurityState();
+
+  const minimumSequence =
+    existingState
+      ? existingState.highestAcceptedReleaseSequence
+      : network.bootstrapReleaseSequence;
+
+  console.log();
+  console.log('===== VERIFYING SIGNED CRYLO RELEASE =====');
+  console.log(`Candidate commit: ${remoteCommit}`);
+  console.log(`Rollback floor: ${minimumSequence}`);
+
+  const apiUrl =
+    `https://api.github.com/repos/${releaseRepository}/releases?per_page=100`;
+
+  let releases;
+
+  try {
+    const response = httpsText(apiUrl);
+    releases = JSON.parse(response);
+  } catch (error) {
+    fail(
+      `Unable to retrieve CryLo release metadata: ${error.message}`
+    );
+  }
+
+  if (!Array.isArray(releases)) {
+    fail(
+      'GitHub did not return a valid CryLo release list.'
+    );
+  }
+
+  const temporaryRoot = fs.mkdtempSync(
+    path.join(
+      os.tmpdir(),
+      'crylo-release-auth-'
+    )
+  );
+
+  const signedCandidates = [];
+
+  try {
+    for (const release of releases) {
+      if (
+        !release ||
+        release.draft === true ||
+        release.prerelease !== true ||
+        typeof release.tag_name !== 'string' ||
+        !Array.isArray(release.assets)
+      ) {
+        continue;
+      }
+
+      if (
+        !/^v[0-9]+\.[0-9]+\.[0-9]+-testnet\.[1-9][0-9]*$/.test(
+          release.tag_name
+        )
+      ) {
+        continue;
+      }
+
+      const manifestAsset = release.assets.find(
+        (asset) =>
+          asset &&
+          asset.name === 'crylo-release-manifest.json'
+      );
+
+      const signatureAsset = release.assets.find(
+        (asset) =>
+          asset &&
+          asset.name === 'crylo-release-manifest.json.sig'
+      );
+
+      if (
+        !manifestAsset ||
+        !signatureAsset ||
+        typeof manifestAsset.browser_download_url !== 'string' ||
+        typeof signatureAsset.browser_download_url !== 'string'
+      ) {
+        continue;
+      }
+
+      const candidateDirectory = path.join(
+        temporaryRoot,
+        String(
+          release.id ||
+          release.tag_name.replace(/[^A-Za-z0-9._-]/g, '_')
+        )
+      );
+
+      fs.mkdirSync(
+        candidateDirectory,
+        { recursive: true }
+      );
+
+      const manifestPath = path.join(
+        candidateDirectory,
+        'crylo-release-manifest.json'
+      );
+
+      const signaturePath =
+        `${manifestPath}.sig`;
+
+      let manifest;
+
+      try {
+        httpsDownload(
+          manifestAsset.browser_download_url,
+          manifestPath
+        );
+
+        httpsDownload(
+          signatureAsset.browser_download_url,
+          signaturePath
+        );
+
+        manifest = verifyManifestWithCurrentTrust(
+          manifestPath,
+          signaturePath,
+          currentPublicKey
+        );
+      } catch (_) {
+        continue;
+      }
+
+      if (
+        manifest.schema !== 1 ||
+        manifest.product !== 'CryLo' ||
+        manifest.network !== network.mode ||
+        manifest.signatureAlgorithm !== 'Ed25519' ||
+        manifest.hashAlgorithm !== 'SHA-256' ||
+        typeof manifest.version !== 'string' ||
+        !manifest.version ||
+        !Number.isSafeInteger(
+          manifest.releaseSequence
+        ) ||
+        manifest.releaseSequence < minimumSequence ||
+        typeof manifest.gitCommit !== 'string' ||
+        !/^[0-9a-f]{40}$/i.test(
+          manifest.gitCommit
+        ) ||
+        manifest.gitCommit.toLowerCase() !==
+          remoteCommit.toLowerCase() ||
+        manifest.gitBranch !== branch ||
+        manifest.releaseTag !== release.tag_name
+      ) {
+        continue;
+      }
+
+      const expectedTag =
+        `v${manifest.version}-testnet.${manifest.releaseSequence}`;
+
+      if (manifest.releaseTag !== expectedTag) {
+        continue;
+      }
+
+      if (
+        existingState &&
+        manifest.releaseSequence ===
+          existingState.highestAcceptedReleaseSequence &&
+        existingState.lastAcceptedGitCommit &&
+        existingState.lastAcceptedGitCommit.toLowerCase() !==
+          manifest.gitCommit.toLowerCase()
+      ) {
+        continue;
+      }
+
+      signedCandidates.push({
+        release,
+        manifest,
+        manifestPath,
+        signaturePath,
+        candidateDirectory
+      });
+    }
+
+    if (!signedCandidates.length) {
+      fail(
+        'No trusted signed CryLo testnet release authorizes ' +
+        `candidate commit ${remoteCommit}. ` +
+        'The source tree was not modified.'
+      );
+    }
+
+    signedCandidates.sort(
+      (left, right) =>
+        right.manifest.releaseSequence -
+        left.manifest.releaseSequence
+    );
+
+    const selected = signedCandidates[0];
+    const manifest = selected.manifest;
+
+    const matchingArtifacts = Array.isArray(
+      manifest.artifacts
+    )
+      ? manifest.artifacts.filter(
+          (artifact) =>
+            artifact &&
+            artifact.platform === target.platform &&
+            artifact.architecture === target.architecture
+        )
+      : [];
+
+    if (matchingArtifacts.length !== 1) {
+      fail(
+        `Signed release ${manifest.releaseTag} must contain exactly ` +
+        `one ${target.platform}/${target.architecture} artifact.`
+      );
+    }
+
+    const artifact = matchingArtifacts[0];
+
+    if (
+      typeof artifact.file !== 'string' ||
+      !artifact.file ||
+      artifact.file !== path.basename(artifact.file) ||
+      artifact.file.includes('/') ||
+      artifact.file.includes('\\')
+    ) {
+      fail(
+        'Signed release contains an invalid artifact filename.'
+      );
+    }
+
+    const remoteArtifact = selected.release.assets.find(
+      (asset) =>
+        asset &&
+        asset.name === artifact.file
+    );
+
+    if (
+      !remoteArtifact ||
+      typeof remoteArtifact.browser_download_url !== 'string'
+    ) {
+      fail(
+        `Signed artifact ${artifact.file} is missing from ` +
+        `${manifest.releaseTag}.`
+      );
+    }
+
+    const artifactPath = path.join(
+      selected.candidateDirectory,
+      artifact.file
+    );
+
+    try {
+      httpsDownload(
+        remoteArtifact.browser_download_url,
+        artifactPath
+      );
+    } catch (error) {
+      fail(
+        `Unable to download signed CryLo artifact: ${error.message}`
+      );
+    }
+
+    const verification = spawnSync(
+      process.execPath,
+      [
+        releaseVerifierScript,
+        '--network', network.mode,
+        '--platform', target.platform,
+        '--architecture', target.architecture,
+        '--minimum-sequence', String(minimumSequence),
+        '--manifest', selected.manifestPath,
+        '--signature', selected.signaturePath,
+        '--public-key', currentPublicKey
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (verification.error) {
+      fail(
+        `Unable to run the trusted release verifier: ` +
+        `${verification.error.message}`
+      );
+    }
+
+    if (verification.status !== 0) {
+      fail(
+        'Signed CryLo release verification failed. ' +
+        'The source tree was not modified.'
+      );
+    }
+
+    console.log(
+      `Authorized release....... ${manifest.releaseTag}`
+    );
+    console.log(
+      `Authorized sequence...... ${manifest.releaseSequence}`
+    );
+    console.log(
+      `Authorized commit........ ${manifest.gitCommit}`
+    );
+
+    return {
+      releaseSequence: manifest.releaseSequence,
+      releaseTag: manifest.releaseTag,
+      version: manifest.version,
+      gitCommit: manifest.gitCommit
+    };
+  } finally {
+    try {
+      fs.rmSync(
+        temporaryRoot,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+    } catch (_) {
+      // Temporary verification cleanup is best effort.
+    }
+  }
+}
+
+function resumedReleaseAuthorization(
+  currentCommit,
+  remoteCommit
+) {
+  const commit =
+    process.env.CRYLO_AUTHORIZED_COMMIT || '';
+
+  const sequenceText =
+    process.env.CRYLO_AUTHORIZED_SEQUENCE || '';
+
+  const releaseTag =
+    process.env.CRYLO_AUTHORIZED_TAG || '';
+
+  const version =
+    process.env.CRYLO_AUTHORIZED_VERSION || '';
+
+  if (
+    !/^[0-9a-f]{40}$/i.test(commit) ||
+    commit.toLowerCase() !==
+      currentCommit.toLowerCase() ||
+    commit.toLowerCase() !==
+      remoteCommit.toLowerCase() ||
+    !/^[1-9][0-9]*$/.test(sequenceText) ||
+    !releaseTag ||
+    !version
+  ) {
+    fail(
+      'CryLo update resume authorization is invalid. ' +
+      'Run "crylo update" again without manually setting ' +
+      'CRYLO_UPDATE_RESUMED.'
+    );
+  }
+
+  const releaseSequence =
+    Number(sequenceText);
+
+  if (!Number.isSafeInteger(releaseSequence)) {
+    fail(
+      'CryLo update resume sequence exceeds the safe integer range.'
+    );
+  }
+
+  return {
+    releaseSequence,
+    releaseTag,
+    version,
+    gitCommit: commit
+  };
+}
+
 function update() {
   console.log('===== CRYLO UPDATE =====');
 
@@ -485,8 +1283,13 @@ function update() {
   console.log(`Branch: ${branch}`);
   console.log('Checking for CryLo updates...');
 
-  const remoteBranch = upstream.slice('origin/'.length);
+  const remoteBranch =
+    upstream.slice('origin/'.length);
 
+  /*
+   * Fetch only updates the remote-tracking ref.
+   * No fetched source is checked out or executed here.
+   */
   git([
     'fetch',
     'origin',
@@ -498,12 +1301,7 @@ function update() {
     true
   );
 
-  let after = before;
-
-  if (before === remote) {
-    console.log();
-    console.log('CryLo source is already up to date.');
-  } else {
+  if (before !== remote) {
     const base = git(
       ['merge-base', 'HEAD', upstream],
       true
@@ -515,47 +1313,151 @@ function update() {
         'Update stopped without modifying the source tree.'
       );
     }
+  }
 
-    console.log('Updating CryLo source...');
-    git(['merge', '--ff-only', upstream]);
+  const resumed =
+    process.env.CRYLO_UPDATE_RESUMED === '1';
+
+  let authorization = null;
+
+  if (process.platform === 'linux') {
+    if (resumed) {
+      authorization = resumedReleaseAuthorization(
+        before,
+        remote
+      );
+
+      console.log();
+      console.log(
+        'Continuing previously authenticated CryLo update.'
+      );
+      console.log(
+        `Authorized release....... ${authorization.releaseTag}`
+      );
+      console.log(
+        `Authorized sequence...... ${authorization.releaseSequence}`
+      );
+      console.log(
+        `Authorized commit........ ${authorization.gitCommit}`
+      );
+    } else {
+      /*
+       * Critical security boundary:
+       * authenticate the candidate commit using the currently
+       * installed updater, verifier, and public key BEFORE merge.
+       */
+      authorization = authenticateRemoteRelease(
+        remote,
+        branch
+      );
+    }
+  }
+
+  let after = before;
+
+  if (before === remote) {
+    console.log();
+    console.log('CryLo source is already up to date.');
+  } else {
+    if (
+      process.platform === 'linux' &&
+      (
+        !authorization ||
+        authorization.gitCommit.toLowerCase() !==
+          remote.toLowerCase()
+      )
+    ) {
+      fail(
+        'The candidate CryLo source commit was not authorized ' +
+        'by a trusted signed release.'
+      );
+    }
+
+    console.log();
+    console.log(
+      'Signed release authorized. Updating CryLo source...'
+    );
+
+    git([
+      'merge',
+      '--ff-only',
+      upstream
+    ]);
 
     after = git(
       ['rev-parse', 'HEAD'],
       true
     );
 
+    if (after !== remote) {
+      fail(
+        'CryLo source did not advance to the authenticated commit.'
+      );
+    }
+
     console.log();
-    console.log(`Updated CryLo: ${before.slice(0, 9)} -> ${after.slice(0, 9)}`);
+    console.log(
+      `Updated CryLo: ${before.slice(0, 9)} -> ${after.slice(0, 9)}`
+    );
   }
 
   if (
     after !== before &&
-    process.env.CRYLO_UPDATE_RESUMED !== '1'
+    !resumed
   ) {
+    if (
+      process.platform === 'linux' &&
+      !authorization
+    ) {
+      fail(
+        'Authenticated Linux update authorization was lost.'
+      );
+    }
+
     console.log();
     console.log(
-      'Restarting with the newly updated CryLo updater...'
+      'Restarting with the authenticated CryLo updater...'
     );
 
-    const resumed = spawnSync(
+    const resumedEnvironment = {
+      ...process.env,
+      CRYLO_UPDATE_RESUMED: '1'
+    };
+
+    if (authorization) {
+      resumedEnvironment.CRYLO_AUTHORIZED_COMMIT =
+        authorization.gitCommit;
+
+      resumedEnvironment.CRYLO_AUTHORIZED_SEQUENCE =
+        String(authorization.releaseSequence);
+
+      resumedEnvironment.CRYLO_AUTHORIZED_TAG =
+        authorization.releaseTag;
+
+      resumedEnvironment.CRYLO_AUTHORIZED_VERSION =
+        authorization.version;
+    }
+
+    const resumedProcess = spawnSync(
       process.execPath,
       [__filename, 'update'],
       {
         cwd: root,
-        env: {
-          ...process.env,
-          CRYLO_UPDATE_RESUMED: '1'
-        },
+        env: resumedEnvironment,
         stdio: 'inherit',
         shell: false
       }
     );
 
-    if (resumed.error) {
-      fail(resumed.error.message);
+    if (resumedProcess.error) {
+      fail(
+        resumedProcess.error.message
+      );
     }
 
-    process.exit(resumed.status || 0);
+    process.exit(
+      resumedProcess.status || 0
+    );
   }
 
   console.log();
@@ -563,7 +1465,9 @@ function update() {
 
   ensureLinuxBuildDependencies();
 
-  console.log('Building the current native CryLo and Electron release...');
+  console.log(
+    'Building the current native CryLo and Electron release...'
+  );
 
   const result = spawnSync(
     process.execPath,
@@ -577,7 +1481,9 @@ function update() {
   );
 
   console.log();
-  console.log('Restoring generated Electron binary staging files...');
+  console.log(
+    'Restoring generated Electron binary staging files...'
+  );
 
   git([
     'restore',
@@ -592,13 +1498,27 @@ function update() {
 
   if (result.status !== 0) {
     fail(
-      'CryLo source was updated successfully, but the release build failed.'
+      'CryLo source was authenticated and updated, ' +
+      'but the release build failed.'
     );
   }
 
   deployInfrastructureRelease();
   installUserCommand();
   installLinuxDesktopLaunchers();
+
+  /*
+   * Advance rollback state only AFTER the build and deployment
+   * completed successfully.
+   */
+  if (
+    process.platform === 'linux' &&
+    authorization
+  ) {
+    writeReleaseSecurityState(
+      authorization
+    );
+  }
 
   console.log();
   console.log('CryLo update completed successfully.');
