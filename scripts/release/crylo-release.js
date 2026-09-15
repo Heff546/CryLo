@@ -558,10 +558,15 @@ function createLinuxReleaseBundle(
     );
   }
 
+  const appImageFileName =
+    target.arch === 'x64'
+      ? `CryLo Wallet-${packageJson.version}.AppImage`
+      : `CryLo Wallet-${packageJson.version}-${target.arch}.AppImage`;
+
   const appImageSource = path.join(
     electronDir,
     'dist',
-    `CryLo Wallet-${packageJson.version}-${target.arch}.AppImage`
+    appImageFileName
   );
 
   if (!fs.existsSync(appImageSource)) {
