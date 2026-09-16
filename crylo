@@ -20,56 +20,35 @@ done
 ROOT=$(CDPATH= cd -- "$(dirname -- "$SCRIPT")" && pwd)
 cd "$ROOT"
 
-NODE_READY=false
-
-if command -v node >/dev/null 2>&1 &&
-   command -v npm >/dev/null 2>&1; then
-  NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)
-
-  case "$NODE_MAJOR" in
-    ''|*[!0-9]*)
-      ;;
-    *)
-      if [ "$NODE_MAJOR" -ge 20 ]; then
-        NODE_READY=true
-      fi
-      ;;
-  esac
-fi
-
-if [ "$NODE_READY" != true ]; then
-  if [ "$(uname -s)" != "Linux" ]; then
-    echo "ERROR: Node.js 20 or newer and npm are required to run CryLo." >&2
-    exit 1
-  fi
-
+if [ "$(uname -s)" = "Linux" ]; then
   case "$(uname -m)" in
     x86_64|amd64)
       NODE_ARCH=x64
-      NODE_SHA256=19e56f0825510207dd904f087fe52faa0a4eb6b2aab5f0ea7a33830d04888b8b
+      NODE_SHA256=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
       ;;
     aarch64|arm64)
       NODE_ARCH=arm64
-      NODE_SHA256=47ef73d543ecf6eb19435f6c03a0ac4809b3bf0dd6b26c7c571efc2a6572a74d
+      NODE_SHA256=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
       ;;
     *)
-      echo "ERROR: Unsupported Linux architecture for Node.js: $(uname -m)" >&2
+      echo "ERROR: Unsupported Linux architecture for CryLo Node.js: $(uname -m)" >&2
       exit 1
       ;;
   esac
 
-  NODE_VERSION=20.20.2
+  NODE_VERSION=24.21.0
   NODE_NAME="node-v$NODE_VERSION-linux-$NODE_ARCH"
-  NODE_BASE="$HOME/.local/share/crylo"
+  NODE_BASE="$HOME/.local/share/crylo/runtime"
   NODE_DIRECTORY="$NODE_BASE/$NODE_NAME"
   NODE_ARCHIVE="$NODE_NAME.tar.gz"
   NODE_URL="https://nodejs.org/dist/v$NODE_VERSION/$NODE_ARCHIVE"
 
-  if [ ! -x "$NODE_DIRECTORY/bin/node" ] ||
-     [ ! -x "$NODE_DIRECTORY/bin/npm" ]; then
-    echo "Installing the CryLo Node.js 20 runtime for Linux/$NODE_ARCH..."
+  install_crylo_node_runtime() {
+    echo "Installing isolated CryLo Node.js $NODE_VERSION runtime for Linux/$NODE_ARCH..."
 
-    TEMP_DIRECTORY=$(mktemp -d)
+    mkdir -p "$NODE_BASE"
+
+    TEMP_DIRECTORY=$(mktemp -d "$NODE_BASE/.node-install.XXXXXX")
 
     cleanup_node_download() {
       rm -rf "$TEMP_DIRECTORY"
@@ -78,7 +57,13 @@ if [ "$NODE_READY" != true ]; then
     trap cleanup_node_download EXIT HUP INT TERM
 
     if command -v curl >/dev/null 2>&1; then
-      curl --fail --location --silent --show-error \
+      curl \
+        --fail \
+        --location \
+        --silent \
+        --show-error \
+        --proto '=https' \
+        --tlsv1.2 \
         "$NODE_URL" \
         --output "$TEMP_DIRECTORY/$NODE_ARCHIVE"
     elif command -v wget >/dev/null 2>&1; then
@@ -86,7 +71,7 @@ if [ "$NODE_READY" != true ]; then
         "$NODE_URL" \
         -O "$TEMP_DIRECTORY/$NODE_ARCHIVE"
     else
-      echo "ERROR: curl or wget is required to install Node.js." >&2
+      echo "ERROR: curl or wget is required to install the CryLo Node.js runtime." >&2
       exit 1
     fi
 
@@ -96,21 +81,78 @@ if [ "$NODE_READY" != true ]; then
         sha256sum --check -
     )
 
-    mkdir -p "$NODE_BASE"
-    tar -xzf "$TEMP_DIRECTORY/$NODE_ARCHIVE" -C "$NODE_BASE"
+    tar \
+      -xzf "$TEMP_DIRECTORY/$NODE_ARCHIVE" \
+      -C "$TEMP_DIRECTORY"
+
+    if [ ! -x "$TEMP_DIRECTORY/$NODE_NAME/bin/node" ] ||
+       [ ! -x "$TEMP_DIRECTORY/$NODE_NAME/bin/npm" ]; then
+      echo "ERROR: Downloaded CryLo Node.js runtime is incomplete." >&2
+      exit 1
+    fi
+
+    INSTALLED_VERSION=$(
+      "$TEMP_DIRECTORY/$NODE_NAME/bin/node" --version
+    )
+
+    if [ "$INSTALLED_VERSION" != "v$NODE_VERSION" ]; then
+      echo "ERROR: Downloaded CryLo Node.js runtime version mismatch." >&2
+      exit 1
+    fi
+
+    rm -rf "$NODE_DIRECTORY"
+
+    mv \
+      "$TEMP_DIRECTORY/$NODE_NAME" \
+      "$NODE_DIRECTORY"
 
     trap - EXIT HUP INT TERM
     cleanup_node_download
+  }
+
+  if [ ! -x "$NODE_DIRECTORY/bin/node" ] ||
+     [ ! -x "$NODE_DIRECTORY/bin/npm" ]; then
+    install_crylo_node_runtime
+  fi
+
+  CURRENT_NODE_VERSION=$(
+    "$NODE_DIRECTORY/bin/node" --version 2>/dev/null || true
+  )
+
+  if [ "$CURRENT_NODE_VERSION" != "v$NODE_VERSION" ]; then
+    echo "Existing CryLo Node.js runtime is invalid; reinstalling..."
+    rm -rf "$NODE_DIRECTORY"
+    install_crylo_node_runtime
   fi
 
   PATH="$NODE_DIRECTORY/bin:$PATH"
   export PATH
-fi
 
-if ! command -v node >/dev/null 2>&1 ||
-   ! command -v npm >/dev/null 2>&1; then
-  echo "ERROR: Node.js or npm is unavailable after installation." >&2
-  exit 1
+  CRYLO_NODE_RUNTIME="$NODE_DIRECTORY"
+  export CRYLO_NODE_RUNTIME
+else
+  if ! command -v node >/dev/null 2>&1 ||
+     ! command -v npm >/dev/null 2>&1; then
+    echo "ERROR: Node.js and npm are required to run CryLo." >&2
+    exit 1
+  fi
+
+  NODE_MAJOR=$(
+    node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true
+  )
+
+  case "$NODE_MAJOR" in
+    ''|*[!0-9]*)
+      echo "ERROR: Unable to determine the Node.js version." >&2
+      exit 1
+      ;;
+    *)
+      if [ "$NODE_MAJOR" -lt 20 ]; then
+        echo "ERROR: Node.js 20 or newer is required to run CryLo." >&2
+        exit 1
+      fi
+      ;;
+  esac
 fi
 
 exec node "$ROOT/scripts/crylo.js" "$@"

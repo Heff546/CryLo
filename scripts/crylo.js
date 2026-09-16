@@ -2474,269 +2474,238 @@ function installedDebianPackage(packageName) {
 }
 
 function ensureLinuxNodeRuntime() {
-  const trustedNodeSourceFingerprint =
-    '6F71F525282841EEDAF851B42F59B5F99B1BE0B4';
-
   let node = probe('node', ['--version']);
-  let nodeVersion = node.ok ? node.stdout : '';
-  let npm = probe('npm', ['--version']);
-  let npmVersion = npm.ok ? npm.stdout : '';
+  const nodeVersion =
+    node.ok ? node.stdout : '';
 
-  if (versionMajor(nodeVersion) < 24) {
-    console.log(
-      `Node.js ${nodeVersion || 'not found'} does not meet ` +
-      'the CryLo Node.js 24+ requirement.'
-    );
+  const runtimeText =
+    process.env.CRYLO_NODE_RUNTIME || '';
 
-    console.log(
-      'Preparing authenticated NodeSource Node.js 24 repository...'
-    );
+  /*
+   * An older authenticated updater may restart a newly merged
+   * updater with its own Node.js process.execPath. In that case
+   * the signed authorization environment is already present, but
+   * the new Linux launcher has not yet selected CryLo's isolated
+   * Node.js 24 runtime.
+   *
+   * Re-enter through the authenticated source tree's launcher.
+   * The launcher verifies and selects the pinned CryLo-owned Node
+   * runtime and preserves the signed-update environment.
+   */
+  if (
+    versionMajor(nodeVersion) < 24 ||
+    !runtimeText
+  ) {
+    const resumed =
+      process.env.CRYLO_UPDATE_RESUMED === '1';
 
-    const tempDirectory = fs.mkdtempSync(
-      '/tmp/crylo-nodesource-'
-    );
+    const authorizedCommit =
+      process.env.CRYLO_AUTHORIZED_COMMIT || '';
 
-    const downloadedKey = path.join(
-      tempDirectory,
-      'nodesource-repo.gpg.key'
-    );
+    const authorizedSequence =
+      process.env.CRYLO_AUTHORIZED_SEQUENCE || '';
 
-    const keyring = path.join(
-      tempDirectory,
-      'nodesource-repo.gpg'
-    );
+    const authorizedTag =
+      process.env.CRYLO_AUTHORIZED_TAG || '';
 
-    const gpgHome = path.join(
-      tempDirectory,
-      'gnupg'
-    );
-
-    try {
-      fs.mkdirSync(gpgHome, {
-        mode: 0o700
-      });
-
-      run('curl', [
-        '--fail',
-        '--silent',
-        '--show-error',
-        '--location',
-        '--proto', '=https',
-        '--tlsv1.2',
-        'https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key',
-        '--output',
-        downloadedKey
-      ]);
-
-      const fingerprintResult = spawnSync(
-        'gpg',
-        [
-          '--batch',
-          '--homedir', gpgHome,
-          '--with-colons',
-          '--import-options', 'show-only',
-          '--import',
-          downloadedKey
-        ],
-        {
-          cwd: root,
-          env: process.env,
-          encoding: 'utf8',
-          shell: false
-        }
-      );
-
-      if (
-        fingerprintResult.error ||
-        fingerprintResult.status !== 0
-      ) {
-        fail(
-          'Unable to inspect the NodeSource repository signing key.'
-        );
-      }
-
-      const fingerprints = String(
-        fingerprintResult.stdout || ''
-      )
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith('fpr:'))
-        .map((line) => line.split(':')[9])
-        .filter(Boolean);
-
-      if (
-        !fingerprints.includes(trustedNodeSourceFingerprint)
-      ) {
-        fail(
-          'NodeSource repository signing key fingerprint mismatch.\n' +
-          `Expected: ${trustedNodeSourceFingerprint}\n` +
-          `Received: ${
-            fingerprints.length
-              ? fingerprints.join(', ')
-              : 'none'
-          }`
-        );
-      }
-
-      console.log(
-        `NodeSource key..... VERIFIED  ${trustedNodeSourceFingerprint}`
-      );
-
-      const dearmor = spawnSync(
-        'gpg',
-        [
-          '--batch',
-          '--yes',
-          '--dearmor',
-          '--output', keyring,
-          downloadedKey
-        ],
-        {
-          cwd: root,
-          env: process.env,
-          stdio: 'inherit',
-          shell: false
-        }
-      );
-
-      if (dearmor.error || dearmor.status !== 0) {
-        fail(
-          'Unable to create the authenticated NodeSource keyring.'
-        );
-      }
-
-      runAsRoot('/usr/bin/install', [
-        '-o', 'root',
-        '-g', 'root',
-        '-m', '0644',
-        keyring,
-        '/usr/share/keyrings/crylo-nodesource.gpg'
-      ]);
-
-      const dpkgArchitecture = probe(
-        'dpkg',
-        ['--print-architecture']
-      );
-
-      if (
-        !dpkgArchitecture.ok ||
-        !['arm64', 'amd64'].includes(dpkgArchitecture.stdout)
-      ) {
-        fail(
-          'CryLo authenticated Node.js repository setup supports ' +
-          `Debian arm64/amd64; found ${
-            dpkgArchitecture.stdout || 'unknown'
-          }.`
-        );
-      }
-
-      const sourceLine =
-        `deb [arch=${dpkgArchitecture.stdout} ` +
-        'signed-by=/usr/share/keyrings/crylo-nodesource.gpg] ' +
-        'https://deb.nodesource.com/node_24.x nodistro main\n';
-
-      const sourceFile = path.join(
-        tempDirectory,
-        'crylo-nodesource.list'
-      );
-
-      fs.writeFileSync(
-        sourceFile,
-        sourceLine,
-        {
-          encoding: 'utf8',
-          mode: 0o644
-        }
-      );
-
-      runAsRoot('/usr/bin/install', [
-        '-o', 'root',
-        '-g', 'root',
-        '-m', '0644',
-        sourceFile,
-        '/etc/apt/sources.list.d/crylo-nodesource.list'
-      ]);
-
-      console.log(
-        'Refreshing package metadata with repository signature verification...'
-      );
-
-      runAsRoot('/usr/bin/apt-get', [
-        'update'
-      ]);
-
-      runAsRoot('/usr/bin/apt-get', [
-        'install',
-        '-y',
-        '--no-install-recommends',
-        'nodejs'
-      ]);
-    } finally {
-      try {
-        fs.rmSync(
-          tempDirectory,
-          {
-            recursive: true,
-            force: true
-          }
-        );
-      } catch (_) {
-        // Temporary authenticated bootstrap cleanup is best effort.
-      }
-    }
-
-    node = probe('node', ['--version']);
-    nodeVersion = node.ok ? node.stdout : '';
-
-    if (versionMajor(nodeVersion) < 24) {
-      fail(
-        'Node.js 24+ installation completed, but the active ' +
-        `Node.js is still ${nodeVersion || 'unavailable'}.`
-      );
-    }
-  }
-
-  npm = probe('npm', ['--version']);
-  npmVersion = npm.ok ? npm.stdout : '';
-
-  if (versionMajor(npmVersion) < 12) {
-    console.log(
-      `npm ${npmVersion || 'not found'} does not meet ` +
-      'the CryLo npm 12+ requirement.'
-    );
-
-    console.log('Installing/upgrading npm 12.x...');
+    const authorizedVersion =
+      process.env.CRYLO_AUTHORIZED_VERSION || '';
 
     if (
-      typeof process.getuid === 'function' &&
-      process.getuid() === 0
+      !resumed ||
+      !authorizedCommit ||
+      !authorizedSequence ||
+      !authorizedTag ||
+      !authorizedVersion
     ) {
-      run('npm', [
-        'install',
-        '--global',
-        'npm@12'
-      ]);
-    } else {
-      run('sudo', [
-        'npm',
-        'install',
-        '--global',
-        'npm@12'
-      ]);
+      fail(
+        'CryLo requires its isolated Node.js 24 runtime on Linux. ' +
+        'Run CryLo through the "crylo" launcher.'
+      );
     }
 
-    npm = probe('npm', ['--version']);
-    npmVersion = npm.ok ? npm.stdout : '';
+    const launcher =
+      path.join(root, 'crylo');
 
-    if (versionMajor(npmVersion) < 12) {
+    if (!fs.existsSync(launcher)) {
       fail(
-        'npm 12+ installation completed, but the active npm is still ' +
-        `${npmVersion || 'unavailable'}.`
+        `CryLo Linux launcher is missing: ${launcher}`
+      );
+    }
+
+    console.log();
+    console.log(
+      'Switching authenticated CryLo update to the isolated Node.js 24 runtime...'
+    );
+
+    const relaunched = spawnSync(
+      launcher,
+      ['update'],
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (relaunched.error) {
+      fail(
+        `Unable to restart CryLo through the isolated runtime: ` +
+        `${relaunched.error.message}`
+      );
+    }
+
+    process.exit(
+      typeof relaunched.status === 'number'
+        ? relaunched.status
+        : 1
+    );
+  }
+
+  let runtimeDirectory = null;
+
+  if (runtimeText) {
+    const home =
+      process.env.HOME ||
+      process.env.USERPROFILE;
+
+    if (!home) {
+      fail(
+        'Unable to determine the current user home directory.'
+      );
+    }
+
+    const runtimeBase = path.resolve(
+      home,
+      '.local',
+      'share',
+      'crylo',
+      'runtime'
+    );
+
+    runtimeDirectory =
+      path.resolve(runtimeText);
+
+    if (
+      runtimeDirectory !== runtimeBase &&
+      !runtimeDirectory.startsWith(
+        runtimeBase + path.sep
+      )
+    ) {
+      fail(
+        'CryLo isolated Node.js runtime is outside the trusted ' +
+        'CryLo user runtime directory.'
+      );
+    }
+
+    const expectedNode =
+      path.join(
+        runtimeDirectory,
+        'bin',
+        'node'
+      );
+
+    if (!fs.existsSync(expectedNode)) {
+      fail(
+        `CryLo isolated Node.js runtime is missing: ${expectedNode}`
+      );
+    }
+
+    let activeNode;
+    let expectedActiveNode;
+
+    try {
+      activeNode =
+        fs.realpathSync(process.execPath);
+
+      expectedActiveNode =
+        fs.realpathSync(expectedNode);
+    } catch (error) {
+      fail(
+        `Unable to verify the active CryLo Node.js runtime: ` +
+        `${error.message}`
+      );
+    }
+
+    if (activeNode !== expectedActiveNode) {
+      fail(
+        'CryLo is not running from its declared isolated Node.js runtime.'
       );
     }
   }
 
-  console.log(`Node.js........... OK  ${nodeVersion}`);
+  let npm = probe('npm', ['--version']);
+  let npmVersion =
+    npm.ok ? npm.stdout : '';
+
+  if (versionMajor(npmVersion) < 12) {
+    if (!runtimeDirectory) {
+      fail(
+        'npm 12+ is required. CryLo will not modify the system npm. ' +
+        'Run CryLo through the Linux "crylo" launcher.'
+      );
+    }
+
+    console.log(
+      'Installing npm 12.0.2 inside the isolated CryLo runtime...'
+    );
+
+    const npmExecutable =
+      path.join(
+        runtimeDirectory,
+        'bin',
+        'npm'
+      );
+
+    if (!fs.existsSync(npmExecutable)) {
+      fail(
+        `CryLo isolated npm executable was not found: ${npmExecutable}`
+      );
+    }
+
+    run(npmExecutable, [
+      'install',
+      '--global',
+      '--prefix',
+      runtimeDirectory,
+      '--no-audit',
+      '--no-fund',
+      'npm@12.0.2'
+    ]);
+
+    npm = probe('npm', ['--version']);
+    npmVersion =
+      npm.ok ? npm.stdout : '';
+  }
+
+  if (versionMajor(npmVersion) < 12) {
+    fail(
+      'CryLo isolated npm 12+ preparation failed. ' +
+      `Active npm is ${npmVersion || 'unavailable'}.`
+    );
+  }
+
+  node = probe('node', ['--version']);
+
+  if (!node.ok || versionMajor(node.stdout) < 24) {
+    fail(
+      'CryLo isolated Node.js 24 runtime became unavailable.'
+    );
+  }
+
+  console.log(`Node.js........... OK  ${node.stdout}`);
   console.log(`npm............... OK  ${npmVersion}`);
+
+  if (runtimeDirectory) {
+    console.log(
+      `CryLo runtime...... ${runtimeDirectory}`
+    );
+  } else {
+    console.log(
+      'CryLo runtime...... externally supplied Node.js 24/npm 12'
+    );
+  }
 }
 
 function ensureLinuxRuntimeDependencies() {
@@ -2761,7 +2730,6 @@ function ensureLinuxRuntimeDependencies() {
   const requiredPackages = [
     'ca-certificates',
     'curl',
-    'gnupg',
     'tar'
   ];
 
