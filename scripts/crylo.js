@@ -34,7 +34,20 @@ const daemonPidFile = path.join(
 const generatedElectronInputs = [
   'electron/bin/linux/BINARY-MANIFEST.txt',
   'electron/bin/linux/CryLo-daemon',
-  'electron/bin/linux/CryLo-wallet-rpc'
+  'electron/bin/linux/CryLo-wallet-rpc',
+  'electron/bin/win/BINARY-MANIFEST.txt',
+  'electron/bin/win/CryLo-daemon.exe',
+  'electron/bin/win/CryLo-wallet-rpc.exe'
+];
+
+const windowsRuntimeDlls = [
+  'libgcc_s_seh-1.dll',
+  'libiconv-2.dll',
+  'libicudt78.dll',
+  'libicuin78.dll',
+  'libicuuc78.dll',
+  'libstdc++-6.dll',
+  'libwinpthread-1.dll'
 ];
 
 function fail(message) {
@@ -621,6 +634,24 @@ function sha256File(file) {
   return hash.digest('hex');
 }
 
+function windowsPowerShellExecutable() {
+  if (process.platform !== 'win32') {
+    return null;
+  }
+
+  if (process.env.SystemRoot) {
+    return path.join(
+      process.env.SystemRoot,
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe'
+    );
+  }
+
+  return 'powershell.exe';
+}
+
 function httpsDownload(url, output) {
   let parsed;
 
@@ -636,6 +667,45 @@ function httpsDownload(url, output) {
     throw new Error(
       `Refusing non-HTTPS release URL: ${url}`
     );
+  }
+
+  if (process.platform === 'win32') {
+    const result = spawnSync(
+      windowsPowerShellExecutable(),
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        [
+          "$ErrorActionPreference = 'Stop'",
+          "$ProgressPreference = 'SilentlyContinue'",
+          "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
+          "Invoke-WebRequest -UseBasicParsing -Uri $env:CRYLO_HTTPS_URL -OutFile $env:CRYLO_HTTPS_OUTPUT"
+        ].join('; ')
+      ],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          CRYLO_HTTPS_URL: url,
+          CRYLO_HTTPS_OUTPUT: output
+        },
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    if (result.status !== 0) {
+      throw new Error(
+        `HTTPS download failed with code ${result.status}: ${url}`
+      );
+    }
+
+    return;
   }
 
   const result = spawnSync(
@@ -686,6 +756,46 @@ function httpsText(url) {
     throw new Error(
       `Refusing non-HTTPS URL: ${url}`
     );
+  }
+
+  if (process.platform === 'win32') {
+    const result = spawnSync(
+      windowsPowerShellExecutable(),
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        [
+          "$ErrorActionPreference = 'Stop'",
+          "$ProgressPreference = 'SilentlyContinue'",
+          "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
+          "$headers = @{ Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }",
+          "$response = Invoke-WebRequest -UseBasicParsing -Headers $headers -Uri $env:CRYLO_HTTPS_URL",
+          "[Console]::Out.Write($response.Content)"
+        ].join('; ')
+      ],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          CRYLO_HTTPS_URL: url
+        },
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    if (result.status !== 0) {
+      throw new Error(
+        `HTTPS request failed with code ${result.status}: ${url}`
+      );
+    }
+
+    return String(result.stdout || '');
   }
 
   const result = spawnSync(
@@ -795,21 +905,62 @@ function verifyManifestWithCurrentTrust(
 }
 
 function releaseTarget() {
-  if (process.platform !== 'linux') {
-    return null;
+  if (process.platform === 'linux') {
+    if (!['arm64', 'x64'].includes(process.arch)) {
+      fail(
+        `Signed CryLo Linux updates do not support architecture ` +
+        `${process.arch}.`
+      );
+    }
+
+    return {
+      platform: 'linux',
+      architecture: process.arch
+    };
   }
 
-  if (!['arm64', 'x64'].includes(process.arch)) {
-    fail(
-      `Signed CryLo Linux updates do not support architecture ` +
-      `${process.arch}.`
+  if (process.platform === 'win32') {
+    if (process.arch !== 'x64') {
+      fail(
+        `Signed CryLo Windows updates support x64 only; found ` +
+        `${process.arch}.`
+      );
+    }
+
+    return {
+      platform: 'win',
+      architecture: 'x64'
+    };
+  }
+
+  return null;
+}
+
+function expectedSignedBundleName(
+  version,
+  target
+) {
+  if (target.platform === 'linux') {
+    return (
+      `CryLo-Release-${version}-linux-` +
+      `${target.architecture}.tar`
     );
   }
 
-  return {
-    platform: 'linux',
-    architecture: process.arch
-  };
+  if (
+    target.platform === 'win' &&
+    target.architecture === 'x64'
+  ) {
+    return (
+      `CryLo-Release-${version}-win-` +
+      `${target.architecture}.zip`
+    );
+  }
+
+  fail(
+    `No exact signed release bundle naming rule exists for ` +
+    `${target.platform}/${target.architecture}.`
+  );
 }
 
 function authenticateRemoteRelease(
@@ -1233,14 +1384,14 @@ function resumedReleaseAuthorization(
   };
 }
 
-function downloadAuthorizedLinuxBundle(
+function downloadAuthorizedReleaseBundle(
   authorization
 ) {
   const target = releaseTarget();
 
   if (!target) {
     fail(
-      'Exact signed release installation is currently Linux-only.'
+      'Exact signed release installation is not enabled for this platform.'
     );
   }
 
@@ -1389,8 +1540,10 @@ function downloadAuthorizedLinuxBundle(
     const artifact = matchingArtifacts[0];
 
     const expectedBundleName =
-      `CryLo-Release-${authorization.version}-linux-` +
-      `${target.architecture}.tar`;
+      expectedSignedBundleName(
+        authorization.version,
+        target
+      );
 
     if (artifact.file !== expectedBundleName) {
       throw new Error(
@@ -1489,7 +1642,7 @@ function installAuthorizedLinuxBundle(
   }
 
   const release =
-    downloadAuthorizedLinuxBundle(
+    downloadAuthorizedReleaseBundle(
       authorization
     );
 
@@ -1928,6 +2081,692 @@ function installAuthorizedLinuxBundle(
   }
 }
 
+
+function runCryloLifecycleSubcommand(command) {
+  const result = spawnSync(
+    process.execPath,
+    [__filename, command],
+    {
+      cwd: root,
+      env: process.env,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: process.platform === 'win32'
+    }
+  );
+
+  if (result.error) {
+    return {
+      ok: false,
+      message: result.error.message
+    };
+  }
+
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      message: `crylo ${command} exited with code ${result.status}`
+    };
+  }
+
+  return {
+    ok: true,
+    message: ''
+  };
+}
+
+function installAuthorizedWindowsBundle(
+  authorization
+) {
+  if (
+    process.platform !== 'win32' ||
+    process.arch !== 'x64'
+  ) {
+    fail(
+      'Exact CryLo Windows release bundle installation supports win/x64 only.'
+    );
+  }
+
+  const release =
+    downloadAuthorizedReleaseBundle(
+      authorization
+    );
+
+  let installationError = null;
+
+  try {
+    const native = expectedNativeBin();
+
+    if (!native) {
+      throw new Error(
+        'Unable to determine the Windows native release directory.'
+      );
+    }
+
+    const installerName =
+      `CryLo-Wallet-Setup-${authorization.version}-x64.exe`;
+
+    const expectedEntries = [
+      native.daemon,
+      native.walletCli,
+      native.walletRpc,
+      ...windowsRuntimeDlls,
+      installerName
+    ].sort();
+
+    const powershell = process.env.SystemRoot
+      ? path.join(
+          process.env.SystemRoot,
+          'System32',
+          'WindowsPowerShell',
+          'v1.0',
+          'powershell.exe'
+        )
+      : 'powershell.exe';
+
+    const archiveEnvironment = {
+      ...process.env,
+      CRYLO_SIGNED_BUNDLE: release.bundlePath
+    };
+
+    const listing = spawnSync(
+      powershell,
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        [
+          "$ErrorActionPreference = 'Stop'",
+          "Add-Type -AssemblyName System.IO.Compression.FileSystem",
+          "$archive = [System.IO.Compression.ZipFile]::OpenRead($env:CRYLO_SIGNED_BUNDLE)",
+          "try { $archive.Entries | ForEach-Object { $_.FullName } } finally { $archive.Dispose() }"
+        ].join('; ')
+      ],
+      {
+        cwd: root,
+        env: archiveEnvironment,
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    if (
+      listing.error ||
+      listing.status !== 0
+    ) {
+      throw new Error(
+        'Unable to inspect the authenticated CryLo Windows release bundle.'
+      );
+    }
+
+    const entries = String(
+      listing.stdout || ''
+    )
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .sort();
+
+    if (
+      entries.length !== expectedEntries.length ||
+      entries.some(
+        (entry, index) =>
+          entry !== expectedEntries[index] ||
+          entry !== path.basename(entry) ||
+          entry.includes('/') ||
+          entry.includes('\\')
+      )
+    ) {
+      throw new Error(
+        'Authenticated CryLo Windows release bundle contains unexpected entries.'
+      );
+    }
+
+    const extractionDirectory = path.join(
+      release.temporaryRoot,
+      'extracted'
+    );
+
+    fs.mkdirSync(
+      extractionDirectory,
+      {
+        recursive: true,
+        mode: 0o700
+      }
+    );
+
+    const extractionEnvironment = {
+      ...process.env,
+      CRYLO_SIGNED_BUNDLE: release.bundlePath,
+      CRYLO_SIGNED_EXTRACTION: extractionDirectory
+    };
+
+    const extraction = spawnSync(
+      powershell,
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        [
+          "$ErrorActionPreference = 'Stop'",
+          "Expand-Archive -LiteralPath $env:CRYLO_SIGNED_BUNDLE -DestinationPath $env:CRYLO_SIGNED_EXTRACTION -Force"
+        ].join('; ')
+      ],
+      {
+        cwd: root,
+        env: extractionEnvironment,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (
+      extraction.error ||
+      extraction.status !== 0
+    ) {
+      throw new Error(
+        'Unable to extract the authenticated CryLo Windows release bundle.'
+      );
+    }
+
+    for (const entry of expectedEntries) {
+      const extracted = path.join(
+        extractionDirectory,
+        entry
+      );
+
+      const stat = fs.lstatSync(
+        extracted
+      );
+
+      if (!stat.isFile()) {
+        throw new Error(
+          `Authenticated Windows bundle entry is not a regular file: ${entry}`
+        );
+      }
+    }
+
+    fs.mkdirSync(
+      native.directory,
+      {
+        recursive: true
+      }
+    );
+
+    const distDirectory = path.join(
+      root,
+      'electron',
+      'dist'
+    );
+
+    fs.mkdirSync(
+      distDirectory,
+      {
+        recursive: true
+      }
+    );
+
+    const canonicalInstaller = path.join(
+      distDirectory,
+      installerName
+    );
+
+    const installations = [
+      {
+        source: path.join(
+          extractionDirectory,
+          native.daemon
+        ),
+        destination: path.join(
+          native.directory,
+          native.daemon
+        )
+      },
+      {
+        source: path.join(
+          extractionDirectory,
+          native.walletCli
+        ),
+        destination: path.join(
+          native.directory,
+          native.walletCli
+        )
+      },
+      {
+        source: path.join(
+          extractionDirectory,
+          native.walletRpc
+        ),
+        destination: path.join(
+          native.directory,
+          native.walletRpc
+        )
+      },
+      ...windowsRuntimeDlls.map((file) => ({
+        source: path.join(
+          extractionDirectory,
+          file
+        ),
+        destination: path.join(
+          native.directory,
+          file
+        )
+      })),
+      {
+        source: path.join(
+          extractionDirectory,
+          installerName
+        ),
+        destination: canonicalInstaller
+      }
+    ];
+
+    const transactionId =
+      `${process.pid}-${Date.now()}`;
+
+    const staged = [];
+    let transactionSucceeded = false;
+    const daemonWasRunning = Boolean(runningDaemon());
+    let daemonStoppedForInstall = false;
+
+    try {
+      for (const item of installations) {
+        const temporary =
+          `${item.destination}.new-${transactionId}`;
+
+        const record = {
+          ...item,
+          temporary,
+          expectedHash:
+            sha256File(
+              item.source
+            ),
+          backup:
+            `${item.destination}.before-release-${transactionId}`,
+          hadExisting:
+            fs.existsSync(item.destination),
+          installed: false,
+          rollbackFailed: false
+        };
+
+        staged.push(
+          record
+        );
+
+        fs.copyFileSync(
+          record.source,
+          record.temporary
+        );
+
+        const stagedHash =
+          sha256File(
+            record.temporary
+          );
+
+        if (
+          stagedHash !==
+          record.expectedHash
+        ) {
+          throw new Error(
+            `CryLo Windows staging hash mismatch: ` +
+            `${path.basename(record.destination)}`
+          );
+        }
+      }
+
+      if (daemonWasRunning) {
+        console.log();
+        console.log(
+          'Stopping the local CryLo daemon for the Windows release replacement...'
+        );
+
+        const stopped =
+          runCryloLifecycleSubcommand('stop');
+
+        if (!stopped.ok) {
+          throw new Error(
+            `Unable to stop the local CryLo daemon before update: ` +
+            `${stopped.message}`
+          );
+        }
+
+        daemonStoppedForInstall = true;
+
+        if (runningDaemon()) {
+          throw new Error(
+            'The local CryLo daemon is still running after the stop request.'
+          );
+        }
+      }
+
+      for (const item of staged) {
+        if (item.hadExisting) {
+          fs.copyFileSync(
+            item.destination,
+            item.backup
+          );
+
+          /*
+           * Windows does not provide POSIX-style rename-over-existing
+           * semantics. Remove the verified old destination only after its
+           * rollback backup exists, then move the staged file into place.
+           */
+          fs.rmSync(
+            item.destination,
+            { force: true }
+          );
+        }
+
+        fs.renameSync(
+          item.temporary,
+          item.destination
+        );
+
+        item.installed = true;
+
+        const installedHash =
+          sha256File(
+            item.destination
+          );
+
+        if (
+          installedHash !==
+          item.expectedHash
+        ) {
+          throw new Error(
+            `Installed CryLo Windows artifact hash mismatch: ` +
+            `${path.basename(item.destination)}`
+          );
+        }
+      }
+
+      const systemRoot =
+        process.env.SystemRoot ||
+        process.env.WINDIR ||
+        'C:\\Windows';
+
+      const isolatedPath = [
+        path.join(systemRoot, 'System32'),
+        systemRoot
+      ].join(';');
+
+      for (const file of [
+        native.daemon,
+        native.walletCli,
+        native.walletRpc
+      ]) {
+        const executable = path.join(
+          native.directory,
+          file
+        );
+
+        const verification = spawnSync(
+          executable,
+          ['--version'],
+          {
+            cwd: native.directory,
+            env: {
+              ...process.env,
+              PATH: isolatedPath
+            },
+            encoding: 'utf8',
+            shell: false,
+            windowsHide: true
+          }
+        );
+
+        if (
+          verification.error ||
+          verification.status !== 0
+        ) {
+          throw new Error(
+            `Standalone Windows release verification failed for ${file}.`
+          );
+        }
+
+        const output =
+          String(verification.stdout || '') +
+          String(verification.stderr || '');
+
+        if (!output.includes("CryLo Chain 'Testnet'")) {
+          throw new Error(
+            `Standalone Windows release verification returned an unexpected ` +
+            `version for ${file}.`
+          );
+        }
+      }
+
+      const installer = spawnSync(
+        canonicalInstaller,
+        ['/S'],
+        {
+          cwd: root,
+          env: process.env,
+          stdio: 'inherit',
+          shell: false,
+          windowsHide: true
+        }
+      );
+
+      if (installer.error) {
+        throw installer.error;
+      }
+
+      if (installer.status !== 0) {
+        throw new Error(
+          `CryLo Wallet installer exited with code ` +
+          `${installer.status}.`
+        );
+      }
+
+      transactionSucceeded = true;
+    } catch (error) {
+      const rollbackErrors = [];
+
+      for (const item of [...staged].reverse()) {
+        if (!item.installed) {
+          continue;
+        }
+
+        try {
+          if (item.hadExisting) {
+            if (!fs.existsSync(item.backup)) {
+              throw new Error(
+                `rollback backup is missing: ${item.backup}`
+              );
+            }
+
+            fs.copyFileSync(
+              item.backup,
+              item.destination
+            );
+
+            const restoredHash =
+              sha256File(
+                item.destination
+              );
+
+            const backupHash =
+              sha256File(
+                item.backup
+              );
+
+            if (
+              restoredHash !==
+              backupHash
+            ) {
+              throw new Error(
+                'restored file does not match rollback backup'
+              );
+            }
+          } else {
+            fs.rmSync(
+              item.destination,
+              { force: true }
+            );
+          }
+        } catch (rollbackError) {
+          item.rollbackFailed = true;
+
+          rollbackErrors.push(
+            `${path.basename(item.destination)}: ` +
+            `${rollbackError.message}`
+          );
+        }
+      }
+
+      if (daemonStoppedForInstall) {
+        console.log();
+        console.log(
+          'Restarting the previous CryLo daemon after Windows release rollback...'
+        );
+
+        const restarted =
+          runCryloLifecycleSubcommand('start');
+
+        if (!restarted.ok) {
+          rollbackErrors.push(
+            `daemon restart: ${restarted.message}`
+          );
+        }
+      }
+
+      if (rollbackErrors.length) {
+        throw new Error(
+          `Exact Windows release installation failed: ${error.message}\n` +
+          'One or more rollback operations also failed.\n' +
+          'Recovery backups were preserved for those files:\n' +
+          rollbackErrors
+            .map((value) => `  ${value}`)
+            .join('\n')
+        );
+      }
+
+      throw new Error(
+        `Exact Windows release installation rolled back successfully: ` +
+        `${error.message}`
+      );
+    } finally {
+      for (const item of staged) {
+        try {
+          fs.rmSync(
+            item.temporary,
+            { force: true }
+          );
+        } catch (_) {
+          // Best-effort staging cleanup.
+        }
+
+        if (
+          transactionSucceeded ||
+          !item.rollbackFailed
+        ) {
+          try {
+            fs.rmSync(
+              item.backup,
+              { force: true }
+            );
+          } catch (_) {
+            // Best-effort successful-transaction cleanup.
+          }
+        }
+      }
+    }
+
+    if (
+      transactionSucceeded &&
+      daemonStoppedForInstall
+    ) {
+      console.log();
+      console.log(
+        'Restarting the local CryLo daemon after the Windows release update...'
+      );
+
+      const restarted =
+        runCryloLifecycleSubcommand('start');
+
+      if (!restarted.ok) {
+        console.error(
+          'WARNING: CryLo was updated successfully, but the daemon ' +
+          `could not be restarted automatically: ${restarted.message}`
+        );
+        console.error(
+          'Run "crylo start" to start the updated daemon.'
+        );
+      }
+    }
+
+    console.log();
+    console.log(
+      '===== EXACT SIGNED CRYLO WINDOWS RELEASE INSTALLED ====='
+    );
+    console.log(
+      `Release................. ${authorization.releaseTag}`
+    );
+    console.log(
+      `Sequence................ ${authorization.releaseSequence}`
+    );
+    console.log(
+      `Commit.................. ${authorization.gitCommit}`
+    );
+
+    for (const item of installations) {
+      console.log(
+        `Installed............... ${item.destination}`
+      );
+      console.log(
+        `SHA256.................. ${sha256File(item.destination)}`
+      );
+    }
+
+    console.log(
+      'CryLo Wallet installer... VERIFIED AND APPLIED'
+    );
+  } catch (error) {
+    installationError = error;
+  } finally {
+    try {
+      fs.rmSync(
+        release.temporaryRoot,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+    } catch (_) {
+      // Best-effort authenticated-release cleanup.
+    }
+  }
+
+  if (installationError) {
+    fail(
+      `Exact CryLo Windows release installation failed: ` +
+      `${installationError.message}`
+    );
+  }
+}
+
+function installAuthorizedReleaseBundle(
+  authorization
+) {
+  if (process.platform === 'linux') {
+    installAuthorizedLinuxBundle(
+      authorization
+    );
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    installAuthorizedWindowsBundle(
+      authorization
+    );
+    return;
+  }
+
+  fail(
+    'Exact signed CryLo release installation is not enabled for this platform.'
+  );
+}
+
 function update() {
   console.log('===== CRYLO UPDATE =====');
 
@@ -2076,19 +2915,58 @@ function update() {
   const resumed =
     process.env.CRYLO_UPDATE_RESUMED === '1';
 
+  const signedTarget =
+    releaseTarget();
+
   let authorization = null;
 
-  if (process.platform === 'linux') {
-    if (resumed) {
-      authorization = resumedReleaseAuthorization(
-        before,
-        remote
+  if (signedTarget) {
+    const resumedAuthorizationPresent =
+      Boolean(
+        process.env.CRYLO_AUTHORIZED_COMMIT &&
+        process.env.CRYLO_AUTHORIZED_SEQUENCE &&
+        process.env.CRYLO_AUTHORIZED_TAG &&
+        process.env.CRYLO_AUTHORIZED_VERSION
       );
 
-      console.log();
-      console.log(
-        'Continuing previously authenticated CryLo update.'
-      );
+    if (resumed) {
+      if (resumedAuthorizationPresent) {
+        authorization = resumedReleaseAuthorization(
+          before,
+          remote
+        );
+
+        console.log();
+        console.log(
+          'Continuing previously authenticated CryLo update.'
+        );
+      } else if (
+        process.platform === 'win32' &&
+        !readReleaseSecurityState() &&
+        before === remote
+      ) {
+        /*
+         * Sequence 7 did not authenticate Windows before merging.
+         * Permit exactly the first Windows hardening transition to
+         * authenticate the now-current commit before any release
+         * installation or rollback state is accepted.
+         */
+        console.log();
+        console.log(
+          'Authenticating first signed Windows CryLo update...'
+        );
+
+        authorization = authenticateRemoteRelease(
+          remote,
+          branch
+        );
+      } else {
+        fail(
+          'CryLo update resume authorization is missing. ' +
+          'Run "crylo update" again.'
+        );
+      }
+
       console.log(
         `Authorized release....... ${authorization.releaseTag}`
       );
@@ -2129,7 +3007,7 @@ function update() {
     console.log('CryLo source is already up to date.');
   } else {
     if (
-      process.platform === 'linux' &&
+      signedTarget &&
       (
         !authorization ||
         authorization.gitCommit.toLowerCase() !==
@@ -2175,11 +3053,11 @@ function update() {
     !resumed
   ) {
     if (
-      process.platform === 'linux' &&
+      signedTarget &&
       !authorization
     ) {
       fail(
-        'Authenticated Linux update authorization was lost.'
+        'Authenticated CryLo update authorization was lost.'
       );
     }
 
@@ -2229,10 +3107,10 @@ function update() {
     );
   }
 
-  if (process.platform === 'linux') {
+  if (signedTarget) {
     if (!authorization) {
       fail(
-        'Linux update reached installation without signed authorization.'
+        'Signed CryLo update reached installation without authorization.'
       );
     }
 
@@ -2241,7 +3119,7 @@ function update() {
       'Installing the exact authenticated CryLo release bundle...'
     );
 
-    installAuthorizedLinuxBundle(
+    installAuthorizedReleaseBundle(
       authorization
     );
   } else {
@@ -2271,8 +3149,7 @@ function update() {
 
     if (result.status !== 0) {
       fail(
-        'CryLo source was authenticated and updated, ' +
-        'but the release build failed.'
+        'CryLo source was updated, but the release build failed.'
       );
     }
   }
@@ -2286,7 +3163,7 @@ function update() {
    * completed successfully.
    */
   if (
-    process.platform === 'linux' &&
+    signedTarget &&
     authorization
   ) {
     writeReleaseSecurityState(

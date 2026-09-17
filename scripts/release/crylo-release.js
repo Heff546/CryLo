@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -14,6 +15,44 @@ const packageJson = JSON.parse(
     'utf8'
   )
 );
+
+const windowsRuntimeDlls = [
+  {
+    file: 'libgcc_s_seh-1.dll',
+    size: 150998,
+    sha256: 'b37c1770c8ca092700875845b34918803ee6311573eba1c32ff4b1166e4a0e1e'
+  },
+  {
+    file: 'libiconv-2.dll',
+    size: 1143148,
+    sha256: '7a282a854e01be726c6cccfe46f548c716aa45b3014818468253aaa4efbcd067'
+  },
+  {
+    file: 'libicudt78.dll',
+    size: 33120806,
+    sha256: '60255653982986c9fb72ad1b10b8dc502e498d890e0218cb0a47bc5907aa4e43'
+  },
+  {
+    file: 'libicuin78.dll',
+    size: 3186867,
+    sha256: 'c9bb34526709a81bfae231d4190f13adad0b4c63e345262f448aaa720291feec'
+  },
+  {
+    file: 'libicuuc78.dll',
+    size: 1999466,
+    sha256: '27edc25710faa3489cd9cbd6cbc64c305b69ce5dbb9e0a29273d85e9badddde9'
+  },
+  {
+    file: 'libstdc++-6.dll',
+    size: 2661299,
+    sha256: '887c21dbe2a211ac4d1a790e4f608b7dee27fae12352856963004e7a715d2e6c'
+  },
+  {
+    file: 'libwinpthread-1.dll',
+    size: 63875,
+    sha256: '8d7a192a8fbbccb0cebeac272701f66a580f493eff2336739a96144119260723'
+  }
+];
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -190,6 +229,96 @@ function commandAvailable(command) {
 function major(version) {
   const match = String(version || '').match(/(\d+)/);
   return match ? Number(match[1]) : 0;
+}
+
+function sha256File(file) {
+  const hash = crypto.createHash('sha256');
+  const descriptor = fs.openSync(file, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+
+  try {
+    while (true) {
+      const count = fs.readSync(
+        descriptor,
+        buffer,
+        0,
+        buffer.length,
+        null
+      );
+
+      if (count === 0) {
+        break;
+      }
+
+      hash.update(buffer.subarray(0, count));
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
+
+  return hash.digest('hex');
+}
+
+function peMachine(file) {
+  const descriptor = fs.openSync(file, 'r');
+
+  try {
+    const dosHeader = Buffer.alloc(64);
+    const dosBytes = fs.readSync(
+      descriptor,
+      dosHeader,
+      0,
+      dosHeader.length,
+      0
+    );
+
+    if (
+      dosBytes !== dosHeader.length ||
+      dosHeader[0] !== 0x4d ||
+      dosHeader[1] !== 0x5a
+    ) {
+      fail(`Invalid Windows PE file: ${file}`);
+    }
+
+    const peOffset = dosHeader.readUInt32LE(0x3c);
+    const peHeader = Buffer.alloc(6);
+    const peBytes = fs.readSync(
+      descriptor,
+      peHeader,
+      0,
+      peHeader.length,
+      peOffset
+    );
+
+    if (
+      peBytes !== peHeader.length ||
+      peHeader[0] !== 0x50 ||
+      peHeader[1] !== 0x45 ||
+      peHeader[2] !== 0x00 ||
+      peHeader[3] !== 0x00
+    ) {
+      fail(`Invalid Windows PE signature: ${file}`);
+    }
+
+    return peHeader.readUInt16LE(4);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function windowsMingwBin() {
+  const bash = findWindowsBash();
+  const msysRoot = path.resolve(
+    path.dirname(bash),
+    '..',
+    '..'
+  );
+
+  return path.join(
+    msysRoot,
+    'mingw64',
+    'bin'
+  );
 }
 
 function detectTarget() {
@@ -540,6 +669,269 @@ function packageElectron(target, nativeBin) {
   }
 }
 
+
+function createWindowsReleaseBundle(
+  target,
+  nativeBin,
+  releaseTag
+) {
+  if (
+    target.platform !== 'win' ||
+    target.arch !== 'x64'
+  ) {
+    fail(
+      'Official Windows exact-artifact bundle creation supports win/x64 only.'
+    );
+  }
+
+  const installerSource = path.join(
+    electronDir,
+    'dist',
+    `CryLo Wallet Setup ${packageJson.version}.exe`
+  );
+
+  if (!fs.existsSync(installerSource)) {
+    fail(
+      `Expected Windows installer was not produced: ${installerSource}`
+    );
+  }
+
+  const nativeFiles = [
+    target.daemon,
+    target.walletCli,
+    target.walletRpc
+  ];
+
+  for (const file of nativeFiles) {
+    const source = path.join(nativeBin, file);
+
+    if (!fs.existsSync(source)) {
+      fail(
+        `Required official native release file is missing: ${source}`
+      );
+    }
+  }
+
+  const mingwBin = windowsMingwBin();
+
+  for (const runtime of windowsRuntimeDlls) {
+    const source = path.join(
+      mingwBin,
+      runtime.file
+    );
+
+    if (!fs.existsSync(source)) {
+      fail(
+        `Required pinned Windows runtime DLL is missing: ${source}`
+      );
+    }
+
+    const stat = fs.statSync(source);
+
+    if (stat.size !== runtime.size) {
+      fail(
+        `Pinned Windows runtime DLL size mismatch: ${runtime.file}\n` +
+        `Expected: ${runtime.size}\n` +
+        `Actual:   ${stat.size}`
+      );
+    }
+
+    const actualHash = sha256File(source);
+
+    if (actualHash !== runtime.sha256) {
+      fail(
+        `Pinned Windows runtime DLL SHA-256 mismatch: ${runtime.file}\n` +
+        `Expected: ${runtime.sha256}\n` +
+        `Actual:   ${actualHash}`
+      );
+    }
+
+    if (peMachine(source) !== 0x8664) {
+      fail(
+        `Pinned Windows runtime DLL is not AMD64/x64: ${runtime.file}`
+      );
+    }
+  }
+
+  const canonicalInstaller =
+    `CryLo-Wallet-Setup-${packageJson.version}-${target.arch}.exe`;
+
+  const bundleName =
+    `CryLo-Release-${packageJson.version}-win-${target.arch}.zip`;
+
+  const bundlePath = path.join(
+    electronDir,
+    'dist',
+    bundleName
+  );
+
+  const staging = fs.mkdtempSync(
+    path.join(
+      os.tmpdir(),
+      'crylo-official-release-'
+    )
+  );
+
+  try {
+    for (const file of nativeFiles) {
+      fs.copyFileSync(
+        path.join(nativeBin, file),
+        path.join(staging, file)
+      );
+    }
+
+    for (const runtime of windowsRuntimeDlls) {
+      const source = path.join(
+        mingwBin,
+        runtime.file
+      );
+      const destination = path.join(
+        staging,
+        runtime.file
+      );
+
+      fs.copyFileSync(
+        source,
+        destination
+      );
+
+      if (sha256File(destination) !== runtime.sha256) {
+        fail(
+          `Pinned Windows runtime DLL changed during staging: ${runtime.file}`
+        );
+      }
+    }
+
+    fs.copyFileSync(
+      installerSource,
+      path.join(staging, canonicalInstaller)
+    );
+
+    const systemRoot =
+      process.env.SystemRoot ||
+      process.env.WINDIR ||
+      'C:\\Windows';
+
+    const isolatedPath = [
+      path.join(systemRoot, 'System32'),
+      systemRoot
+    ].join(';');
+
+    for (const file of nativeFiles) {
+      const executable = path.join(
+        staging,
+        file
+      );
+
+      const verification = spawnSync(
+        executable,
+        ['--version'],
+        {
+          cwd: staging,
+          env: {
+            ...process.env,
+            PATH: isolatedPath
+          },
+          encoding: 'utf8',
+          shell: false,
+          windowsHide: true
+        }
+      );
+
+      if (
+        verification.error ||
+        verification.status !== 0
+      ) {
+        fail(
+          `Standalone Windows release verification failed for ${file}.`
+        );
+      }
+
+      const output =
+        String(verification.stdout || '') +
+        String(verification.stderr || '');
+
+      if (!output.includes("CryLo Chain 'Testnet'")) {
+        fail(
+          `Standalone Windows release verification returned an unexpected ` +
+          `version for ${file}.`
+        );
+      }
+    }
+
+    fs.rmSync(
+      bundlePath,
+      { force: true }
+    );
+
+    const powershell = process.env.SystemRoot
+      ? path.join(
+          process.env.SystemRoot,
+          'System32',
+          'WindowsPowerShell',
+          'v1.0',
+          'powershell.exe'
+        )
+      : 'powershell.exe';
+
+    const archiveEnvironment = {
+      ...process.env,
+      CRYLO_BUNDLE_SOURCE: staging,
+      CRYLO_BUNDLE_DESTINATION: bundlePath
+    };
+
+    run(
+      powershell,
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        [
+          "$ErrorActionPreference = 'Stop'",
+          "$source = $env:CRYLO_BUNDLE_SOURCE",
+          "$destination = $env:CRYLO_BUNDLE_DESTINATION",
+          "if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Force }",
+          "Compress-Archive -Path (Join-Path $source '*') -DestinationPath $destination -CompressionLevel Optimal -Force"
+        ].join('; ')
+      ],
+      {
+        env: archiveEnvironment
+      }
+    );
+
+    if (!fs.existsSync(bundlePath)) {
+      fail(
+        `Official CryLo Windows release bundle was not created: ${bundlePath}`
+      );
+    }
+
+    console.log();
+    console.log(
+      '===== OFFICIAL SIGNABLE RELEASE BUNDLE ====='
+    );
+    console.log(`Release tag: ${releaseTag}`);
+    console.log(`Bundle: ${bundlePath}`);
+
+    for (const entry of [
+      ...nativeFiles,
+      ...windowsRuntimeDlls.map((runtime) => runtime.file),
+      canonicalInstaller
+    ].sort()) {
+      console.log(`  ${entry}`);
+    }
+
+    return bundlePath;
+  } finally {
+    fs.rmSync(
+      staging,
+      {
+        recursive: true,
+        force: true
+      }
+    );
+  }
+}
+
 function createLinuxReleaseBundle(
   target,
   nativeBin,
@@ -754,11 +1146,23 @@ packageElectron(target, nativeBin);
 let officialBundle = null;
 
 if (officialReleaseTag) {
-  officialBundle = createLinuxReleaseBundle(
-    target,
-    nativeBin,
-    officialReleaseTag
-  );
+  if (target.platform === 'linux') {
+    officialBundle = createLinuxReleaseBundle(
+      target,
+      nativeBin,
+      officialReleaseTag
+    );
+  } else if (target.platform === 'win') {
+    officialBundle = createWindowsReleaseBundle(
+      target,
+      nativeBin,
+      officialReleaseTag
+    );
+  } else {
+    fail(
+      'Official exact-artifact bundle creation is not yet enabled for macOS.'
+    );
+  }
 }
 
 console.log();
