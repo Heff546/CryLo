@@ -1,4 +1,4 @@
-name: Universal CryLo Native Preflight
+name: CryLo Windows Linux Pi Preflight
 
 on:
   push:
@@ -26,12 +26,6 @@ jobs:
           - name: windows-x64
             runner: windows-latest
             family: windows
-          - name: macos-x64
-            runner: macos-15-intel
-            family: macos
-          - name: macos-arm64
-            runner: macos-latest
-            family: macos
 
     steps:
       - name: Check out CryLo
@@ -62,15 +56,6 @@ jobs:
             libgmp-dev \
             libminiupnpc-dev
           npm install --global npm@12.0.2
-          node --version
-          npm --version
-
-      - name: Prepare macOS build prerequisites
-        if: matrix.family == 'macos'
-        shell: bash
-        run: |
-          command -v cmake >/dev/null 2>&1 || brew install cmake
-          command -v make >/dev/null 2>&1
           node --version
           npm --version
 
