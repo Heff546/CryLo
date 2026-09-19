@@ -1,0 +1,99 @@
+name: Universal CryLo Native Preflight
+
+on:
+  push:
+    branches:
+      - feature/universal-crylo-install
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-preflight:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-24.04
+            family: linux
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            family: linux
+          - name: windows-x64
+            runner: windows-latest
+            family: windows
+          - name: macos-x64
+            runner: macos-15-intel
+            family: macos
+          - name: macos-arm64
+            runner: macos-latest
+            family: macos
+
+    steps:
+      - name: Check out CryLo
+        uses: actions/checkout@v4
+
+      - name: Use CryLo Node runtime version
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+
+      - name: Prepare Linux build prerequisites
+        if: matrix.family == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            python3 \
+            protobuf-compiler \
+            libprotobuf-dev \
+            libusb-1.0-0-dev \
+            libhidapi-dev \
+            libudev-dev \
+            libzstd-dev \
+            nettle-dev \
+            libgmp-dev \
+            libminiupnpc-dev
+          npm install --global npm@12.0.2
+          node --version
+          npm --version
+
+      - name: Prepare macOS build prerequisites
+        if: matrix.family == 'macos'
+        shell: bash
+        run: |
+          command -v cmake >/dev/null 2>&1 || brew install cmake
+          command -v make >/dev/null 2>&1
+          node --version
+          npm --version
+
+      - name: Verify Windows MSYS2 bootstrap
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          $candidates = @(
+            'C:\msys64\usr\bin\bash.exe',
+            'C:\tools\msys64\usr\bin\bash.exe'
+          )
+
+          $bash = $candidates |
+            Where-Object { Test-Path -LiteralPath $_ } |
+            Select-Object -First 1
+
+          if (-not $bash) {
+            throw 'MSYS2 bash was not found on the Windows hosted runner.'
+          }
+
+          Write-Host "MSYS2: $bash"
+          node --version
+          npm --version
+
+      - name: Run CryLo release prerequisite check
+        run: node scripts/release/crylo-release.js --check
