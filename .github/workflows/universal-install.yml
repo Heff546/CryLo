@@ -1,0 +1,47 @@
+name: Universal CryLo Install
+
+on:
+  push:
+    branches:
+      - feature/universal-crylo-install
+  pull_request:
+    branches:
+      - feature/unified-electron-release-pipeline
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax-and-contract:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Check out CryLo
+        uses: actions/checkout@v4
+
+      - name: Use CryLo Node runtime version
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check scripts/crylo.js
+          node --check scripts/release/crylo-release.js
+          node --check scripts/tests/universal-install-static.js
+
+      - name: Verify universal install invariants
+        run: node scripts/tests/universal-install-static.js
+
+      - name: Check Unix launcher syntax
+        if: runner.os != 'Windows'
+        run: sh -n crylo
