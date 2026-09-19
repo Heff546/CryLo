@@ -1,4 +1,4 @@
-name: Universal CryLo Full Build
+name: CryLo Windows Linux Pi Full Build
 
 on:
   push:
@@ -26,12 +26,6 @@ jobs:
           - name: windows-x64
             runner: windows-latest
             family: windows
-          - name: macos-x64
-            runner: macos-15-intel
-            family: macos
-          - name: macos-arm64
-            runner: macos-latest
-            family: macos
 
     steps:
       - name: Check out CryLo
@@ -73,26 +67,6 @@ jobs:
             zlib1g-dev \
             libunwind-dev
           npm install --global npm@12.0.2
-
-      - name: Prepare macOS native dependencies
-        if: matrix.family == 'macos'
-        shell: bash
-        run: |
-          brew install \
-            cmake \
-            boost \
-            openssl@3 \
-            zeromq \
-            libsodium \
-            unbound \
-            readline \
-            miniupnpc \
-            libusb \
-            hidapi \
-            protobuf \
-            pkg-config \
-            zstd \
-            gmp
 
       - name: Prepare Windows native dependencies
         if: matrix.family == 'windows'
@@ -155,14 +129,3 @@ jobs:
             build/win-x64/bin/CryLo-wallet-rpc.exe
             electron/dist/*.exe
 
-      - name: Upload macOS build outputs
-        if: success() && matrix.family == 'macos'
-        uses: actions/upload-artifact@v4
-        with:
-          name: crylo-${{ matrix.name }}
-          if-no-files-found: error
-          path: |
-            build/mac-*/bin/CryLo-daemon
-            build/mac-*/bin/CryLo-wallet
-            build/mac-*/bin/CryLo-wallet-rpc
-            electron/dist/*.dmg
