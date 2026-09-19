@@ -6,19 +6,26 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..', '..');
 
-const cryloJs = fs.readFileSync(
-  path.join(root, 'scripts', 'crylo.js'),
-  'utf8'
+function readText(...parts) {
+  return fs.readFileSync(
+    path.join(root, ...parts),
+    'utf8'
+  ).replace(/\r\n/g, '\n');
+}
+
+const cryloJs = readText(
+  'scripts',
+  'crylo.js'
 );
 
-const launcher = fs.readFileSync(
-  path.join(root, 'crylo'),
-  'utf8'
+const launcher = readText(
+  'crylo'
 );
 
-const releaseJs = fs.readFileSync(
-  path.join(root, 'scripts', 'release', 'crylo-release.js'),
-  'utf8'
+const releaseJs = readText(
+  'scripts',
+  'release',
+  'crylo-release.js'
 );
 
 function contains(text, fragment, label) {
