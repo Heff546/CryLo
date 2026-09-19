@@ -1,0 +1,49 @@
+name: CryLo Install Windows Linux Pi
+
+on:
+  push:
+    branches:
+      - feature/crylo-install-win-linux-pi
+  pull_request:
+    branches:
+      - feature/unified-electron-release-pipeline
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax-and-contract:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-24.04
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+          - name: windows-x64
+            runner: windows-latest
+
+    steps:
+      - name: Check out CryLo
+        uses: actions/checkout@v4
+
+      - name: Use CryLo Node runtime version
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check scripts/crylo.js
+          node --check scripts/tests/install-win-linux-pi-static.js
+
+      - name: Verify install contract
+        run: node scripts/tests/install-win-linux-pi-static.js
+
+      - name: Check Unix launcher syntax
+        if: runner.os != 'Windows'
+        run: sh -n crylo
