@@ -4376,13 +4376,79 @@ function ensureMacRuntimeDependencies() {
     );
   }
 
-  const gitProbe = probe('git', ['--version']);
+  let gitProbe = probe('git', ['--version']);
 
   if (!gitProbe.ok) {
-    fail(
-      'Git is required for the CryLo source updater on macOS. ' +
-      'The CryLo launcher and release runtime are otherwise self-contained.'
+    const xcodeSelect = '/usr/bin/xcode-select';
+
+    if (!fs.existsSync(xcodeSelect)) {
+      fail(
+        'Apple Xcode Command Line Tools are required to provide Git on macOS.'
+      );
+    }
+
+    console.log(
+      'Git is not available. Starting Apple Xcode Command Line Tools installation...'
     );
+    console.log(
+      'Accept the macOS installation prompt; CryLo will continue automatically when Git is ready.'
+    );
+
+    const installer = spawnSync(
+      xcodeSelect,
+      ['--install'],
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (
+      installer.error &&
+      installer.error.code !== 'EEXIST'
+    ) {
+      fail(
+        `Unable to start Apple Command Line Tools installation: ${installer.error.message}`
+      );
+    }
+
+    const maximumAttempts = 360;
+    let ready = false;
+
+    for (
+      let attempt = 0;
+      attempt < maximumAttempts;
+      attempt += 1
+    ) {
+      gitProbe = probe('git', ['--version']);
+
+      if (gitProbe.ok) {
+        ready = true;
+        break;
+      }
+
+      const wait = spawnSync(
+        process.execPath,
+        ['-e', 'setTimeout(() => {}, 5000)'],
+        {
+          stdio: 'ignore',
+          shell: false
+        }
+      );
+
+      if (wait.error) {
+        break;
+      }
+    }
+
+    if (!ready) {
+      fail(
+        'Git did not become available after starting Apple Command Line Tools installation. ' +
+        'Complete the macOS installation prompt and run "crylo install" again.'
+      );
+    }
   }
 
   console.log(`Git................ ${gitProbe.stdout}`);
