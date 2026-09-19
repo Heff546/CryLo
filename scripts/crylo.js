@@ -3617,6 +3617,7 @@ function ensureLinuxRuntimeDependencies() {
   const requiredPackages = [
     'ca-certificates',
     'curl',
+    'git',
     'tar'
   ];
 
@@ -4542,51 +4543,26 @@ function install() {
   );
   console.log();
 
-  if (process.platform === 'win32') {
-    console.log(
-      'Installing the current authenticated prebuilt CryLo Windows release...'
-    );
-    console.log();
+  const target = releaseTarget();
 
-    update();
-    return;
-  }
-
-  ensureLinuxBuildDependencies();
-
-  const result = spawnSync(
-    process.execPath,
-    [releaseScript],
-    {
-      cwd: root,
-      env: process.env,
-      stdio: 'inherit',
-      shell: false
-    }
-  );
-
-  if (result.error) {
-    fail(result.error.message);
-  }
-
-  if (result.status !== 0) {
-    fail('CryLo installation build failed.');
-  }
-
-  const daemon = nativeDaemonPath();
-
-  if (!fs.existsSync(daemon)) {
+  if (!target) {
     fail(
-      `CryLo release completed but the daemon was not found: ${daemon}`
+      `CryLo install does not currently support ` +
+      `${process.platform}/${process.arch}.`
     );
   }
 
-  installUserCommand();
-  installLinuxDesktopLaunchers();
+  if (process.platform === 'linux') {
+    ensureLinuxRuntimeDependencies();
+  }
 
+  console.log(
+    `Installing the current authenticated prebuilt CryLo ` +
+    `${target.platform}/${target.architecture} release...`
+  );
   console.log();
-  console.log('CryLo installation completed successfully.');
-  console.log('Run "crylo start" to start CryLo.');
+
+  update();
 }
 
 function start() {
