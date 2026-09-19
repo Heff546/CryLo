@@ -37,7 +37,10 @@ const generatedElectronInputs = [
   'electron/bin/linux/CryLo-wallet-rpc',
   'electron/bin/win/BINARY-MANIFEST.txt',
   'electron/bin/win/CryLo-daemon.exe',
-  'electron/bin/win/CryLo-wallet-rpc.exe'
+  'electron/bin/win/CryLo-wallet-rpc.exe',
+  'electron/bin/mac/BINARY-MANIFEST.txt',
+  'electron/bin/mac/CryLo-daemon',
+  'electron/bin/mac/CryLo-wallet-rpc'
 ];
 
 const windowsRuntimeDlls = [
@@ -933,6 +936,20 @@ function releaseTarget() {
     };
   }
 
+  if (process.platform === 'darwin') {
+    if (!['arm64', 'x64'].includes(process.arch)) {
+      fail(
+        `Signed CryLo macOS updates do not support architecture ` +
+        `${process.arch}.`
+      );
+    }
+
+    return {
+      platform: 'mac',
+      architecture: process.arch
+    };
+  }
+
   return null;
 }
 
@@ -954,6 +971,13 @@ function expectedSignedBundleName(
     return (
       `CryLo-Release-${version}-win-` +
       `${target.architecture}.zip`
+    );
+  }
+
+  if (target.platform === 'mac') {
+    return (
+      `CryLo-Release-${version}-mac-` +
+      `${target.architecture}.tar`
     );
   }
 
@@ -2745,6 +2769,649 @@ function installAuthorizedWindowsBundle(
   }
 }
 
+
+function installAuthorizedMacBundle(
+  authorization
+) {
+  if (
+    process.platform !== 'darwin' ||
+    !['arm64', 'x64'].includes(process.arch)
+  ) {
+    fail(
+      'Exact CryLo macOS release bundle installation supports mac/x64 and mac/arm64 only.'
+    );
+  }
+
+  const release =
+    downloadAuthorizedReleaseBundle(
+      authorization
+    );
+
+  let installationError = null;
+
+  try {
+    const native = expectedNativeBin();
+
+    if (!native) {
+      throw new Error(
+        'Unable to determine the macOS native release directory.'
+      );
+    }
+
+    const dmgName =
+      `CryLo-Wallet-${authorization.version}-mac-${process.arch}.dmg`;
+
+    const expectedEntries = [
+      native.daemon,
+      native.walletCli,
+      native.walletRpc,
+      dmgName
+    ].sort();
+
+    const listing = spawnSync(
+      '/usr/bin/tar',
+      [
+        '-tf',
+        release.bundlePath
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    if (
+      listing.error ||
+      listing.status !== 0
+    ) {
+      throw new Error(
+        'Unable to inspect the authenticated CryLo macOS release bundle.'
+      );
+    }
+
+    const entries = String(
+      listing.stdout || ''
+    )
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .sort();
+
+    if (
+      entries.length !== expectedEntries.length ||
+      entries.some(
+        (entry, index) =>
+          entry !== expectedEntries[index] ||
+          entry !== path.basename(entry) ||
+          entry.includes('/') ||
+          entry.includes('\\')
+      )
+    ) {
+      throw new Error(
+        'Authenticated CryLo macOS release bundle contains unexpected entries.'
+      );
+    }
+
+    const extractionDirectory = path.join(
+      release.temporaryRoot,
+      'extracted'
+    );
+
+    fs.mkdirSync(
+      extractionDirectory,
+      {
+        recursive: true,
+        mode: 0o700
+      }
+    );
+
+    const extraction = spawnSync(
+      '/usr/bin/tar',
+      [
+        '-xf',
+        release.bundlePath,
+        '-C',
+        extractionDirectory
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+      }
+    );
+
+    if (
+      extraction.error ||
+      extraction.status !== 0
+    ) {
+      throw new Error(
+        'Unable to extract the authenticated CryLo macOS release bundle.'
+      );
+    }
+
+    for (const entry of expectedEntries) {
+      const extracted = path.join(
+        extractionDirectory,
+        entry
+      );
+
+      const stat = fs.lstatSync(
+        extracted
+      );
+
+      if (!stat.isFile()) {
+        throw new Error(
+          `Authenticated macOS bundle entry is not a regular file: ${entry}`
+        );
+      }
+    }
+
+    fs.mkdirSync(
+      native.directory,
+      {
+        recursive: true
+      }
+    );
+
+    const distDirectory = path.join(
+      root,
+      'electron',
+      'dist'
+    );
+
+    fs.mkdirSync(
+      distDirectory,
+      {
+        recursive: true
+      }
+    );
+
+    const canonicalDmg = path.join(
+      distDirectory,
+      dmgName
+    );
+
+    const installations = [
+      {
+        source: path.join(
+          extractionDirectory,
+          native.daemon
+        ),
+        destination: path.join(
+          native.directory,
+          native.daemon
+        ),
+        executable: true
+      },
+      {
+        source: path.join(
+          extractionDirectory,
+          native.walletCli
+        ),
+        destination: path.join(
+          native.directory,
+          native.walletCli
+        ),
+        executable: true
+      },
+      {
+        source: path.join(
+          extractionDirectory,
+          native.walletRpc
+        ),
+        destination: path.join(
+          native.directory,
+          native.walletRpc
+        ),
+        executable: true
+      },
+      {
+        source: path.join(
+          extractionDirectory,
+          dmgName
+        ),
+        destination: canonicalDmg,
+        executable: false
+      }
+    ];
+
+    const transactionId =
+      `${process.pid}-${Date.now()}`;
+
+    const staged = [];
+    let transactionSucceeded = false;
+
+    try {
+      for (const item of installations) {
+        const temporary =
+          `${item.destination}.new-${transactionId}`;
+
+        const record = {
+          ...item,
+          temporary,
+          expectedHash:
+            sha256File(
+              item.source
+            ),
+          backup:
+            `${item.destination}.before-release-${transactionId}`,
+          hadExisting:
+            fs.existsSync(item.destination),
+          installed: false,
+          rollbackFailed: false
+        };
+
+        staged.push(record);
+
+        fs.copyFileSync(
+          record.source,
+          record.temporary
+        );
+
+        fs.chmodSync(
+          record.temporary,
+          record.executable ? 0o755 : 0o644
+        );
+
+        if (
+          sha256File(record.temporary) !==
+          record.expectedHash
+        ) {
+          throw new Error(
+            `CryLo macOS staging hash mismatch: ` +
+            `${path.basename(record.destination)}`
+          );
+        }
+      }
+
+      for (const item of staged) {
+        if (item.hadExisting) {
+          fs.copyFileSync(
+            item.destination,
+            item.backup
+          );
+        }
+
+        fs.renameSync(
+          item.temporary,
+          item.destination
+        );
+
+        item.installed = true;
+
+        if (
+          sha256File(item.destination) !==
+          item.expectedHash
+        ) {
+          throw new Error(
+            `Installed CryLo macOS artifact hash mismatch: ` +
+            `${path.basename(item.destination)}`
+          );
+        }
+      }
+
+      transactionSucceeded = true;
+    } catch (error) {
+      const rollbackErrors = [];
+
+      for (const item of [...staged].reverse()) {
+        if (!item.installed) {
+          continue;
+        }
+
+        try {
+          if (item.hadExisting) {
+            if (!fs.existsSync(item.backup)) {
+              throw new Error(
+                `rollback backup is missing: ${item.backup}`
+              );
+            }
+
+            fs.copyFileSync(
+              item.backup,
+              item.destination
+            );
+
+            if (
+              sha256File(item.destination) !==
+              sha256File(item.backup)
+            ) {
+              throw new Error(
+                'restored file does not match rollback backup'
+              );
+            }
+          } else {
+            fs.rmSync(
+              item.destination,
+              { force: true }
+            );
+          }
+        } catch (rollbackError) {
+          item.rollbackFailed = true;
+
+          rollbackErrors.push(
+            `${path.basename(item.destination)}: ` +
+            `${rollbackError.message}`
+          );
+        }
+      }
+
+      if (rollbackErrors.length) {
+        throw new Error(
+          `Exact macOS release installation failed: ${error.message}\n` +
+          'One or more rollback operations also failed.\n' +
+          'Recovery backups were preserved for those files:\n' +
+          rollbackErrors
+            .map((value) => `  ${value}`)
+            .join('\n')
+        );
+      }
+
+      throw new Error(
+        `Exact macOS release installation rolled back successfully: ` +
+        `${error.message}`
+      );
+    } finally {
+      for (const item of staged) {
+        try {
+          fs.rmSync(
+            item.temporary,
+            { force: true }
+          );
+        } catch (_) {
+          // Best-effort staging cleanup.
+        }
+
+        if (
+          transactionSucceeded ||
+          !item.rollbackFailed
+        ) {
+          try {
+            fs.rmSync(
+              item.backup,
+              { force: true }
+            );
+          } catch (_) {
+            // Best-effort successful-transaction cleanup.
+          }
+        }
+      }
+    }
+
+    const home = process.env.HOME;
+
+    if (!home) {
+      throw new Error(
+        'Unable to determine the current macOS user home directory.'
+      );
+    }
+
+    const applicationsDirectory = path.join(
+      home,
+      'Applications'
+    );
+
+    const applicationDestination = path.join(
+      applicationsDirectory,
+      'CryLo Wallet.app'
+    );
+
+    fs.mkdirSync(
+      applicationsDirectory,
+      { recursive: true }
+    );
+
+    const mount = spawnSync(
+      '/usr/bin/hdiutil',
+      [
+        'attach',
+        '-nobrowse',
+        '-readonly',
+        canonicalDmg
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    if (
+      mount.error ||
+      mount.status !== 0
+    ) {
+      throw new Error(
+        'Unable to mount the authenticated CryLo Wallet DMG.'
+      );
+    }
+
+    const mountLine = String(
+      mount.stdout || ''
+    )
+      .split(/\r?\n/)
+      .find((line) => line.includes('/Volumes/'));
+
+    if (!mountLine) {
+      throw new Error(
+        'Unable to determine the mounted CryLo Wallet volume.'
+      );
+    }
+
+    const mountPoint = mountLine.slice(
+      mountLine.indexOf('/Volumes/')
+    ).trim();
+
+    const applicationSource = path.join(
+      mountPoint,
+      'CryLo Wallet.app'
+    );
+
+    const applicationTransaction =
+      `${process.pid}-${Date.now()}`;
+
+    const stagedApplication = path.join(
+      applicationsDirectory,
+      `.CryLo Wallet.app.new-${applicationTransaction}`
+    );
+
+    const backupApplication = path.join(
+      applicationsDirectory,
+      `.CryLo Wallet.app.before-${applicationTransaction}`
+    );
+
+    const hadExistingApplication =
+      fs.existsSync(applicationDestination);
+
+    let applicationInstalled = false;
+
+    try {
+      if (
+        !fs.existsSync(applicationSource) ||
+        !fs.lstatSync(applicationSource).isDirectory()
+      ) {
+        throw new Error(
+          'Mounted CryLo Wallet application was not found.'
+        );
+      }
+
+      fs.rmSync(
+        stagedApplication,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+
+      const copyApplication = spawnSync(
+        '/usr/bin/ditto',
+        [
+          applicationSource,
+          stagedApplication
+        ],
+        {
+          cwd: root,
+          env: process.env,
+          stdio: 'inherit',
+          shell: false
+        }
+      );
+
+      if (
+        copyApplication.error ||
+        copyApplication.status !== 0
+      ) {
+        throw new Error(
+          'Unable to stage the CryLo Wallet application.'
+        );
+      }
+
+      const stagedExecutable = path.join(
+        stagedApplication,
+        'Contents',
+        'MacOS',
+        'CryLo Wallet'
+      );
+
+      if (!fs.existsSync(stagedExecutable)) {
+        throw new Error(
+          'Staged CryLo Wallet application is incomplete.'
+        );
+      }
+
+      if (hadExistingApplication) {
+        fs.rmSync(
+          backupApplication,
+          {
+            recursive: true,
+            force: true
+          }
+        );
+
+        fs.renameSync(
+          applicationDestination,
+          backupApplication
+        );
+      }
+
+      fs.renameSync(
+        stagedApplication,
+        applicationDestination
+      );
+
+      applicationInstalled = true;
+
+      if (hadExistingApplication) {
+        fs.rmSync(
+          backupApplication,
+          {
+            recursive: true,
+            force: true
+          }
+        );
+      }
+    } catch (error) {
+      fs.rmSync(
+        stagedApplication,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+
+      if (
+        hadExistingApplication &&
+        !fs.existsSync(applicationDestination) &&
+        fs.existsSync(backupApplication)
+      ) {
+        fs.renameSync(
+          backupApplication,
+          applicationDestination
+        );
+      }
+
+      throw error;
+    } finally {
+      const detach = spawnSync(
+        '/usr/bin/hdiutil',
+        [
+          'detach',
+          mountPoint
+        ],
+        {
+          cwd: root,
+          env: process.env,
+          stdio: 'ignore',
+          shell: false
+        }
+      );
+
+      if (
+        applicationInstalled &&
+        (
+          detach.error ||
+          detach.status !== 0
+        )
+      ) {
+        console.error(
+          `WARNING: CryLo Wallet was installed, but the DMG volume ` +
+          `could not be detached automatically: ${mountPoint}`
+        );
+      }
+    }
+
+    console.log();
+    console.log(
+      '===== EXACT SIGNED CRYLO MACOS RELEASE INSTALLED ====='
+    );
+    console.log(
+      `Release................. ${authorization.releaseTag}`
+    );
+    console.log(
+      `Sequence................ ${authorization.releaseSequence}`
+    );
+    console.log(
+      `Commit.................. ${authorization.gitCommit}`
+    );
+
+    for (const item of installations) {
+      console.log(
+        `Installed............... ${item.destination}`
+      );
+      console.log(
+        `SHA256.................. ${sha256File(item.destination)}`
+      );
+    }
+
+    console.log(
+      `CryLo Wallet application. ${applicationDestination}`
+    );
+  } catch (error) {
+    installationError = error;
+  } finally {
+    try {
+      fs.rmSync(
+        release.temporaryRoot,
+        {
+          recursive: true,
+          force: true
+        }
+      );
+    } catch (_) {
+      // Best-effort authenticated-release cleanup.
+    }
+  }
+
+  if (installationError) {
+    fail(
+      `Exact CryLo macOS release installation failed: ` +
+      `${installationError.message}`
+    );
+  }
+}
+
 function installAuthorizedReleaseBundle(
   authorization
 ) {
@@ -2757,6 +3424,13 @@ function installAuthorizedReleaseBundle(
 
   if (process.platform === 'win32') {
     installAuthorizedWindowsBundle(
+      authorization
+    );
+    return;
+  }
+
+  if (process.platform === 'darwin') {
+    installAuthorizedMacBundle(
       authorization
     );
     return;
@@ -2998,6 +3672,17 @@ function update() {
       'Preparing authenticated CryLo runtime dependencies...'
     );
     ensureLinuxRuntimeDependencies();
+  }
+
+  if (
+    process.platform === 'darwin' &&
+    authorization
+  ) {
+    console.log();
+    console.log(
+      'Preparing authenticated CryLo macOS runtime dependencies...'
+    );
+    ensureMacRuntimeDependencies();
   }
 
   let after = before;
@@ -3360,7 +4045,7 @@ function installedDebianPackage(packageName) {
   );
 }
 
-function ensureLinuxNodeRuntime() {
+function ensureUnixNodeRuntime() {
   let node = probe('node', ['--version']);
   const nodeVersion =
     node.ok ? node.stdout : '';
@@ -3406,7 +4091,7 @@ function ensureLinuxNodeRuntime() {
       !authorizedVersion
     ) {
       fail(
-        'CryLo requires its isolated Node.js 24 runtime on Linux. ' +
+        'CryLo requires its isolated Node.js 24 runtime. ' +
         'Run CryLo through the "crylo" launcher.'
       );
     }
@@ -3422,7 +4107,7 @@ function ensureLinuxNodeRuntime() {
 
     console.log();
     console.log(
-      'Switching authenticated CryLo update to the isolated Node.js 24 runtime...'
+      'Switching authenticated CryLo operation to the isolated Node.js 24 runtime...'
     );
 
     const relaunched = spawnSync(
@@ -3530,7 +4215,7 @@ function ensureLinuxNodeRuntime() {
     if (!runtimeDirectory) {
       fail(
         'npm 12+ is required. CryLo will not modify the system npm. ' +
-        'Run CryLo through the Linux "crylo" launcher.'
+        'Run CryLo through the "crylo" launcher.'
       );
     }
 
@@ -3617,6 +4302,7 @@ function ensureLinuxRuntimeDependencies() {
   const requiredPackages = [
     'ca-certificates',
     'curl',
+    'git',
     'tar'
   ];
 
@@ -3651,7 +4337,58 @@ function ensureLinuxRuntimeDependencies() {
 
   console.log('Runtime packages.... OK');
 
-  ensureLinuxNodeRuntime();
+  ensureUnixNodeRuntime();
+  console.log();
+}
+
+
+function ensureMacRuntimeDependencies() {
+  if (process.platform !== 'darwin') {
+    return;
+  }
+
+  if (!['arm64', 'x64'].includes(process.arch)) {
+    fail(
+      `Automatic CryLo macOS preparation does not support ` +
+      `${process.arch}.`
+    );
+  }
+
+  console.log('===== CRYLO MACOS RUNTIME ENVIRONMENT =====');
+  console.log(`Architecture....... ${process.arch}`);
+
+  const requiredTools = [
+    '/usr/bin/curl',
+    '/usr/bin/ditto',
+    '/usr/bin/hdiutil',
+    '/usr/bin/shasum',
+    '/usr/bin/tar'
+  ];
+
+  const missingTools = requiredTools.filter(
+    (tool) => !fs.existsSync(tool)
+  );
+
+  if (missingTools.length) {
+    fail(
+      'Required macOS system tools are missing: ' +
+      missingTools.join(', ')
+    );
+  }
+
+  const gitProbe = probe('git', ['--version']);
+
+  if (!gitProbe.ok) {
+    fail(
+      'Git is required for the CryLo source updater on macOS. ' +
+      'The CryLo launcher and release runtime are otherwise self-contained.'
+    );
+  }
+
+  console.log(`Git................ ${gitProbe.stdout}`);
+  console.log('macOS system tools. OK');
+
+  ensureUnixNodeRuntime();
   console.log();
 }
 
@@ -4542,51 +5279,28 @@ function install() {
   );
   console.log();
 
-  if (process.platform === 'win32') {
-    console.log(
-      'Installing the current authenticated prebuilt CryLo Windows release...'
-    );
-    console.log();
+  const target = releaseTarget();
 
-    update();
-    return;
-  }
-
-  ensureLinuxBuildDependencies();
-
-  const result = spawnSync(
-    process.execPath,
-    [releaseScript],
-    {
-      cwd: root,
-      env: process.env,
-      stdio: 'inherit',
-      shell: false
-    }
-  );
-
-  if (result.error) {
-    fail(result.error.message);
-  }
-
-  if (result.status !== 0) {
-    fail('CryLo installation build failed.');
-  }
-
-  const daemon = nativeDaemonPath();
-
-  if (!fs.existsSync(daemon)) {
+  if (!target) {
     fail(
-      `CryLo release completed but the daemon was not found: ${daemon}`
+      `CryLo install does not currently support ` +
+      `${process.platform}/${process.arch}.`
     );
   }
 
-  installUserCommand();
-  installLinuxDesktopLaunchers();
+  if (process.platform === 'linux') {
+    ensureLinuxRuntimeDependencies();
+  } else if (process.platform === 'darwin') {
+    ensureMacRuntimeDependencies();
+  }
 
+  console.log(
+    `Installing the current authenticated prebuilt CryLo ` +
+    `${target.platform}/${target.architecture} release...`
+  );
   console.log();
-  console.log('CryLo installation completed successfully.');
-  console.log('Run "crylo start" to start CryLo.');
+
+  update();
 }
 
 function start() {
