@@ -3157,6 +3157,7 @@ function update() {
   deployInfrastructureRelease();
   installUserCommand();
   installLinuxDesktopLaunchers();
+  installWindowsDesktopLaunchers();
 
   /*
    * Advance rollback state only AFTER the build and deployment
@@ -3251,13 +3252,22 @@ function binaryVersion(binary) {
 
 function runningDaemon() {
   if (process.platform === 'win32') {
+    const tasklist = process.env.SystemRoot
+      ? path.join(
+          process.env.SystemRoot,
+          'System32',
+          'tasklist.exe'
+        )
+      : 'tasklist.exe';
+
     const result = probe(
-      process.env.ComSpec || 'cmd.exe',
+      tasklist,
       [
-        '/d',
-        '/s',
-        '/c',
-        'tasklist /FI "IMAGENAME eq CryLo-daemon.exe" /FO CSV /NH'
+        '/FI',
+        'IMAGENAME eq CryLo-daemon.exe',
+        '/FO',
+        'CSV',
+        '/NH'
       ]
     );
 
@@ -4014,6 +4024,191 @@ function installUserCommand() {
   }
 }
 
+function installWindowsDesktopLaunchers() {
+  if (process.platform !== 'win32') {
+    return;
+  }
+
+  const localAppData = process.env.LOCALAPPDATA;
+
+  if (!localAppData) {
+    fail(
+      'Unable to determine the current Windows user application directory ' +
+      'for CryLo desktop launchers.'
+    );
+  }
+
+  const commandDirectory = path.join(
+    localAppData,
+    'CryLo',
+    'bin'
+  );
+
+  const cryloCommand = path.join(
+    commandDirectory,
+    'crylo.cmd'
+  );
+
+  if (!fs.existsSync(cryloCommand)) {
+    fail(
+      'CryLo command must be installed before Windows desktop launchers: ' +
+      cryloCommand
+    );
+  }
+
+  const daemon = nativeDaemonPath();
+
+  if (!daemon || !fs.existsSync(daemon)) {
+    fail(
+      'CryLo daemon must be installed before Windows desktop launchers. ' +
+      'Run "crylo install" first.'
+    );
+  }
+
+  const sourceIcon = path.join(
+    root,
+    'electron',
+    'assets',
+    'icon.ico'
+  );
+
+  if (!fs.existsSync(sourceIcon)) {
+    fail(
+      `CryLo Windows desktop icon was not found: ${sourceIcon}`
+    );
+  }
+
+  fs.mkdirSync(
+    commandDirectory,
+    { recursive: true }
+  );
+
+  const daemonLauncher = path.join(
+    commandDirectory,
+    'crylo-daemon-launcher.cmd'
+  );
+
+  const daemonLauncherText = [
+    '@echo off',
+    'setlocal EnableExtensions EnableDelayedExpansion',
+    'call "%~dp0crylo.cmd" start',
+    'set "START_STATUS=!ERRORLEVEL!"',
+    'echo.',
+    'call "%~dp0crylo.cmd" status',
+    'echo.',
+    'if not "!START_STATUS!"=="0" goto start_failed',
+    'echo The CryLo daemon is running in the background.',
+    'echo.',
+    ':wait_running',
+    'echo Type exit to close this window and leave the daemon running.',
+    'echo Type crylo stop to stop the daemon.',
+    'set "CRYLO_ACTION="',
+    'set /p "CRYLO_ACTION=> "',
+    'if /I "!CRYLO_ACTION!"=="exit" exit /b 0',
+    'if /I "!CRYLO_ACTION!"=="crylo stop" goto stop_daemon',
+    'echo Please type exit or crylo stop.',
+    'echo.',
+    'goto wait_running',
+    ':stop_daemon',
+    'call "%~dp0crylo.cmd" stop',
+    'set "STOP_STATUS=!ERRORLEVEL!"',
+    'echo.',
+    'if not "!STOP_STATUS!"=="0" goto wait_running',
+    'echo The CryLo daemon has stopped.',
+    'echo Type exit to close this window.',
+    ':wait_stopped',
+    'set "CRYLO_ACTION="',
+    'set /p "CRYLO_ACTION=> "',
+    'if /I "!CRYLO_ACTION!"=="exit" exit /b 0',
+    'echo Please type exit.',
+    'goto wait_stopped',
+    ':start_failed',
+    'echo The CryLo daemon failed to start.',
+    'echo Review the error and daemon log shown above.',
+    'echo.',
+    ':wait_failed',
+    'set "CRYLO_ACTION="',
+    'set /p "CRYLO_ACTION=Type exit to close this window: "',
+    'if /I "!CRYLO_ACTION!"=="exit" exit /b !START_STATUS!',
+    'echo Please type exit.',
+    'goto wait_failed',
+    ''
+  ].join('\r\n');
+
+  fs.writeFileSync(
+    daemonLauncher,
+    daemonLauncherText,
+    'utf8'
+  );
+
+  const commandProcessor =
+    process.env.ComSpec ||
+    path.join(
+      process.env.SystemRoot || 'C:\\Windows',
+      'System32',
+      'cmd.exe'
+    );
+
+  const shortcutResult = spawnSync(
+    windowsPowerShellExecutable(),
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      [
+        "$ErrorActionPreference = 'Stop'",
+        "$shell = New-Object -ComObject WScript.Shell",
+        "$desktop = [Environment]::GetFolderPath('Desktop')",
+        "$programs = [Environment]::GetFolderPath('Programs')",
+        "$targets = @(",
+        "  (Join-Path $desktop 'CryLo Daemon.lnk'),",
+        "  (Join-Path $programs 'CryLo Daemon.lnk')",
+        ")",
+        "foreach ($target in $targets) {",
+        "  $shortcut = $shell.CreateShortcut($target)",
+        "  $shortcut.TargetPath = $env:CRYLO_COMMAND_PROCESSOR",
+        "  $shortcut.Arguments = '/d /c \"\"' + $env:CRYLO_DAEMON_LAUNCHER + '\"\"'",
+        "  $shortcut.WorkingDirectory = $env:CRYLO_ROOT",
+        "  $shortcut.IconLocation = $env:CRYLO_DAEMON_ICON",
+        "  $shortcut.Description = 'Start the local CryLo Layer 1 daemon'",
+        "  $shortcut.Save()",
+        "}",
+        "$obsolete = Join-Path $programs 'CryLo Daemon - Background.lnk'",
+        "if (Test-Path -LiteralPath $obsolete) {",
+        "  Remove-Item -LiteralPath $obsolete -Force",
+        "}"
+      ].join('\n')
+    ],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        CRYLO_COMMAND_PROCESSOR: commandProcessor,
+        CRYLO_DAEMON_LAUNCHER: daemonLauncher,
+        CRYLO_DAEMON_ICON: sourceIcon,
+        CRYLO_ROOT: root
+      },
+      stdio: 'inherit',
+      shell: false
+    }
+  );
+
+  if (
+    shortcutResult.error ||
+    shortcutResult.status !== 0
+  ) {
+    fail(
+      'Unable to create the CryLo Daemon Windows desktop launcher.'
+    );
+  }
+
+  console.log();
+  console.log('CryLo Windows daemon launchers installed:');
+  console.log('  Desktop: CryLo Daemon');
+  console.log('  Start menu: CryLo Daemon');
+}
+
+
 function installLinuxDesktopLaunchers() {
   if (process.platform !== 'linux') {
     return;
@@ -4346,6 +4541,16 @@ function install() {
     `Preparing CryLo for ${process.platform}/${process.arch}...`
   );
   console.log();
+
+  if (process.platform === 'win32') {
+    console.log(
+      'Installing the current authenticated prebuilt CryLo Windows release...'
+    );
+    console.log();
+
+    update();
+    return;
+  }
 
   ensureLinuxBuildDependencies();
 
@@ -4990,6 +5195,7 @@ switch (command) {
   case 'desktop':
     installUserCommand();
     installLinuxDesktopLaunchers();
+    installWindowsDesktopLaunchers();
     break;
 
   case 'install':
