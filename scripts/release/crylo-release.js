@@ -1085,6 +1085,242 @@ function createLinuxReleaseBundle(
   }
 }
 
+
+function createMacReleaseBundle(
+  target,
+  nativeBin,
+  releaseTag
+) {
+  if (
+    target.platform !== 'mac' ||
+    !['x64', 'arm64'].includes(target.arch)
+  ) {
+    fail(
+      'Official macOS exact-artifact bundle creation supports mac/x64 and mac/arm64 only.'
+    );
+  }
+
+  const tarCommand = '/usr/bin/tar';
+
+  if (!fs.existsSync(tarCommand)) {
+    fail(
+      'The macOS tar utility is required to create the official CryLo release bundle.'
+    );
+  }
+
+  const distDirectory = path.join(
+    electronDir,
+    'dist'
+  );
+
+  if (!fs.existsSync(distDirectory)) {
+    fail(
+      `Electron release directory was not produced: ${distDirectory}`
+    );
+  }
+
+  const versionText =
+    packageJson.version.toLowerCase();
+
+  const dmgCandidates = fs.readdirSync(
+    distDirectory
+  )
+    .filter((name) => name.toLowerCase().endsWith('.dmg'))
+    .filter((name) => name.toLowerCase().includes(versionText))
+    .filter((name) => {
+      const lower = name.toLowerCase();
+
+      if (target.arch === 'arm64') {
+        return lower.includes('arm64');
+      }
+
+      return (
+        !lower.includes('arm64') &&
+        !lower.includes('aarch64')
+      );
+    });
+
+  if (dmgCandidates.length !== 1) {
+    fail(
+      `Expected exactly one Electron DMG for mac/${target.arch}, found ` +
+      `${dmgCandidates.length}: ${dmgCandidates.join(', ') || '(none)'}`
+    );
+  }
+
+  const dmgSource = path.join(
+    distDirectory,
+    dmgCandidates[0]
+  );
+
+  const nativeFiles = [
+    target.daemon,
+    target.walletCli,
+    target.walletRpc
+  ];
+
+  for (const file of nativeFiles) {
+    const sourceFile = path.join(
+      nativeBin,
+      file
+    );
+
+    if (!fs.existsSync(sourceFile)) {
+      fail(
+        `Required official native release file is missing: ${sourceFile}`
+      );
+    }
+  }
+
+  const canonicalDmg =
+    `CryLo-Wallet-${packageJson.version}-mac-${target.arch}.dmg`;
+
+  const bundleName =
+    `CryLo-Release-${packageJson.version}-mac-${target.arch}.tar`;
+
+  const bundlePath = path.join(
+    distDirectory,
+    bundleName
+  );
+
+  const staging = fs.mkdtempSync(
+    path.join(
+      os.tmpdir(),
+      'crylo-official-release-'
+    )
+  );
+
+  try {
+    for (const file of nativeFiles) {
+      const sourceFile = path.join(
+        nativeBin,
+        file
+      );
+
+      const destination = path.join(
+        staging,
+        file
+      );
+
+      fs.copyFileSync(
+        sourceFile,
+        destination
+      );
+
+      fs.chmodSync(
+        destination,
+        0o755
+      );
+    }
+
+    const stagedDmg = path.join(
+      staging,
+      canonicalDmg
+    );
+
+    fs.copyFileSync(
+      dmgSource,
+      stagedDmg
+    );
+
+    fs.chmodSync(
+      stagedDmg,
+      0o644
+    );
+
+    fs.rmSync(
+      bundlePath,
+      { force: true }
+    );
+
+    const entries = [
+      target.daemon,
+      target.walletCli,
+      target.walletRpc,
+      canonicalDmg
+    ].sort();
+
+    run(
+      tarCommand,
+      [
+        '-cf',
+        bundlePath,
+        ...entries
+      ],
+      {
+        cwd: staging
+      }
+    );
+
+    if (!fs.existsSync(bundlePath)) {
+      fail(
+        `Official CryLo macOS release bundle was not created: ${bundlePath}`
+      );
+    }
+
+    const listing = spawnSync(
+      tarCommand,
+      [
+        '-tf',
+        bundlePath
+      ],
+      {
+        cwd: staging,
+        env: process.env,
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    if (
+      listing.error ||
+      listing.status !== 0
+    ) {
+      fail(
+        'Unable to verify the official CryLo macOS release bundle.'
+      );
+    }
+
+    const bundledEntries = String(
+      listing.stdout || ''
+    )
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .sort();
+
+    if (
+      bundledEntries.length !== entries.length ||
+      bundledEntries.some(
+        (entry, index) => entry !== entries[index]
+      )
+    ) {
+      fail(
+        'Official CryLo macOS release bundle contains unexpected entries.'
+      );
+    }
+
+    console.log();
+    console.log(
+      '===== OFFICIAL SIGNABLE RELEASE BUNDLE ====='
+    );
+    console.log(`Release tag: ${releaseTag}`);
+    console.log(`Bundle: ${bundlePath}`);
+
+    for (const entry of entries) {
+      console.log(`  ${entry}`);
+    }
+
+    return bundlePath;
+  } finally {
+    fs.rmSync(
+      staging,
+      {
+        recursive: true,
+        force: true
+      }
+    );
+  }
+}
+
 const officialReleaseTag =
   argument('--release-tag');
 
@@ -1158,9 +1394,16 @@ if (officialReleaseTag) {
       nativeBin,
       officialReleaseTag
     );
+  } else if (target.platform === 'mac') {
+    officialBundle = createMacReleaseBundle(
+      target,
+      nativeBin,
+      officialReleaseTag
+    );
   } else {
     fail(
-      'Official exact-artifact bundle creation is not yet enabled for macOS.'
+      `Official exact-artifact bundle creation is not enabled for ` +
+      `${target.platform}/${target.arch}.`
     );
   }
 }
