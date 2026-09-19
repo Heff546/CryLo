@@ -1,0 +1,130 @@
+name: CryLo Windows Linux Pi Full Build
+
+on:
+  push:
+    branches:
+      - feature/crylo-install-win-linux-pi
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-24.04
+            family: linux
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            family: linux
+          - name: windows-x64
+            runner: windows-latest
+            family: windows
+
+    steps:
+      - name: Check out CryLo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Use CryLo Node runtime version
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+
+      - name: Prepare Linux native dependencies
+        if: matrix.family == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            python3 \
+            protobuf-compiler \
+            libprotobuf-dev \
+            libusb-1.0-0-dev \
+            libhidapi-dev \
+            libudev-dev \
+            libzstd-dev \
+            nettle-dev \
+            libgmp-dev \
+            libminiupnpc-dev \
+            libssl-dev \
+            libboost-all-dev \
+            libzmq3-dev \
+            libsodium-dev \
+            libunbound-dev \
+            libreadline-dev \
+            libexpat1-dev \
+            zlib1g-dev \
+            libunwind-dev
+          npm install --global npm@12.0.2
+
+      - name: Prepare Windows native dependencies
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          $bash = 'C:\msys64\usr\bin\bash.exe'
+          if (-not (Test-Path -LiteralPath $bash)) {
+            throw "MSYS2 was not found at $bash"
+          }
+
+          & $bash -lc @'
+          set -e
+          pacman -Sy --noconfirm
+          pacman -S --needed --noconfirm \
+            mingw-w64-x86_64-toolchain \
+            mingw-w64-x86_64-cmake \
+            make \
+            mingw-w64-x86_64-boost \
+            mingw-w64-x86_64-openssl \
+            mingw-w64-x86_64-zeromq \
+            mingw-w64-x86_64-libsodium \
+            mingw-w64-x86_64-zstd \
+            mingw-w64-x86_64-zlib \
+            mingw-w64-x86_64-icu \
+            mingw-w64-x86_64-libiconv \
+            mingw-w64-x86_64-readline \
+            mingw-w64-x86_64-unbound \
+            mingw-w64-x86_64-miniupnpc
+          '@
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "MSYS2 dependency preparation failed."
+          }
+
+      - name: Build native CryLo and Electron wallet
+        run: node scripts/release/crylo-release.js
+
+      - name: Upload Linux build outputs
+        if: success() && matrix.family == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crylo-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            build/linux-*/bin/CryLo-daemon
+            build/linux-*/bin/CryLo-wallet
+            build/linux-*/bin/CryLo-wallet-rpc
+            electron/dist/*.AppImage
+            electron/dist/*.deb
+
+      - name: Upload Windows build outputs
+        if: success() && matrix.family == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crylo-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            build/win-x64/bin/CryLo-daemon.exe
+            build/win-x64/bin/CryLo-wallet.exe
+            build/win-x64/bin/CryLo-wallet-rpc.exe
+            electron/dist/*.exe
