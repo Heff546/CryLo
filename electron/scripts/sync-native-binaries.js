@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
+const windowsRuntimeDlls = require('./windows-runtime-dlls');
 
 const electronDir = path.resolve(__dirname, '..');
 const root = path.resolve(electronDir, '..');
@@ -98,6 +99,40 @@ const files = [
   definition.walletRpc
 ];
 
+function findWindowsRuntimeDirectory() {
+  if (process.env.CRYLO_WINDOWS_RUNTIME_DLL_DIR) {
+    return path.resolve(process.env.CRYLO_WINDOWS_RUNTIME_DLL_DIR);
+  }
+
+  const bashCandidates = [
+    process.env.CRYLO_MSYS2_BASH,
+    'C:\\msys64\\usr\\bin\\bash.exe',
+    'C:\\tools\\msys64\\usr\\bin\\bash.exe'
+  ].filter(Boolean);
+
+  for (const bash of bashCandidates) {
+    if (fs.existsSync(bash)) {
+      return path.resolve(
+        path.dirname(bash),
+        '..',
+        '..',
+        'mingw64',
+        'bin'
+      );
+    }
+  }
+
+  fail(
+    'MSYS2 runtime DLL directory was not found. Set ' +
+    'CRYLO_WINDOWS_RUNTIME_DLL_DIR or CRYLO_MSYS2_BASH.'
+  );
+}
+
+const windowsRuntimeDirectory =
+  platform === 'win'
+    ? findWindowsRuntimeDirectory()
+    : null;
+
 for (const name of files) {
   const source = path.join(sourceDirectory, name);
   const arch = execFileSync(
@@ -111,6 +146,24 @@ for (const name of files) {
       `${name} is ${arch}, but the requested Electron target is ` +
       `${requestedArch}.`
     );
+  }
+}
+
+if (platform === 'win') {
+  for (const runtime of windowsRuntimeDlls) {
+    const source = path.join(windowsRuntimeDirectory, runtime.file);
+
+    if (!fs.existsSync(source)) {
+      fail(`Required pinned Windows runtime DLL is missing: ${source}`);
+    }
+
+    if (fs.statSync(source).size !== runtime.size) {
+      fail(`Pinned Windows runtime DLL size mismatch: ${runtime.file}`);
+    }
+
+    if (sha256(source) !== runtime.sha256) {
+      fail(`Pinned Windows runtime DLL SHA-256 mismatch: ${runtime.file}`);
+    }
   }
 }
 
@@ -192,6 +245,34 @@ for (const name of files) {
   manifest.push('');
 
   console.log(`Synchronized: ${name} [${requestedArch}]`);
+}
+
+if (platform === 'win') {
+  manifest.push(`Runtime-DLL-Directory: ${windowsRuntimeDirectory}`);
+  manifest.push('');
+
+  for (const runtime of windowsRuntimeDlls) {
+    const source = path.join(windowsRuntimeDirectory, runtime.file);
+    const destination = path.join(destinationDirectory, runtime.file);
+
+    fs.copyFileSync(source, destination);
+
+    const destinationHash = sha256(destination);
+    if (
+      fs.statSync(destination).size !== runtime.size ||
+      destinationHash !== runtime.sha256
+    ) {
+      fail(`Copy verification failed for pinned runtime DLL ${runtime.file}.`);
+    }
+
+    manifest.push(`File: ${runtime.file}`);
+    manifest.push(`Size: ${runtime.size}`);
+    manifest.push(`SHA256: ${runtime.sha256}`);
+    manifest.push('Pinned-Windows-Runtime: yes');
+    manifest.push('');
+
+    console.log(`Synchronized pinned runtime: ${runtime.file}`);
+  }
 }
 
 fs.writeFileSync(

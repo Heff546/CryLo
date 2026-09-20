@@ -91,7 +91,14 @@
           "filter": [
             "CryLo-daemon.exe",
             "CryLo-wallet-rpc.exe",
-            "BINARY-MANIFEST.txt"
+            "BINARY-MANIFEST.txt",
+            "libgcc_s_seh-1.dll",
+            "libiconv-2.dll",
+            "libicudt78.dll",
+            "libicuin78.dll",
+            "libicuuc78.dll",
+            "libstdc++-6.dll",
+            "libwinpthread-1.dll"
           ]
         }
       ]

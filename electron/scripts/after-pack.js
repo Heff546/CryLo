@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const windowsRuntimeDlls = require('./windows-runtime-dlls');
 
 function sha256(file) {
   return crypto
@@ -29,7 +30,8 @@ function platformDefinition(electronPlatformName) {
       required: [
         'CryLo-daemon.exe',
         'CryLo-wallet-rpc.exe',
-        'BINARY-MANIFEST.txt'
+        'BINARY-MANIFEST.txt',
+        ...windowsRuntimeDlls.map((runtime) => runtime.file)
       ]
     };
   }
@@ -89,6 +91,20 @@ module.exports = async function afterPack(context) {
         `staging:  ${stagedHash}\n` +
         `packaged: ${packagedHash}`
       );
+    }
+
+    const pinnedRuntime = windowsRuntimeDlls.find(
+      (runtime) => runtime.file === name
+    );
+
+    if (pinnedRuntime) {
+      const packagedSize = fs.statSync(packaged).size;
+      if (
+        packagedSize !== pinnedRuntime.size ||
+        packagedHash !== pinnedRuntime.sha256
+      ) {
+        throw new Error(`Packaged pinned runtime DLL mismatch: ${name}`);
+      }
     }
 
     console.log(

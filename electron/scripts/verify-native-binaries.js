@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const windowsRuntimeDlls = require('./windows-runtime-dlls');
 
 const electronDir = path.resolve(__dirname, '..');
 
@@ -141,6 +142,25 @@ for (const name of [
   }
 
   console.log(`OK: ${name} [${requestedArch}] ${destinationHash}`);
+}
+
+if (platform === 'win') {
+  for (const runtime of windowsRuntimeDlls) {
+    const destination = path.join(destinationDirectory, runtime.file);
+
+    if (!fs.existsSync(destination)) {
+      fail(`Missing staged runtime DLL: ${destination}`);
+    }
+
+    const actualSize = fs.statSync(destination).size;
+    const actualHash = sha256(destination);
+
+    if (actualSize !== runtime.size || actualHash !== runtime.sha256) {
+      fail(`Pinned staged runtime DLL mismatch: ${runtime.file}`);
+    }
+
+    console.log(`OK: ${runtime.file} [pinned] ${actualHash}`);
+  }
 }
 
 console.log(

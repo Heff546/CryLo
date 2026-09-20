@@ -12,15 +12,11 @@ function fail(message) {
 }
 
 function run(command, args) {
-  const useWindowsCmdShim =
-    process.platform === 'win32' &&
-    command.toLowerCase().endsWith('.cmd');
-
   const result = spawnSync(command, args, {
     cwd: electronDir,
     stdio: 'inherit',
     env: process.env,
-    shell: useWindowsCmdShim
+    shell: false
   });
 
   if (result.error) {
@@ -104,12 +100,28 @@ console.log(
   `Preparing bundled CryLoNexus Node Service runtime for ${platform}/${arch}...`
 );
 
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const npmCommand = process.platform === 'win32' ? null : 'npm';
+const npmCli = process.platform === 'win32' ? process.env.npm_execpath : null;
+
+if (process.platform === 'win32' && (!npmCli || !fs.existsSync(npmCli))) {
+  fail(
+    'Pinned npm CLI path is unavailable. Run this release through an npm script.'
+  );
+}
+
+function runNpm(args) {
+  if (process.platform === 'win32') {
+    run(process.execPath, [npmCli, ...args]);
+    return;
+  }
+
+  run(npmCommand, args);
+}
 
 console.log('Restoring pinned Electron release dependencies...');
-run(npmCommand, ['ci']);
+runNpm(['ci']);
 
-run(npmCommand, [
+runNpm([
   '--prefix',
   path.resolve(electronDir, '..', 'node-operator', 'runtime'),
   'ci',
@@ -137,16 +149,51 @@ const builderArgs =
     ? ['electron-builder', '--win', `--${arch}`]
     : ['electron-builder', '--mac', `--${arch}`];
 
-const builderCommand =
-  process.platform === 'win32'
-    ? path.join(electronDir, 'node_modules', '.bin', 'electron-builder.cmd')
-    : path.join(electronDir, 'node_modules', '.bin', 'electron-builder');
+let builderCommand;
+let builderRunArgs;
+
+if (process.platform === 'win32') {
+  const electronBuilderPackage = require.resolve(
+    'electron-builder/package.json',
+    { paths: [electronDir] }
+  );
+  const electronBuilderMetadata = JSON.parse(
+    fs.readFileSync(electronBuilderPackage, 'utf8')
+  );
+  const electronBuilderBin =
+    typeof electronBuilderMetadata.bin === 'string'
+      ? electronBuilderMetadata.bin
+      : electronBuilderMetadata.bin &&
+        electronBuilderMetadata.bin['electron-builder'];
+
+  if (!electronBuilderBin) {
+    fail('Pinned electron-builder package does not expose its CLI entry point.');
+  }
+
+  builderCommand = process.execPath;
+  builderRunArgs = [
+    path.resolve(path.dirname(electronBuilderPackage), electronBuilderBin),
+    ...builderArgs.slice(1)
+  ];
+} else {
+  builderCommand = path.join(
+    electronDir,
+    'node_modules',
+    '.bin',
+    'electron-builder'
+  );
+  builderRunArgs = builderArgs.slice(1);
+}
 
 if (!fs.existsSync(builderCommand)) {
-  fail(`Pinned electron-builder is missing: ${builderCommand}`);
+  fail(`Pinned electron-builder CLI is missing: ${builderCommand}`);
+}
+
+if (process.platform === 'win32' && !fs.existsSync(builderRunArgs[0])) {
+  fail(`Pinned electron-builder CLI is missing: ${builderRunArgs[0]}`);
 }
 
 console.log(`Building CryLo Wallet for ${platform}/${arch}...`);
-run(builderCommand, builderArgs.slice(1));
+run(builderCommand, builderRunArgs);
 
 console.log(`Completed ${platform}/${arch} Electron release.`);
