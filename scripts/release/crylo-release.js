@@ -8,6 +8,8 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..', '..');
 const electronDir = path.join(root, 'electron');
+const managedNodeVersion = '24.21.0';
+const managedNpmVersion = '12.0.2';
 
 const packageJson = JSON.parse(
   fs.readFileSync(
@@ -365,42 +367,185 @@ function toMsysPath(value) {
   return `/${match[1].toLowerCase()}/${match[2].replace(/\\/g, '/')}`;
 }
 
+function expectedManagedRuntime(target) {
+  if (target.platform === 'win') {
+    const localAppData = process.env.LOCALAPPDATA;
+
+    if (!localAppData) {
+      fail('LOCALAPPDATA is required for the managed CryLo Windows runtime.');
+    }
+
+    return path.join(
+      localAppData,
+      'CryLo',
+      'runtime',
+      `node-v${managedNodeVersion}-win-x64`
+    );
+  }
+
+  if (target.platform === 'linux') {
+    const home = process.env.HOME;
+
+    if (!home) {
+      fail('HOME is required for the managed CryLo Linux runtime.');
+    }
+
+    return path.join(
+      home,
+      '.local',
+      'share',
+      'crylo',
+      'runtime',
+      `node-v${managedNodeVersion}-linux-${target.arch}`
+    );
+  }
+
+  return null;
+}
+
+function managedNpmCli(target, runtimeDirectory) {
+  if (target.platform === 'win') {
+    return path.join(
+      runtimeDirectory,
+      'node_modules',
+      'npm',
+      'bin',
+      'npm-cli.js'
+    );
+  }
+
+  return path.join(
+    runtimeDirectory,
+    'lib',
+    'node_modules',
+    'npm',
+    'bin',
+    'npm-cli.js'
+  );
+}
+
+function verifyManagedReleaseToolchain(target) {
+  const expectedRuntime = path.resolve(
+    expectedManagedRuntime(target)
+  );
+  const declaredRuntime = String(
+    process.env.CRYLO_NODE_RUNTIME || ''
+  ).trim();
+  const launcher =
+    target.platform === 'win'
+      ? 'crylo.cmd release'
+      : './crylo release';
+
+  if (!declaredRuntime) {
+    fail(
+      `CryLo ${target.platform}/${target.arch} release builds must use ` +
+      `the managed Node.js/npm runtime. Run "${launcher}".`
+    );
+  }
+
+  const runtimeDirectory = path.resolve(declaredRuntime);
+
+  if (runtimeDirectory !== expectedRuntime) {
+    fail(
+      'CryLo release runtime path mismatch.\n' +
+      `Expected: ${expectedRuntime}\n` +
+      `Actual:   ${runtimeDirectory}`
+    );
+  }
+
+  const expectedNode =
+    target.platform === 'win'
+      ? path.join(runtimeDirectory, 'node.exe')
+      : path.join(runtimeDirectory, 'bin', 'node');
+
+  if (!fs.existsSync(expectedNode)) {
+    fail(`Managed CryLo Node.js runtime is missing: ${expectedNode}`);
+  }
+
+  let activeNode;
+  let managedNode;
+
+  try {
+    activeNode = fs.realpathSync(process.execPath);
+    managedNode = fs.realpathSync(expectedNode);
+  } catch (error) {
+    fail(`Unable to verify the managed CryLo Node.js runtime: ${error.message}`);
+  }
+
+  if (activeNode !== managedNode) {
+    fail(
+      'CryLo release builder is not running from the managed Node.js runtime. ' +
+      `Run "${launcher}".`
+    );
+  }
+
+  if (process.version !== `v${managedNodeVersion}`) {
+    fail(
+      `CryLo release Node.js version mismatch. Expected ` +
+      `v${managedNodeVersion}; found ${process.version}.`
+    );
+  }
+
+  const npmCli = managedNpmCli(target, runtimeDirectory);
+
+  if (!fs.existsSync(npmCli)) {
+    fail(`Managed CryLo npm CLI is missing: ${npmCli}`);
+  }
+
+  const npmVersion = capture(
+    process.execPath,
+    [npmCli, '--version']
+  );
+
+  if (npmVersion !== managedNpmVersion) {
+    fail(
+      `CryLo release npm version mismatch. Expected ` +
+      `${managedNpmVersion}; found ${npmVersion || 'unknown'}. ` +
+      `Run "${launcher}" to repair the isolated runtime.`
+    );
+  }
+
+  return {
+    nodeVersion: process.version,
+    npmVersion,
+    npmCli,
+    runtimeDirectory
+  };
+}
+
 function verifyPrerequisites(target) {
-  const nodeVersion = process.version;
-  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  let nodeVersion = process.version;
+  let npmVersion;
 
-  const minimumNodeMajor =
+  if (
+    target.platform === 'win' ||
     target.platform === 'linux'
-      ? 24
-      : 20;
+  ) {
+    const managed = verifyManagedReleaseToolchain(target);
+    nodeVersion = managed.nodeVersion;
+    npmVersion = managed.npmVersion;
+  } else {
+    const npmCommand = 'npm';
 
-  const minimumNpmMajor =
-    target.platform === 'linux'
-      ? 12
-      : 9;
+    if (major(nodeVersion) < 20) {
+      fail(
+        `Node.js 20 or newer is required for ${target.platform}. ` +
+        `Found ${nodeVersion}.`
+      );
+    }
 
-  if (major(nodeVersion) < minimumNodeMajor) {
-    fail(
-      `Node.js ${minimumNodeMajor} or newer is required for ` +
-      `${target.platform}. Found ${nodeVersion}.`
-    );
-  }
+    if (!commandAvailable(npmCommand)) {
+      fail('npm was not found.');
+    }
 
-  if (!commandAvailable(npmCommand)) {
-    fail('npm was not found.');
-  }
+    npmVersion = capture(npmCommand, ['--version']);
 
-  const npmVersion =
-    process.platform === 'win32'
-      ? capture(process.env.ComSpec || 'cmd.exe',
-          ['/d', '/s', '/c', 'npm.cmd --version'])
-      : capture('npm', ['--version']);
-
-  if (major(npmVersion) < minimumNpmMajor) {
-    fail(
-      `npm ${minimumNpmMajor} or newer is required for ` +
-      `${target.platform}. Found ${npmVersion || 'unknown'}.`
-    );
+    if (major(npmVersion) < 9) {
+      fail(
+        `npm 9 or newer is required for ${target.platform}. ` +
+        `Found ${npmVersion || 'unknown'}.`
+      );
+    }
   }
 
   console.log('===== CRYLO BUILD HOST =====');
@@ -623,9 +768,14 @@ function packageElectron(target, nativeBin) {
   }
 
   if (process.platform === 'win32') {
+    const runtimeDirectory = path.resolve(
+      String(process.env.CRYLO_NODE_RUNTIME || '')
+    );
+    const npmCli = managedNpmCli(target, runtimeDirectory);
+
     run(
-      process.env.ComSpec || 'cmd.exe',
-      ['/d', '/s', '/c', 'npm.cmd --prefix electron run build'],
+      process.execPath,
+      [npmCli, '--prefix', electronDir, 'run', 'build'],
       { env }
     );
   } else {

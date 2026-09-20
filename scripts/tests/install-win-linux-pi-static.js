@@ -14,6 +14,14 @@ function readText(...parts) {
 }
 
 const cryloJs = readText('scripts', 'crylo.js');
+const linuxLauncher = readText('crylo');
+const windowsLauncher = readText('crylo.cmd');
+const releaseBuilder = readText('scripts', 'release', 'crylo-release.js');
+const fullBuildWorkflow = readText(
+  '.github',
+  'workflows',
+  'full-build-win-linux-pi.yml'
+);
 
 assert(
   cryloJs.includes(
@@ -68,6 +76,44 @@ assert(
   'Normal crylo install must not invoke the source release builder.'
 );
 
+
+assert(
+  linuxLauncher.includes('NODE_VERSION=24.21.0') &&
+  linuxLauncher.includes('NPM_VERSION=12.0.2') &&
+  linuxLauncher.includes('"npm@$NPM_VERSION"'),
+  'Linux/Pi launcher must prepare the exact managed Node/npm toolchain.'
+);
+
+assert(
+  windowsLauncher.includes('set "CRYLO_NODE_VERSION=24.21.0"') &&
+  windowsLauncher.includes('set "CRYLO_NPM_VERSION=12.0.2"') &&
+  windowsLauncher.includes('call :ensure_npm') &&
+  windowsLauncher.includes(
+    'set "PATH=%CRYLO_NODE_DIRECTORY%;%CRYLO_GIT_DIRECTORY%\\cmd;%PATH%"'
+  ),
+  'Windows launcher must prepare and prefer the exact isolated Node/npm runtime.'
+);
+
+assert(
+  windowsLauncher.includes(
+    '"npm@%CRYLO_NPM_VERSION%"'
+  ),
+  'Windows launcher must repair npm inside the isolated CryLo runtime.'
+);
+
+assert(
+  releaseBuilder.includes("const managedNodeVersion = '24.21.0';") &&
+  releaseBuilder.includes("const managedNpmVersion = '12.0.2';") &&
+  releaseBuilder.includes('verifyManagedReleaseToolchain(target)'),
+  'Release builder must enforce the exact managed CryLo toolchain.'
+);
+
+assert(
+  fullBuildWorkflow.includes('run: sh ./crylo release') &&
+  fullBuildWorkflow.includes('run: crylo.cmd release') &&
+  !fullBuildWorkflow.includes('run: node scripts/release/crylo-release.js'),
+  'Full-build CI must enter through the platform CryLo launchers.'
+);
 console.log(
   'Windows/Linux/Pi crylo install static checks passed.'
 );

@@ -37,6 +37,7 @@ if [ "$(uname -s)" = "Linux" ]; then
   esac
 
   NODE_VERSION=24.21.0
+  NPM_VERSION=12.0.2
   NODE_NAME="node-v$NODE_VERSION-linux-$NODE_ARCH"
   NODE_BASE="$HOME/.local/share/crylo/runtime"
   NODE_DIRECTORY="$NODE_BASE/$NODE_NAME"
@@ -127,6 +128,34 @@ if [ "$(uname -s)" = "Linux" ]; then
 
   PATH="$NODE_DIRECTORY/bin:$PATH"
   export PATH
+
+  CURRENT_NPM_VERSION=$(
+    "$NODE_DIRECTORY/bin/npm" --version 2>/dev/null || true
+  )
+
+  if [ "$CURRENT_NPM_VERSION" != "$NPM_VERSION" ]; then
+    echo "Preparing isolated CryLo npm $NPM_VERSION runtime..."
+
+    "$NODE_DIRECTORY/bin/npm" \
+      install \
+      --global \
+      --prefix "$NODE_DIRECTORY" \
+      --no-audit \
+      --no-fund \
+      --ignore-scripts \
+      "npm@$NPM_VERSION"
+
+    CURRENT_NPM_VERSION=$(
+      "$NODE_DIRECTORY/bin/npm" --version 2>/dev/null || true
+    )
+  fi
+
+  if [ "$CURRENT_NPM_VERSION" != "$NPM_VERSION" ]; then
+    echo "ERROR: CryLo isolated npm version verification failed." >&2
+    echo "Expected: $NPM_VERSION" >&2
+    echo "Actual:   ${CURRENT_NPM_VERSION:-unavailable}" >&2
+    exit 1
+  fi
 
   CRYLO_NODE_RUNTIME="$NODE_DIRECTORY"
   export CRYLO_NODE_RUNTIME

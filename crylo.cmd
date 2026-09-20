@@ -34,6 +34,9 @@ set "CRYLO_NODE_NAME=node-v%CRYLO_NODE_VERSION%-win-x64"
 set "CRYLO_NODE_SHA256=158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
 set "CRYLO_NODE_DIRECTORY=%CRYLO_RUNTIME_ROOT%\%CRYLO_NODE_NAME%"
 set "CRYLO_NODE_EXE=%CRYLO_NODE_DIRECTORY%\node.exe"
+set "CRYLO_NPM_VERSION=12.0.2"
+set "CRYLO_NPM_CMD=%CRYLO_NODE_DIRECTORY%\npm.cmd"
+set "CRYLO_NPM_CLI=%CRYLO_NODE_DIRECTORY%\node_modules\npm\bin\npm-cli.js"
 set "CRYLO_NODE_URL=https://nodejs.org/dist/v%CRYLO_NODE_VERSION%/%CRYLO_NODE_NAME%.zip"
 
 set "CRYLO_GIT_VERSION=2.55.0.5"
@@ -46,13 +49,16 @@ set "CRYLO_GIT_URL=https://github.com/git-for-windows/git/releases/download/v2.5
 call :ensure_node
 if errorlevel 1 exit /b %errorlevel%
 
+call :ensure_npm
+if errorlevel 1 exit /b %errorlevel%
+
 call :ensure_git
 if errorlevel 1 exit /b %errorlevel%
 
 set "CRYLO_NODE_RUNTIME=%CRYLO_NODE_DIRECTORY%"
 set "CRYLO_GIT_RUNTIME=%CRYLO_GIT_DIRECTORY%"
 set "GIT_TERMINAL_PROMPT=0"
-set "PATH=%CRYLO_GIT_DIRECTORY%\cmd;%PATH%"
+set "PATH=%CRYLO_NODE_DIRECTORY%;%CRYLO_GIT_DIRECTORY%\cmd;%PATH%"
 
 "%CRYLO_NODE_EXE%" "%~dp0scripts\crylo.js" %*
 exit /b %errorlevel%
@@ -98,6 +104,43 @@ if not exist "%CRYLO_NODE_EXE%" (
 "%CRYLO_NODE_EXE%" -e "process.exit(process.version === 'v%CRYLO_NODE_VERSION%' ? 0 : 1)" >nul 2>nul
 if errorlevel 1 (
     echo ERROR: CryLo Node.js runtime version verification failed.
+    exit /b 1
+)
+
+exit /b 0
+
+
+:ensure_npm
+set "CRYLO_NPM_READY=false"
+
+if exist "%CRYLO_NPM_CMD%" if exist "%CRYLO_NPM_CLI%" (
+    powershell.exe -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_NPM_CMD --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne $env:CRYLO_NPM_VERSION) { exit 1 }" >nul 2>nul
+    if not errorlevel 1 set "CRYLO_NPM_READY=true"
+)
+
+if "%CRYLO_NPM_READY%"=="true" exit /b 0
+
+if not exist "%CRYLO_NPM_CLI%" (
+    echo ERROR: CryLo bundled npm CLI is unavailable.
+    exit /b 1
+)
+
+echo Preparing isolated CryLo npm %CRYLO_NPM_VERSION% runtime...
+
+"%CRYLO_NODE_EXE%" "%CRYLO_NPM_CLI%" install --global --prefix "%CRYLO_NODE_DIRECTORY%" --no-audit --no-fund --ignore-scripts "npm@%CRYLO_NPM_VERSION%"
+if errorlevel 1 (
+    echo ERROR: Unable to prepare the isolated CryLo npm runtime.
+    exit /b 1
+)
+
+if not exist "%CRYLO_NPM_CMD%" (
+    echo ERROR: CryLo npm runtime is unavailable after installation.
+    exit /b 1
+)
+
+powershell.exe -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_NPM_CMD --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne $env:CRYLO_NPM_VERSION) { exit 1 }" >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: CryLo npm runtime version verification failed.
     exit /b 1
 )
 
