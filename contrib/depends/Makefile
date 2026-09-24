@@ -17,6 +17,12 @@ BUILD_ID_SALT ?= salt
 host:=$(BUILD)
 ifneq ($(HOST),)
 host:=$(HOST)
+endif
+
+# Only use a target-triplet tool prefix for a real cross build. HOST defaults
+# to BUILD, so native builders (including ARM64/Pi) must use the native
+# compiler names instead of looking for e.g. aarch64-unknown-linux-gnu-gcc.
+ifneq ($(shell ./config.sub $(HOST)),$(shell ./config.sub $(BUILD)))
 host_toolchain:=$(HOST)-
 endif
 
