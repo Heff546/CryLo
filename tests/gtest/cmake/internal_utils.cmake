@@ -205,8 +205,8 @@ function(cxx_executable name dir libs)
     ${name} "${cxx_default}" "${libs}" "${dir}/${name}.cc" ${ARGN})
 endfunction()
 
-# Sets PYTHONINTERP_FOUND and PYTHON_EXECUTABLE.
-find_package(PythonInterp)
+# Sets Python_Interpreter_FOUND and Python_EXECUTABLE.
+find_package(Python QUIET COMPONENTS Interpreter)
 
 # cxx_test_with_flags(name cxx_flags libs srcs...)
 #
@@ -234,13 +234,13 @@ endfunction()
 function(py_test name)
   # We are not supporting Python tests on Linux yet as they consider
   # all Linux environments to be google3 and try to use google3 features.
-  if (PYTHONINTERP_FOUND)
+  if (Python_Interpreter_FOUND)
     # ${CMAKE_BINARY_DIR} is known at configuration time, so we can
     # directly bind it from cmake. ${CTEST_CONFIGURATION_TYPE} is known
     # only at ctest runtime (by calling ctest -c <Configuration>), so
     # we have to escape $ to delay variable substitution here.
     add_test(${name}
-      ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/${name}.py
+      ${Python_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/${name}.py
           --build_dir=${CMAKE_CURRENT_BINARY_DIR}/\${CTEST_CONFIGURATION_TYPE})
   endif()
 endfunction()

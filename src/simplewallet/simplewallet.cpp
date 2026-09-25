@@ -7148,7 +7148,7 @@ bool simple_wallet::transfer_main(const std::vector<std::string> &args_, bool ca
       }
       try
       {
-        std::vector<std::pair<uint64_t, uint64_t>> nblocks = m_wallet->estimate_backlog({std::make_pair(worst_fee_per_byte, worst_fee_per_byte)});
+        std::vector<std::pair<uint64_t, uint64_t>> nblocks = m_wallet->estimate_backlog({std::pair<double, double>{worst_fee_per_byte, worst_fee_per_byte}});
         if (nblocks.size() != 1)
         {
           prompt << "Internal error checking for backlog. " << tr("Is this okay anyway?");

@@ -8734,7 +8734,7 @@ uint32_t wallet2::adjust_priority(uint32_t priority)
       const bool use_per_byte_fee = use_fork_rules(HF_VERSION_PER_BYTE_FEE, 0);
       const uint64_t base_fee = get_base_fee(1);
       const double fee_level = base_fee * (use_per_byte_fee ? 1 : (12/(double)13 / (double)1024));
-      const std::vector<std::pair<uint64_t, uint64_t>> blocks = estimate_backlog({std::make_pair(fee_level, fee_level)});
+      const std::vector<std::pair<uint64_t, uint64_t>> blocks = estimate_backlog({std::pair<double, double>{fee_level, fee_level}});
       if (blocks.size() != 1)
       {
         MERROR("Bad estimated backlog array size");

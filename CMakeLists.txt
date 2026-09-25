@@ -28,6 +28,23 @@
 #
 # Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
+cmake_minimum_required(VERSION 3.12)
+
+# Honor normal variables supplied by toolchain files when defining options.
+# The policy is conditional so CryLo's CMake 3.12 minimum remains supported.
+if(POLICY CMP0077)
+  cmake_policy(SET CMP0077 NEW)
+endif()
+
+# Use modern Python discovery while preserving the legacy FindBoost behavior
+# until the pinned dependency stack uses Boost's config package.
+if(POLICY CMP0148)
+  cmake_policy(SET CMP0148 NEW)
+endif()
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 OLD)
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 list(INSERT CMAKE_MODULE_PATH 0
@@ -37,13 +54,11 @@ include(CheckCXXCompilerFlag)
 include(CheckLinkerFlag)
 include(CheckLibraryExists)
 include(CheckFunctionExists)
-include(FindPythonInterp)
 
 if (IOS)
     INCLUDE(CmakeLists_IOS.txt)
 endif()
 
-cmake_minimum_required(VERSION 3.5)
 message(STATUS "CMake version ${CMAKE_VERSION}")
 
 project(crylo)
@@ -92,11 +107,11 @@ endif()
 
 enable_language(C ASM)
 
-# Require C11/C++11 and disable extensions for all targets
+# Require C11/C++17 and disable extensions for all targets
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -219,7 +234,7 @@ function(forbid_undefined_symbols)
     file(MAKE_DIRECTORY "${TEST_PROJECT}")
     file(WRITE "${TEST_PROJECT}/CMakeLists.txt"
       [=[
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.12)
 project(test)
 option(EXPECT_SUCCESS "" ON)
 file(WRITE "${CMAKE_SOURCE_DIR}/incorrect_source.cpp" "void undefined_symbol(); void symbol() { undefined_symbol(); }")
@@ -825,17 +840,61 @@ else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-strict-aliasing")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing")
 
-  # if those don't work for your compiler, single it out where appropriate
+  # Select the strongest effective glibc fortify level available on Linux.
+  # Other supported platforms keep the existing conservative level 1 behavior.
   if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT OPENBSD)
-    set(C_SECURITY_FLAGS "${C_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1")
-    set(CXX_SECURITY_FLAGS "${CXX_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1")
+    set(CRYLO_FORTIFY_SOURCE_LEVEL 1)
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      include(CheckCSourceCompiles)
+      include(CheckCXXSourceCompiles)
+
+      set(_CRYLO_SAVED_CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
+
+      foreach(_CRYLO_FORTIFY_CANDIDATE 3 2)
+        if(CRYLO_FORTIFY_SOURCE_LEVEL EQUAL 1)
+          set(CMAKE_REQUIRED_FLAGS
+              "-U_FORTIFY_SOURCE -O2 -D_FORTIFY_SOURCE=${_CRYLO_FORTIFY_CANDIDATE}")
+
+          set(_CRYLO_FORTIFY_TEST_SOURCE
+"#include <features.h>
+#if !defined(__USE_FORTIFY_LEVEL) || __USE_FORTIFY_LEVEL < ${_CRYLO_FORTIFY_CANDIDATE}
+#error requested fortify level is not effective
+#endif
+int main(void) { return 0; }")
+
+          check_c_source_compiles(
+            "${_CRYLO_FORTIFY_TEST_SOURCE}"
+            CRYLO_C_FORTIFY_LEVEL_${_CRYLO_FORTIFY_CANDIDATE}_SUPPORTED)
+
+          check_cxx_source_compiles(
+            "${_CRYLO_FORTIFY_TEST_SOURCE}"
+            CRYLO_CXX_FORTIFY_LEVEL_${_CRYLO_FORTIFY_CANDIDATE}_SUPPORTED)
+
+          if(CRYLO_C_FORTIFY_LEVEL_${_CRYLO_FORTIFY_CANDIDATE}_SUPPORTED
+             AND CRYLO_CXX_FORTIFY_LEVEL_${_CRYLO_FORTIFY_CANDIDATE}_SUPPORTED)
+            set(CRYLO_FORTIFY_SOURCE_LEVEL ${_CRYLO_FORTIFY_CANDIDATE})
+          endif()
+        endif()
+      endforeach()
+
+      set(CMAKE_REQUIRED_FLAGS "${_CRYLO_SAVED_CMAKE_REQUIRED_FLAGS}")
+      unset(_CRYLO_SAVED_CMAKE_REQUIRED_FLAGS)
+      unset(_CRYLO_FORTIFY_TEST_SOURCE)
+      unset(_CRYLO_FORTIFY_CANDIDATE)
+    endif()
+
+    message(STATUS "Using _FORTIFY_SOURCE=${CRYLO_FORTIFY_SOURCE_LEVEL}")
+    set(C_SECURITY_FLAGS
+        "${C_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=${CRYLO_FORTIFY_SOURCE_LEVEL}")
+    set(CXX_SECURITY_FLAGS
+        "${CXX_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=${CRYLO_FORTIFY_SOURCE_LEVEL}")
   endif()
 
-  # warnings
-  add_c_flag_if_supported(-Wformat C_SECURITY_FLAGS)
-  add_cxx_flag_if_supported(-Wformat CXX_SECURITY_FLAGS)
-  add_c_flag_if_supported(-Wformat-security C_SECURITY_FLAGS)
-  add_cxx_flag_if_supported(-Wformat-security CXX_SECURITY_FLAGS)
+  # Format-string hardening. -Wformat-security depends on -Wformat, so
+  # probe and enable the complete set together rather than testing it alone.
+  add_c_flag_if_supported("-Wformat -Wformat-security -Werror=format-security" C_SECURITY_FLAGS)
+  add_cxx_flag_if_supported("-Wformat -Wformat-security -Werror=format-security" CXX_SECURITY_FLAGS)
 
   # -fstack-protector
   if (NOT OPENBSD AND NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
@@ -1256,7 +1315,7 @@ include(external/supercop/functions.cmake) # place after setting flags and befor
 add_subdirectory(contrib)
 add_subdirectory(src)
 
-find_package(PythonInterp)
+find_package(Python QUIET COMPONENTS Interpreter)
 if(BUILD_TESTS)
   message(STATUS "Building tests")
   add_subdirectory(tests)
@@ -1295,11 +1354,11 @@ endif()
 # when ON - will install libwallet_merged into "lib"
 option(BUILD_GUI_DEPS "Build GUI dependencies." OFF)
 
-find_package(PythonInterp)
+find_package(Python QUIET COMPONENTS Interpreter)
 find_program(iwyu_tool_path NAMES iwyu_tool.py iwyu_tool)
-if (iwyu_tool_path AND PYTHONINTERP_FOUND)
+if (iwyu_tool_path AND Python_Interpreter_FOUND)
   add_custom_target(iwyu
-    COMMAND "${PYTHON_EXECUTABLE}" "${iwyu_tool_path}" -p "${CMAKE_BINARY_DIR}" -- --no_fwd_decls
+    COMMAND "${Python_EXECUTABLE}" "${iwyu_tool_path}" -p "${CMAKE_BINARY_DIR}" -- --no_fwd_decls
     COMMENT "Running include-what-you-use tool"
     VERBATIM
   )
