@@ -43,13 +43,9 @@
 #define CRYPTONOTE_PUBLIC_ADDRESS_TEXTBLOB_VER          0
 #define CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_V2         288
 
-// CryLo CHAIN: Vesting schedule for block rewards (HF19+)
-// Block reward is split into 4 equal outputs with staggered unlock times
-#define CryLo_VESTING_OUTPUTS                              4
-#define CryLo_VESTING_UNLOCK_1                             288      // ~24h - immediate (same as base unlock)
-#define CryLo_VESTING_UNLOCK_2                             8640     // ~30 days
-#define CryLo_VESTING_UNLOCK_3                             17280    // ~60 days
-#define CryLo_VESTING_UNLOCK_4                             25920    // ~90 days
+// CryLo Chain: HF19+ miner reward vesting.
+// vout[0] is the instant miner half; vout[1] is locked for ~45 days.
+#define CRYLO_MINER_VESTING_BLOCKS                      ((uint64_t)18514ULL)
 #define HF_VERSION_VESTING                               19
 #define CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW            60
 #define CURRENT_TRANSACTION_VERSION                     2
@@ -69,10 +65,6 @@
 #define CRYLO_START_REWARD                              ((uint64_t)250000000000ULL) // 2.5 CRYLO
 #define CRYLO_MIN_REWARD                                ((uint64_t)20000000000ULL)  // 0.2 CRYLO
 #define CRYLO_EMISSION_BLOCKS                           ((uint64_t)3703704ULL)
-
-// Legacy compatibility constants; custom CryLo reward curve overrides these after vesting HF
-#define EMISSION_SPEED_FACTOR_PER_MINUTE                (25)
-#define FINAL_SUBSIDY_PER_MINUTE                        ((uint64_t)4000000000ULL) // 0.04 CRYLO/min = 0.2 CRYLO per 5-min block
 
 #define CRYPTONOTE_REWARD_BLOCKS_WINDOW                 100
 #define CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2    60000 //size of block (bytes) after which reward for block calculated using block size

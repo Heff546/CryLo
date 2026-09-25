@@ -165,12 +165,14 @@ electron/
 - **Logs**: `%APPDATA%\crylo-wallet\logs\`
 
 ### Vesting display
-The vesting tab reconstructs per-tier unlock data from coinbase transfers:
-- Each mined block = 4 vesting outputs (25% each) + 1 dev fund output
-- Tier 1: unlock at `blockHeight + 288`   (~24h)
-- Tier 2: unlock at `blockHeight + 8640`  (~30d)
-- Tier 3: unlock at `blockHeight + 17280` (~60d)
-- Tier 4: unlock at `blockHeight + 25920` (~90d)
+CryLo uses a single miner-reward vesting period:
+- `vout[0]`: 50% miner reward, immediately spendable
+- `vout[1]`: 50% miner reward, locked for `18,514` blocks (~45 days at the 210-second target)
+- `vout[2]`: developer fund
+- `vout[3]`: liquidity fund
+- `vout[4]`: Nexus gas treasury
+
+The wallet and wallet RPC report the miner payment using the vested half's unlock height when displaying aggregate coinbase status.
 
 ---
 

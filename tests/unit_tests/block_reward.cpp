@@ -46,31 +46,29 @@ namespace
     uint64_t m_block_reward;
   };
 
-  #define TEST_ALREADY_GENERATED_COINS(already_generated_coins, expected_reward)                              \
-    m_block_not_too_big = get_block_reward(0, current_block_weight, already_generated_coins, m_block_reward,1); \
-    ASSERT_TRUE(m_block_not_too_big);                                                                         \
+  #define TEST_CRYLO_REWARD(height, already_generated_coins, expected_reward)                                      \
+    m_block_not_too_big = get_block_reward(height, 0, current_block_weight, already_generated_coins, m_block_reward, 1); \
+    ASSERT_TRUE(m_block_not_too_big);                                                                               \
     ASSERT_EQ(m_block_reward, expected_reward);
 
-  TEST_F(block_reward_and_already_generated_coins, handles_first_values)
+  TEST_F(block_reward_and_already_generated_coins, follows_crylo_emission_curve)
   {
-  	// 17592186044415 from neozaru, confirmed by fluffypony
-    TEST_ALREADY_GENERATED_COINS(0, UINT64_C(17592186044415));
-    TEST_ALREADY_GENERATED_COINS(m_block_reward, UINT64_C(17592169267200));
-    TEST_ALREADY_GENERATED_COINS(UINT64_C(2756434948434199641), UINT64_C(14963444829249));
+    TEST_CRYLO_REWARD(0, 0, CRYLO_START_REWARD);
+    TEST_CRYLO_REWARD(1, 0, UINT64_C(249999937901));
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS / 2, 0, UINT64_C(135000000000));
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS - 1, 0, UINT64_C(20000062100));
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS, 0, CRYLO_MIN_REWARD);
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS + 1, 0, CRYLO_MIN_REWARD);
   }
 
-  TEST_F(block_reward_and_already_generated_coins, correctly_steps_from_2_to_1)
+  TEST_F(block_reward_and_already_generated_coins, clips_reward_at_remaining_supply)
   {
-    TEST_ALREADY_GENERATED_COINS(MONEY_SUPPLY - ((2 << 20) + 1), FINAL_SUBSIDY_PER_MINUTE);
-    TEST_ALREADY_GENERATED_COINS(MONEY_SUPPLY -  (2 << 20)     , FINAL_SUBSIDY_PER_MINUTE);
-    TEST_ALREADY_GENERATED_COINS(MONEY_SUPPLY - ((2 << 20) - 1), FINAL_SUBSIDY_PER_MINUTE);
-  }
-
-  TEST_F(block_reward_and_already_generated_coins, handles_max)
-  {
-    TEST_ALREADY_GENERATED_COINS(MONEY_SUPPLY - ((1 << 20) + 1), FINAL_SUBSIDY_PER_MINUTE);
-    TEST_ALREADY_GENERATED_COINS(MONEY_SUPPLY -  (1 << 20)     , FINAL_SUBSIDY_PER_MINUTE);
-    TEST_ALREADY_GENERATED_COINS(MONEY_SUPPLY - ((1 << 20) - 1), FINAL_SUBSIDY_PER_MINUTE);
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS, MONEY_SUPPLY - CRYLO_MIN_REWARD - 1, CRYLO_MIN_REWARD);
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS, MONEY_SUPPLY - CRYLO_MIN_REWARD, CRYLO_MIN_REWARD);
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS, MONEY_SUPPLY - CRYLO_MIN_REWARD + 1, CRYLO_MIN_REWARD - 1);
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS, MONEY_SUPPLY - 1, UINT64_C(1));
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS, MONEY_SUPPLY, UINT64_C(0));
+    TEST_CRYLO_REWARD(CRYLO_EMISSION_BLOCKS, MONEY_SUPPLY + 1, UINT64_C(0));
   }
 
   //--------------------------------------------------------------------------------------------------------------------
@@ -79,14 +77,14 @@ namespace
   protected:
     virtual void SetUp()
     {
-      m_block_not_too_big = get_block_reward(0, 0, already_generated_coins, m_standard_block_reward, 1);
+      m_block_not_too_big = get_block_reward(0, 0, 0, already_generated_coins, m_standard_block_reward, 1);
       ASSERT_TRUE(m_block_not_too_big);
       ASSERT_LT(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1, m_standard_block_reward);
     }
 
     void do_test(size_t median_block_weight, size_t current_block_weight)
     {
-      m_block_not_too_big = get_block_reward(median_block_weight, current_block_weight, already_generated_coins, m_block_reward, 1);
+      m_block_not_too_big = get_block_reward(0, median_block_weight, current_block_weight, already_generated_coins, m_block_reward, 1);
     }
 
     static const uint64_t already_generated_coins = 0;
@@ -152,14 +150,14 @@ namespace
 
       m_last_block_weights_median = 7 * CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1;
 
-      m_block_not_too_big = get_block_reward(epee::misc_utils::median(m_last_block_weights), 0, already_generated_coins, m_standard_block_reward, 1);
+      m_block_not_too_big = get_block_reward(0, epee::misc_utils::median(m_last_block_weights), 0, already_generated_coins, m_standard_block_reward, 1);
       ASSERT_TRUE(m_block_not_too_big);
       ASSERT_LT(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1, m_standard_block_reward);
     }
 
     void do_test(size_t current_block_weight)
     {
-      m_block_not_too_big = get_block_reward(epee::misc_utils::median(m_last_block_weights), current_block_weight, already_generated_coins, m_block_reward, 1);
+      m_block_not_too_big = get_block_reward(0, epee::misc_utils::median(m_last_block_weights), current_block_weight, already_generated_coins, m_block_reward, 1);
     }
 
     static const uint64_t already_generated_coins = 0;

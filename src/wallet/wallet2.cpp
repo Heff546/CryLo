@@ -7111,6 +7111,7 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
 	  // vout[1] = miner 50% vested 45 days
   	  // vout[2] = dev fund
   	  // vout[3] = liquidity fund
+          // vout[4] = gas treasury
 
   	  if (cb_height >= 2 && td.m_internal_output_index == 0)
           {
@@ -7126,7 +7127,7 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
           }
 
   	  if (cb_height >= 2 && td.m_internal_output_index == 1)
-    	    effective_unlock = cb_height + 18514;
+          effective_unlock = cb_height + CRYLO_MINER_VESTING_BLOCKS;
   	  else
     	    effective_unlock = 0;
 	}
@@ -7338,12 +7339,13 @@ bool wallet2::is_transfer_unlocked(const transfer_details& td)
     // vout[1] = miner vested 45 days
     // vout[2] = dev fund
     // vout[3] = liquidity fund
+    // vout[4] = gas treasury
 
     if (cb_height >= 2 && td.m_internal_output_index == 0)
       return true; // CryLo instant miner half is spendable immediately
 
     if (cb_height >= 2 && td.m_internal_output_index == 1)
-      unlock_time = cb_height + 18514;
+      unlock_time = cb_height + CRYLO_MINER_VESTING_BLOCKS;
     else
       unlock_time = 0;
   }

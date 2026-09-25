@@ -249,9 +249,10 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const std::pair
 	// vout[1] = miner 50% vested 45 days
   	// vout[2] = dev fund
   	// vout[3] = liquidity fund
+        // vout[4] = gas treasury
 
   	if (cb_height >= 2 && i == 1)
-    	  output_unlock_time = cb_height + 18514;
+        output_unlock_time = cb_height + CRYLO_MINER_VESTING_BLOCKS;
   	else
     	  output_unlock_time = 0;
       }

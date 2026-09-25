@@ -6132,11 +6132,21 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
   {
     const auto& td = m_wallet->get_transfer_details(i);
 
-    // only count the vested miner output
-    if (td.m_internal_output_index != 1)
+    if (td.m_spent || td.m_subaddr_index.major != m_current_subaddress_account)
+      continue;
+    if (td.m_tx.vin.size() != 1 ||
+        td.m_tx.vin[0].type() != typeid(cryptonote::txin_gen))
       continue;
 
-    if (m_wallet->is_transfer_unlocked(td))
+    const uint64_t cb_height =
+      boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
+
+    const bool vested_miner_output =
+      cb_height >= 2 &&
+      td.m_tx.vout.size() == 5 &&
+      td.m_internal_output_index == 1;
+
+    if (!vested_miner_output || m_wallet->is_transfer_unlocked(td))
       continue;
 
     vested_45 += td.amount();
@@ -6318,23 +6328,17 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
     return true;
   }
 
-  // Vesting tier definitions (unlock delay in blocks from mined block)
-  const uint64_t tier_delays[] = { CryLo_VESTING_UNLOCK_1, CryLo_VESTING_UNLOCK_2, CryLo_VESTING_UNLOCK_3, CryLo_VESTING_UNLOCK_4 };
-  const char* tier_names[] = { "Tier 1 (24h)", "Tier 2 (30d)", "Tier 3 (60d)", "Tier 4 (90d)" };
-
-  // Collect all unspent outputs
   tools::wallet2::transfer_container transfers;
   m_wallet->get_transfers(transfers);
 
   uint64_t total_amount = 0;
   uint64_t total_unlocked = 0;
   uint64_t total_locked = 0;
-  uint64_t tier_locked[4] = {0, 0, 0, 0};
-  uint64_t tier_unlocked[4] = {0, 0, 0, 0};
-  uint64_t pre_vesting_amount = 0;
-  uint64_t pre_vesting_count = 0;
+  uint64_t vested_total = 0;
+  uint64_t vested_unlocked = 0;
+  uint64_t vested_locked = 0;
+  uint64_t vested_output_count = 0;
 
-  // Map: unlock_block -> amount (for timeline)
   std::map<uint64_t, uint64_t> unlock_schedule;
 
   for (const auto& td : transfers)
@@ -6344,37 +6348,46 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
     if (td.m_subaddr_index.major != m_current_subaddress_account)
       continue;
 
-    uint64_t amount = td.amount();
+    const uint64_t amount = td.amount();
     total_amount += amount;
 
-    bool unlocked = m_wallet->is_transfer_unlocked(td);
+    const bool unlocked = m_wallet->is_transfer_unlocked(td);
+
     if (unlocked)
       total_unlocked += amount;
     else
       total_locked += amount;
 
-    // Determine vesting tier from coinbase output position
-    // tx.unlock_time is global (288 for all), but real tier is per-output
-    // based on m_internal_output_index (same logic as wallet2::is_transfer_unlocked)
-    bool is_coinbase = (td.m_tx.vin.size() == 1 && td.m_tx.vin[0].type() == typeid(cryptonote::txin_gen));
-    bool is_vesting = is_coinbase && td.m_tx.vout.size() == 5 && td.m_internal_output_index < 4;
-
-    if (!is_vesting)
-    {
-      pre_vesting_amount += amount;
-      pre_vesting_count++;
+    if (td.m_tx.vin.size() != 1 ||
+        td.m_tx.vin[0].type() != typeid(cryptonote::txin_gen))
       continue;
-    }
 
-    int tier = td.m_internal_output_index;  // 0=tier1, 1=tier2, 2=tier3, 3=tier4
-    uint64_t real_unlock_block = td.m_block_height + tier_delays[tier];
+    const uint64_t cb_height =
+      boost::get<cryptonote::txin_gen>(td.m_tx.vin[0]).height;
+
+    // Current CryLo coinbase layout:
+    // vout[0] = miner 50% instant
+    // vout[1] = miner 50% vested for CRYLO_MINER_VESTING_BLOCKS
+    // vout[2] = dev fund
+    // vout[3] = liquidity fund
+    // vout[4] = gas treasury
+    const bool vested_miner_output =
+      cb_height >= 2 &&
+      td.m_tx.vout.size() == 5 &&
+      td.m_internal_output_index == 1;
+
+    if (!vested_miner_output)
+      continue;
+
+    ++vested_output_count;
+    vested_total += amount;
 
     if (unlocked)
-      tier_unlocked[tier] += amount;
+      vested_unlocked += amount;
     else
     {
-      tier_locked[tier] += amount;
-      unlock_schedule[real_unlock_block] += amount;
+      vested_locked += amount;
+      unlock_schedule[cb_height + CRYLO_MINER_VESTING_BLOCKS] += amount;
     }
   }
 
@@ -6384,145 +6397,85 @@ bool simple_wallet::show_vesting(const std::vector<std::string>& args)
     return true;
   }
 
-  // === HEADER ===
   success_msg_writer() << "";
   success_msg_writer() << tr("  === CryLo VESTING STATUS ===");
   success_msg_writer() << "";
-  success_msg_writer() << boost::format(tr("  Network height:  %u")) % blockchain_height;
-  success_msg_writer() << boost::format(tr("  Total balance:   %.4f CryLo")) % ((double)total_amount / COIN);
-  success_msg_writer() << boost::format(tr("  Unlocked:        %.4f CryLo (%.1f%%)"))
+  success_msg_writer() << boost::format(tr("  Network height:       %u")) % blockchain_height;
+  success_msg_writer() << boost::format(tr("  Total balance:        %.4f CryLo")) % ((double)total_amount / COIN);
+  success_msg_writer() << boost::format(tr("  Unlocked:             %.4f CryLo (%.1f%%)"))
     % ((double)total_unlocked / COIN)
     % (total_amount > 0 ? (double)total_unlocked / total_amount * 100.0 : 0.0);
-  success_msg_writer() << boost::format(tr("  Locked:          %.4f CryLo (%.1f%%)"))
+  success_msg_writer() << boost::format(tr("  Locked:               %.4f CryLo (%.1f%%)"))
     % ((double)total_locked / COIN)
     % (total_amount > 0 ? (double)total_locked / total_amount * 100.0 : 0.0);
 
-  // === PER-TIER STATUS ===
   success_msg_writer() << "";
-  success_msg_writer() << tr("  --- Per-Tier Status ---");
-  for (int i = 0; i < 4; i++)
-  {
-    uint64_t tier_total = tier_unlocked[i] + tier_locked[i];
-    if (tier_total == 0) continue;
-    success_msg_writer() << boost::format(tr("  %s: %.4f unlocked, %.4f locked"))
-      % tier_names[i]
-      % ((double)tier_unlocked[i] / COIN)
-      % ((double)tier_locked[i] / COIN);
-  }
+  success_msg_writer() << tr("  --- Miner Reward Vesting ---");
+  success_msg_writer() << tr("  Model: 50% instant / 50% vested for ~45 days");
+  success_msg_writer() << boost::format(tr("  Vesting period:       %u blocks"))
+    % static_cast<uint64_t>(CRYLO_MINER_VESTING_BLOCKS);
+  success_msg_writer() << boost::format(tr("  Vested outputs:       %u"))
+    % vested_output_count;
+  success_msg_writer() << boost::format(tr("  Vested total:         %.4f CryLo"))
+    % ((double)vested_total / COIN);
+  success_msg_writer() << boost::format(tr("  Vested unlocked:      %.4f CryLo"))
+    % ((double)vested_unlocked / COIN);
+  success_msg_writer() << boost::format(tr("  Vested still locked:  %.4f CryLo"))
+    % ((double)vested_locked / COIN);
 
-  if (pre_vesting_count > 0)
-  {
-    success_msg_writer() << boost::format(tr("  Pre-vesting:     %.4f CryLo (%u outputs)"))
-      % ((double)pre_vesting_amount / COIN) % pre_vesting_count;
-  }
-
-  // === UNLOCK TIMELINE ===
   if (!unlock_schedule.empty())
   {
+    const time_t now = time(nullptr);
+
+    const auto next_unlock = unlock_schedule.begin();
+    const uint64_t next_block = next_unlock->first;
+    const uint64_t next_blocks_left =
+      next_block > blockchain_height ? next_block - blockchain_height : 0;
+    const time_t next_time =
+      now + static_cast<time_t>(next_blocks_left * DIFFICULTY_TARGET_V2);
+
+    struct tm* next_tm = localtime(&next_time);
+    char next_date[20];
+    strftime(next_date, sizeof(next_date), "%Y-%m-%d %H:%M", next_tm);
+
     success_msg_writer() << "";
-    success_msg_writer() << tr("  --- Unlock Timeline ---");
-    success_msg_writer() << "";
+    success_msg_writer() << tr("  --- Unlock Schedule ---");
+    success_msg_writer() << boost::format(tr("  Next unlock:          %.4f CryLo at block %u"))
+      % ((double)next_unlock->second / COIN)
+      % next_block;
+    success_msg_writer() << boost::format(tr("  Estimated date:       %s"))
+      % next_date;
 
-    // Milestones in blocks from now
-    struct milestone {
-      const char* name;
-      uint64_t blocks;
-    };
-    milestone milestones[] = {
-      {"+ 24 hours", 288},
-      {"+ 1 week", 2016},
-      {"+ 2 weeks", 4032},
-      {"+ 30 days", 8640},
-      {"+ 45 days", 12960},
-      {"+ 60 days", 17280},
-      {"+ 75 days", 21600},
-      {"+ 90 days", 25920},
-      {"+ 95 days", 27360},
-    };
+    const auto last_unlock = unlock_schedule.rbegin();
+    const uint64_t last_block = last_unlock->first;
+    const uint64_t last_blocks_left =
+      last_block > blockchain_height ? last_block - blockchain_height : 0;
+    const time_t last_time =
+      now + static_cast<time_t>(last_blocks_left * DIFFICULTY_TARGET_V2);
 
-    // Calculate time for each milestone
-    time_t now = time(nullptr);
+    struct tm* last_tm = localtime(&last_time);
+    char last_date[20];
+    strftime(last_date, sizeof(last_date), "%Y-%m-%d %H:%M", last_tm);
 
-    success_msg_writer() << boost::format("  %-22s %-18s %15s %17s %7s")
-      % tr("When") % tr("Date") % tr("+ Unlocked") % tr("Total available") % tr("%");
-    success_msg_writer() << "  ---------------------- ------------------ --------------- ----------------- -------";
+    const uint64_t seconds_left =
+      last_blocks_left * DIFFICULTY_TARGET_V2;
+    const uint64_t days_left =
+      (seconds_left + 86400 - 1) / 86400;
 
-    // Current state
-    {
-      // Format amounts with 4 decimals: divide by COIN to get double
-      double d_total_unlocked = (double)total_unlocked / COIN;
-      double pct_now = total_amount > 0 ? (double)total_unlocked / total_amount * 100.0 : 0.0;
-      success_msg_writer() << boost::format("  %-22s %-18s %15s %14.4f CryLo %6.1f%%")
-        % tr("Now") % "-" % "-"
-        % d_total_unlocked
-        % pct_now;
-    }
-
-    uint64_t running = total_unlocked;
-    uint64_t prev_target = blockchain_height;
-
-    for (const auto& ms : milestones)
-    {
-      uint64_t target = blockchain_height + ms.blocks;
-
-      // Sum amounts unlocking between prev_target and target
-      uint64_t newly = 0;
-      for (const auto& entry : unlock_schedule)
-      {
-        if (entry.first > prev_target && entry.first <= target)
-          newly += entry.second;
-      }
-
-      running += newly;
-      double pct = total_amount > 0 ? (double)running / total_amount * 100.0 : 0.0;
-
-      // Calculate date
-      time_t milestone_time = now + (ms.blocks * DIFFICULTY_TARGET_V2);
-      struct tm* tm_info = localtime(&milestone_time);
-      char date_buf[20];
-      strftime(date_buf, sizeof(date_buf), "%Y-%m-%d %H:%M", tm_info);
-
-      {
-        double d_newly = (double)newly / COIN;
-        double d_running = (double)running / COIN;
-        success_msg_writer() << boost::format("  %-22s %-18s %12.4f CryLo %14.4f CryLo %6.1f%%")
-          % ms.name
-          % date_buf
-          % d_newly
-          % d_running
-          % pct;
-      }
-
-      prev_target = target;
-    }
-
-    // Find last unlock block
-    uint64_t max_unlock_block = 0;
-    for (const auto& entry : unlock_schedule)
-    {
-      if (entry.first > max_unlock_block)
-        max_unlock_block = entry.first;
-    }
-
-    if (max_unlock_block > blockchain_height)
-    {
-      uint64_t blocks_left = max_unlock_block - blockchain_height;
-      uint64_t days_left = (blocks_left * DIFFICULTY_TARGET_V2) / 86400;
-      time_t full_time = now + (blocks_left * DIFFICULTY_TARGET_V2);
-      struct tm* tm_info = localtime(&full_time);
-      char date_buf[20];
-      strftime(date_buf, sizeof(date_buf), "%Y-%m-%d %H:%M", tm_info);
-
-      success_msg_writer() << "";
-      success_msg_writer() << boost::format(tr("  100%% unlocked: %s (in ~%u days)"))
-        % date_buf % days_left;
-      success_msg_writer() << boost::format(tr("  Total: %.4f CryLo")) % ((double)total_amount / COIN);
-    }
+    success_msg_writer() << boost::format(tr("  Fully vested by:      block %u"))
+      % last_block;
+    success_msg_writer() << boost::format(tr("  Estimated date:       %s (in ~%u days)"))
+      % last_date % days_left;
   }
-  else if (total_locked == 0 && total_amount > 0)
+  else if (vested_output_count > 0)
   {
     success_msg_writer() << "";
-    success_msg_writer() << tr("  All outputs are unlocked!");
+    success_msg_writer() << tr("  All vested miner outputs are unlocked.");
+  }
+  else
+  {
+    success_msg_writer() << "";
+    success_msg_writer() << tr("  No current CryLo vested miner outputs found.");
   }
 
   success_msg_writer() << "";
@@ -9010,19 +8963,20 @@ bool simple_wallet::get_transfers(std::vector<std::string>& local_args, std::vec
       std::string note = m_wallet->get_tx_note(pd.m_tx_hash);
       std::string destination = m_wallet->get_subaddress_as_str({m_current_subaddress_account, pd.m_subaddr_index.minor});
       const std::string type = pd.m_coinbase ? tr("block") : tr("in");
-      // CryLo CHAIN: worst-case vesting unlock for coinbase
+      // Current CryLo miner payments contain the instant and 45-day vested halves.
+      // Report the aggregate payment using the later vested unlock height.
       uint64_t effective_unlock_cli = pd.m_unlock_time;
-      if (pd.m_coinbase && pd.m_amounts.size() >= 4) {
-        effective_unlock_cli = pd.m_block_height + 25920;
+      if (pd.m_coinbase && pd.m_block_height >= 2 && pd.m_amounts.size() == 2) {
+        effective_unlock_cli = pd.m_block_height + CRYLO_MINER_VESTING_BLOCKS;
       }
       const bool unlocked = m_wallet->is_transfer_unlocked(effective_unlock_cli, pd.m_block_height);
       std::string locked_msg = "unlocked";
       if (!unlocked)
       {
         locked_msg = "locked";
-        if (pd.m_unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER)
+        if (effective_unlock_cli < CRYPTONOTE_MAX_BLOCK_NUMBER)
         {
-          uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE);
+          uint64_t bh = std::max(effective_unlock_cli, pd.m_block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE);
           if (bh >= last_block_height)
             locked_msg = std::to_string(bh - last_block_height) + " blks";
         }

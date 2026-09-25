@@ -494,10 +494,11 @@ namespace tools
     entry.timestamp = pd.m_timestamp;
     entry.amount = pd.m_amount;
     entry.amounts = pd.m_amounts;
-    // CryLo Chain: for vesting coinbase (5 outputs), use worst-case unlock time (tier 4 = 90 days)
+    // Current CryLo miner payments contain the instant and 45-day vested halves.
+    // Report the aggregate payment using the later vested unlock height.
     uint64_t effective_unlock = pd.m_unlock_time;
-    if (pd.m_coinbase && pd.m_amounts.size() >= 4) {
-      effective_unlock = pd.m_block_height + 25920; // tier 4: ~90 days
+    if (pd.m_coinbase && pd.m_block_height >= 2 && pd.m_amounts.size() == 2) {
+      effective_unlock = pd.m_block_height + CRYLO_MINER_VESTING_BLOCKS;
     }
     entry.unlock_time = effective_unlock;
     entry.locked = !m_wallet->is_transfer_unlocked(effective_unlock, pd.m_block_height);
