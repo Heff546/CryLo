@@ -12,7 +12,13 @@ args = parser.parse_args()
 CWD = os.path.dirname(os.path.realpath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(CWD, "..", "..", "..", ".."))
 TREZOR_COMMON = os.path.join(ROOT_DIR, "external", "trezor-common")
-TREZOR_MESSAGES = os.path.join(CWD, "..", "messages")
+TREZOR_MESSAGES = os.environ.get(
+    "TREZOR_PROTOBUF_OUT_DIR",
+    os.path.join(CWD, "..", "messages"),
+)
+
+if not os.path.isdir(TREZOR_MESSAGES):
+    os.makedirs(TREZOR_MESSAGES)
 
 # check for existence of the submodule directory
 common_defs = os.path.join(TREZOR_COMMON, "defs")

@@ -67,6 +67,20 @@ monero_add_library(device
   ${device_headers}
   ${device_private_headers})
 
+if(HIDAPI_FOUND)
+  # monero_add_library compiles sources in obj_device.  Give that object
+  # target HIDAPI's compile usage requirements as well as the final library's
+  # link dependency below.
+  target_link_libraries(obj_device PRIVATE ${HIDAPI_LIBRARIES})
+
+  # Raw-library fallback discovery has no imported target to propagate the
+  # public header directory.
+  if(HIDAPI_INCLUDE_DIRS AND
+     NOT "${HIDAPI_INCLUDE_DIRS}" MATCHES "-NOTFOUND$")
+    target_include_directories(obj_device PRIVATE ${HIDAPI_INCLUDE_DIRS})
+  endif()
+endif()
+
 target_link_libraries(device
   PUBLIC
     ${HIDAPI_LIBRARIES}

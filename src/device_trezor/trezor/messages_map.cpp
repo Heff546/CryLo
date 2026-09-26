@@ -28,13 +28,13 @@
 //
 
 #include "messages_map.hpp"
-#include "messages/messages.pb.h"
-#include "messages/messages-common.pb.h"
-#include "messages/messages-management.pb.h"
-#include "messages/messages-monero.pb.h"
+#include <trezor/messages/messages.pb.h>
+#include <trezor/messages/messages-common.pb.h>
+#include <trezor/messages/messages-management.pb.h>
+#include <trezor/messages/messages-monero.pb.h>
 
 #ifdef WITH_TREZOR_DEBUGGING
-#include "messages/messages-debug.pb.h"
+#include <trezor/messages/messages-debug.pb.h>
 #endif
 
 using namespace std;
@@ -71,12 +71,12 @@ namespace trezor
 
   google::protobuf::Message * MessageMapper::get_message(const std::string & msg_name) {
     // Each package instantiation so lookup works
-    hw::trezor::messages::common::Success::default_instance();
-    hw::trezor::messages::management::Cancel::default_instance();
-    hw::trezor::messages::monero::MoneroGetAddress::default_instance();
+    static_cast<void>(hw::trezor::messages::common::Success::default_instance());
+    static_cast<void>(hw::trezor::messages::management::Cancel::default_instance());
+    static_cast<void>(hw::trezor::messages::monero::MoneroGetAddress::default_instance());
 
 #ifdef WITH_TREZOR_DEBUGGING
-    hw::trezor::messages::debug::DebugLinkDecision::default_instance();
+    static_cast<void>(hw::trezor::messages::debug::DebugLinkDecision::default_instance());
 #endif
 
     google::protobuf::Descriptor const * desc = nullptr;
@@ -113,11 +113,15 @@ namespace trezor
   }
 
   messages::MessageType MessageMapper::get_message_wire_number(const google::protobuf::Message * msg){
-    return MessageMapper::get_message_wire_number(msg->GetDescriptor()->name());
+    const auto descriptor_name = msg->GetDescriptor()->name();
+    return MessageMapper::get_message_wire_number(
+        std::string(descriptor_name.data(), descriptor_name.size()));
   }
 
   messages::MessageType MessageMapper::get_message_wire_number(const google::protobuf::Message & msg){
-    return MessageMapper::get_message_wire_number(msg.GetDescriptor()->name());
+    const auto descriptor_name = msg.GetDescriptor()->name();
+    return MessageMapper::get_message_wire_number(
+        std::string(descriptor_name.data(), descriptor_name.size()));
   }
 
   messages::MessageType MessageMapper::get_message_wire_number(const std::string & msg_name){
@@ -131,12 +135,6 @@ namespace trezor
 
     return res;
   }
-
-#ifdef PROTOBUF_HAS_ABSEIL
-  messages::MessageType MessageMapper::get_message_wire_number(const absl::string_view& msg_name) {
-    return MessageMapper::get_message_wire_number(std::string{msg_name});
-  }
-#endif
 
 }
 }

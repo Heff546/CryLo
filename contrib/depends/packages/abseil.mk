@@ -1,22 +1,20 @@
-package=hidapi
-$(package)_version=0.15.0
-$(package)_download_path=https://github.com/libusb/hidapi/archive/refs/tags
-$(package)_file_name=$(package)-$($(package)_version).tar.gz
-$(package)_sha256_hash=5d84dec684c27b97b921d2f3b73218cb773cf4ea915caee317ac8fc73cef8136
-$(package)_linux_dependencies=libusb
+package=abseil
+$(package)_version=20250512.1
+$(package)_download_path=https://github.com/abseil/abseil-cpp/releases/download/$($(package)_version)
+$(package)_file_name=abseil-cpp-$($(package)_version).tar.gz
+$(package)_sha256_hash=9b7a064305e9fd94d124ffa6cc358592eb42b5da588fb4e07d09254aa40086db
+$(package)_cxxflags=-std=c++17
 
 define $(package)_set_vars
   $(package)_config_opts=-DCMAKE_BUILD_TYPE=Release
   $(package)_config_opts+=-DCMAKE_INSTALL_LIBDIR=lib
   $(package)_config_opts+=-DCMAKE_POSITION_INDEPENDENT_CODE=ON
   $(package)_config_opts+=-DBUILD_SHARED_LIBS=OFF
-  $(package)_config_opts+=-DHIDAPI_INSTALL_TARGETS=ON
-  $(package)_config_opts+=-DHIDAPI_BUILD_HIDTEST=OFF
-  $(package)_config_opts+=-DHIDAPI_WITH_TESTS=OFF
-  $(package)_config_opts_linux+=-DHIDAPI_WITH_HIDRAW=OFF
-  $(package)_config_opts_linux+=-DHIDAPI_WITH_LIBUSB=ON
-  $(package)_config_opts_mingw32+=-DHIDAPI_BUILD_PP_DATA_DUMP=OFF
-  $(package)_config_opts_darwin+=-DCMAKE_FRAMEWORK=OFF
+  $(package)_config_opts+=-DBUILD_TESTING=OFF
+  $(package)_config_opts+=-DABSL_BUILD_TESTING=OFF
+  $(package)_config_opts+=-DABSL_BUILD_TEST_HELPERS=OFF
+  $(package)_config_opts+=-DABSL_ENABLE_INSTALL=ON
+  $(package)_config_opts+=-DABSL_PROPAGATE_CXX_STD=ON
 endef
 
 define $(package)_config_cmds
@@ -28,7 +26,6 @@ define $(package)_config_cmds
     -DCMAKE_SYSTEM_NAME=$(host_cmake) \
     -DCMAKE_SYSTEM_PROCESSOR=$(host_arch) \
     -DCMAKE_INSTALL_PREFIX=$(host_prefix) \
-    -DCMAKE_PREFIX_PATH=$(host_prefix) \
     $($(package)_config_opts)
 endef
 

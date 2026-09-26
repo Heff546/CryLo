@@ -31,7 +31,7 @@
 #define MONERO_DEBUG_LINK_H
 
 #include "transport.hpp"
-#include "messages/messages-debug.pb.h"
+#include <trezor/messages/messages-debug.pb.h>
 
 
 namespace hw {

@@ -30,7 +30,7 @@
 #if defined(HAVE_HIDAPI) 
 
 #include <boost/optional/optional.hpp>
-#include <hidapi/hidapi.h>
+#include <hidapi.h>
 #include "device_io.hpp"
 
 #pragma once

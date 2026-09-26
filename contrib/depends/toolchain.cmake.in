@@ -34,13 +34,16 @@ SET(LIBUNWIND_LIBRARY_DIRS @prefix@/lib)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 SET(LIBUSB-1.0_LIBRARY @prefix@/lib/libusb-1.0.a)
-SET(LIBUDEV_LIBRARY @prefix@/lib/libudev.a)
 
-SET(Protobuf_FOUND 1)
+# Modern deterministic hardware-wallet dependencies.
+# Protobuf is discovered through its installed CMake config so its static
+# Abseil and utf8_range usage requirements propagate transitively.
 SET(Protobuf_PROTOC_EXECUTABLE @prefix@/native/bin/protoc CACHE FILEPATH "Path to the native protoc")
-SET(Protobuf_INCLUDE_DIR @prefix@/include CACHE PATH "Protobuf include dir")
-SET(Protobuf_INCLUDE_DIRS @prefix@/include CACHE PATH "Protobuf include dir")
-SET(Protobuf_LIBRARY @prefix@/lib/libprotobuf.a CACHE FILEPATH "Protobuf library")
+SET(Protobuf_DIR @prefix@/lib/cmake/protobuf CACHE PATH "Protobuf CMake package directory")
+SET(absl_DIR @prefix@/lib/cmake/absl CACHE PATH "Abseil CMake package directory")
+SET(utf8_range_DIR @prefix@/lib/cmake/utf8_range CACHE PATH "utf8_range CMake package directory")
+SET(hidapi_DIR @prefix@/lib/cmake/hidapi CACHE PATH "HIDAPI CMake package directory")
+SET(protobuf_MODULE_COMPATIBLE ON CACHE BOOL "Populate FindProtobuf-compatible variables")
 endif()
 
 endif()
@@ -95,7 +98,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   SET(PORT OFF)
   SET(CMAKE_OSX_SYSROOT "@prefix@/native/SDK/")
   SET(CMAKE_OSX_DEPLOYMENT_TARGET "10.08")
-  SET(CMAKE_CXX_STANDARD 14)
+  SET(CMAKE_CXX_STANDARD 17)
   SET(LLVM_ENABLE_PIC OFF)
   SET(LLVM_ENABLE_PIE OFF)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")

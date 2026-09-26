@@ -25,6 +25,7 @@ if ( PKG_CONFIG_FOUND )
 endif ( PKG_CONFIG_FOUND )
 
 if ( PKGCONFIG_LIBUSB_FOUND )
+    set ( LibUSB_HEADER_FILE libusb.h )
     set ( LibUSB_INCLUDE_DIRS ${PKGCONFIG_LIBUSB_INCLUDE_DIRS} )
     foreach ( i ${PKGCONFIG_LIBUSB_LIBRARIES} )
         string ( REGEX MATCH "[^-]*" ibase "${i}" )
@@ -99,7 +100,10 @@ if ( LibUSB_FOUND )
     check_library_exists ( "${LibUSB_LIBRARIES}" libusb_get_device_list "" LibUSB_VERSION_1.0 )
     check_library_exists ( "${LibUSB_LIBRARIES}" libusb_get_port_numbers "" LibUSB_VERSION_1.0.16 )
 
-    if((STATIC AND UNIX AND NOT APPLE) OR (DEPENDS AND CMAKE_SYSTEM_NAME STREQUAL "Linux") OR ANDROID)
+    # The deterministic Linux libusb recipe is built with --disable-udev.
+    # Preserve libudev discovery only for non-depends static system builds
+    # where the locally supplied libusb may still have that dependency.
+    if(STATIC AND UNIX AND NOT APPLE AND NOT DEPENDS AND NOT ANDROID)
         find_library(LIBUDEV_LIBRARY udev)
         if(LIBUDEV_LIBRARY)
             set(LibUSB_LIBRARIES "${LibUSB_LIBRARIES};${LIBUDEV_LIBRARY}")
