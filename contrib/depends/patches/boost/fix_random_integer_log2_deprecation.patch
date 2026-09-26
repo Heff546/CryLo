@@ -1,0 +1,5 @@
+--- a/boost/random/detail/integer_log2.hpp
++++ b/boost/random/detail/integer_log2.hpp
+@@ -19 +19 @@
+-#include <boost/pending/integer_log2.hpp>
++#include <boost/integer/integer_log2.hpp>

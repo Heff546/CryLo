@@ -4,7 +4,7 @@ $(package)_download_path=https://archives.boost.io/release/$($(package)_version)
 $(package)_file_name=$(package)_$(subst .,_,$($(package)_version)).tar.gz
 $(package)_sha256_hash=9a2c2819310839ea373f42d69e733c339b4e9a19deab6bfec448281554aa4dbb
 $(package)_dependencies=libiconv
-$(package)_patches=fix_aroptions.patch fix_arm_arch.patch
+$(package)_patches=fix_aroptions.patch fix_arm_arch.patch fix_pthread_stack_min.patch fix_random_integer_log2_deprecation.patch
 
 define $(package)_set_vars
 $(package)_config_opts_release=variant=release
@@ -31,6 +31,8 @@ endef
 define $(package)_preprocess_cmds
   patch -p1 < $($(package)_patch_dir)/fix_aroptions.patch &&\
   patch -p1 < $($(package)_patch_dir)/fix_arm_arch.patch &&\
+  patch -p1 < $($(package)_patch_dir)/fix_pthread_stack_min.patch &&\
+  patch -p1 < $($(package)_patch_dir)/fix_random_integer_log2_deprecation.patch &&\
   echo "using $(boost_toolset_$(host_os)) : : $($(package)_cxx) : <cxxflags>\"$($(package)_cxxflags) $($(package)_cppflags)\" <linkflags>\"$($(package)_ldflags)\" <archiver>\"$(boost_archiver_$(host_os))\" <arflags>\"$($(package)_arflags)\" <striper>\"$(host_STRIP)\"  <ranlib>\"$(host_RANLIB)\" <rc>\"$(host_WINDRES)\" : ;" > user-config.jam
 endef
 
