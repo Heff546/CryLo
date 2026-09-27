@@ -17,3 +17,7 @@ electron/bin/linux/*.old-*
 !electron/build/
 electron/build/*
 !electron/build/installer.nsh
+
+# Python-generated cache files
+__pycache__/
+*.pyc
