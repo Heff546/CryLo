@@ -557,7 +557,39 @@ function verifyPrerequisites(target) {
 
   if (target.platform === 'win') {
     const bash = findWindowsBash();
+
+    const windowsPrereqScript = `
+set -e
+export MSYSTEM=MINGW64
+export PATH="/mingw64/bin:/usr/bin:$PATH"
+
+command -v cmake >/dev/null || { echo "ERROR: cmake missing"; exit 1; }
+command -v make >/dev/null || { echo "ERROR: make missing"; exit 1; }
+command -v x86_64-w64-mingw32-gcc >/dev/null || {
+  echo "ERROR: MinGW64 compiler missing"
+  exit 1
+}
+command -v python3 >/dev/null || {
+  echo "ERROR: python3 missing; Trezor support requires Python 3"
+  exit 1
+}
+command -v protoc >/dev/null || {
+  echo "ERROR: protoc missing; Trezor support requires protobuf-compiler"
+  exit 1
+}
+`;
+
+    runCapture(
+      bash,
+      ['-lc', windowsPrereqScript]
+    );
+
     console.log(`MSYS2: ${bash}`);
+    console.log('CMake: ready');
+    console.log('Make: ready');
+    console.log('MinGW64: ready');
+    console.log('Python: ready');
+    console.log('protoc: ready');
     console.log();
     return;
   }
@@ -632,6 +664,20 @@ function verifyPrerequisites(target) {
     console.log('HIDAPI: ready');
   }
 
+  if (target.platform === 'mac') {
+    if (!commandAvailable('python3')) {
+      fail('python3 was not found. Trezor support requires Python 3.');
+    }
+
+    if (!commandAvailable('protoc')) {
+      fail('protoc was not found. Trezor support requires protobuf-compiler.');
+    }
+
+    console.log('Python: ready');
+    console.log(`protoc: ${capture('protoc', ['--version'])}`);
+    console.log('Trezor CMake prerequisites: preflight ready');
+  }
+
   console.log();
 }
 
@@ -641,7 +687,7 @@ function buildWindows(target, jobs) {
   const rootMsys = toMsysPath(root);
   const buildMsys = toMsysPath(target.buildDir);
 
-  const script = `
+  const configureScript = `
 set -e
 export MSYSTEM=MINGW64
 export PATH="/mingw64/bin:/usr/bin:$PATH"
@@ -650,6 +696,14 @@ command -v cmake >/dev/null || { echo "ERROR: cmake missing"; exit 1; }
 command -v make >/dev/null || { echo "ERROR: make missing"; exit 1; }
 command -v x86_64-w64-mingw32-gcc >/dev/null || {
   echo "ERROR: MinGW64 compiler missing"
+  exit 1
+}
+command -v python3 >/dev/null || {
+  echo "ERROR: python3 missing; Trezor support requires Python 3"
+  exit 1
+}
+command -v protoc >/dev/null || {
+  echo "ERROR: protoc missing; Trezor support requires protobuf-compiler"
   exit 1
 }
 
@@ -666,23 +720,46 @@ cmake \
   -D BUILD_TESTS=OFF \
   -D BUILD_DOCUMENTATION=OFF \
   -D BUILD_DEBUG_UTILITIES=OFF \
-  -D USE_DEVICE_TREZOR=OFF \
+  -D USE_DEVICE_TREZOR=ON \
+  -D USE_DEVICE_TREZOR_LIBUSB=ON \
   -D TREZOR_DEBUG=OFF \
   -D BUILD_GUI_DEPS=OFF \
   -D CMAKE_TOOLCHAIN_FILE="${rootMsys}/cmake/64-bit-toolchain.cmake" \
   -D MSYS2_FOLDER="$(cd / && pwd -W)" \
   "${rootMsys}"
+`;
+
+  const configureOutput = runCapture(
+    bash,
+    ['-lc', configureScript]
+  );
+
+  if (!configureOutput.includes('Trezor support enabled')) {
+    fail(
+      'CryLo requires Trezor support on Windows x64, but CMake did not ' +
+      'confirm "Trezor support enabled".'
+    );
+  }
+
+  console.log('Trezor support.... ENABLED');
+
+  const buildScript = `
+set -e
+export MSYSTEM=MINGW64
+export PATH="/mingw64/bin:/usr/bin:$PATH"
+cd "${buildMsys}"
 
 cmake --build . \
   --parallel ${jobs} \
   --target daemon simplewallet wallet_rpc_server
 `;
 
-  run(bash, ['-lc', script]);
+  run(bash, ['-lc', buildScript]);
 }
 
 function buildUnix(target, jobs) {
-  const trezorRequired = target.platform === 'linux';
+  const trezorRequired =
+    target.platform === 'linux' || target.platform === 'mac';
 
   const args = [
     '-S', root,
@@ -693,6 +770,7 @@ function buildUnix(target, jobs) {
     '-D', 'BUILD_DOCUMENTATION=OFF',
     '-D', 'BUILD_DEBUG_UTILITIES=OFF',
     '-D', `USE_DEVICE_TREZOR=${trezorRequired ? 'ON' : 'OFF'}`,
+    '-D', `USE_DEVICE_TREZOR_LIBUSB=${trezorRequired ? 'ON' : 'OFF'}`,
     '-D', 'TREZOR_DEBUG=OFF',
     '-D', 'BUILD_GUI_DEPS=OFF',
     '-D', 'CMAKE_BUILD_TYPE=Release',
@@ -714,8 +792,8 @@ function buildUnix(target, jobs) {
 
     if (!configureOutput.includes('Trezor support enabled')) {
       fail(
-        'CryLo requires Trezor support on Linux, but CMake did not ' +
-        'confirm "Trezor support enabled".'
+        `CryLo requires Trezor support on ${target.platform}/${target.arch}, ` +
+        'but CMake did not confirm "Trezor support enabled".'
       );
     }
 
