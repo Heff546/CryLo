@@ -60,9 +60,9 @@
 #include "cryptonote_core/cryptonote_core.h"
 #include "net/parse.h"
 
-#include <miniupnp/miniupnpc/miniupnpc.h>
-#include <miniupnp/miniupnpc/upnpcommands.h>
-#include <miniupnp/miniupnpc/upnperrors.h>
+#include <miniupnp/miniupnpc/include/miniupnpc.h>
+#include <miniupnp/miniupnpc/include/upnpcommands.h>
+#include <miniupnp/miniupnpc/include/upnperrors.h>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "net.p2p"
@@ -3064,11 +3064,14 @@ namespace nodetool
 #endif
     UPNPUrls urls;
     IGDdatas igdData;
-    char lanAddress[64];
-    result = UPNP_GetValidIGD(deviceList, &urls, &igdData, lanAddress, sizeof lanAddress);
+    char lanAddress[64] = {};
+    char wanAddress[64] = {};
+    result = UPNP_GetValidIGD(deviceList, &urls, &igdData,
+                              lanAddress, sizeof lanAddress,
+                              wanAddress, sizeof wanAddress);
     freeUPNPDevlist(deviceList);
     if (result > 0) {
-      if (result == 1) {
+      if (result == UPNP_CONNECTED_IGD) {
         std::ostringstream portString;
         portString << port;
 
@@ -3082,9 +3085,11 @@ namespace nodetool
         } else {
           MLOG_GREEN(el::Level::Info, "Added IGD port mapping.");
         }
-      } else if (result == 2) {
+      } else if (result == UPNP_PRIVATEIP_IGD) {
+        MWARNING("IGD was found but has a private or reserved external IP address.");
+      } else if (result == UPNP_DISCONNECTED_IGD) {
         MWARNING("IGD was found but reported as not connected.");
-      } else if (result == 3) {
+      } else if (result == UPNP_UNKNOWN_DEVICE) {
         MWARNING("UPnP device was found but not recognized as IGD.");
       } else {
         MWARNING("UPNP_GetValidIGD returned an unknown result code.");
@@ -3132,11 +3137,14 @@ namespace nodetool
 #endif
     UPNPUrls urls;
     IGDdatas igdData;
-    char lanAddress[64];
-    result = UPNP_GetValidIGD(deviceList, &urls, &igdData, lanAddress, sizeof lanAddress);
+    char lanAddress[64] = {};
+    char wanAddress[64] = {};
+    result = UPNP_GetValidIGD(deviceList, &urls, &igdData,
+                              lanAddress, sizeof lanAddress,
+                              wanAddress, sizeof wanAddress);
     freeUPNPDevlist(deviceList);
     if (result > 0) {
-      if (result == 1) {
+      if (result == UPNP_CONNECTED_IGD) {
         std::ostringstream portString;
         portString << port;
 
@@ -3147,9 +3155,11 @@ namespace nodetool
         } else {
           MLOG_GREEN(el::Level::Info, "Deleted IGD port mapping.");
         }
-      } else if (result == 2) {
+      } else if (result == UPNP_PRIVATEIP_IGD) {
+        MWARNING("IGD was found but has a private or reserved external IP address.");
+      } else if (result == UPNP_DISCONNECTED_IGD) {
         MWARNING("IGD was found but reported as not connected.");
-      } else if (result == 3) {
+      } else if (result == UPNP_UNKNOWN_DEVICE) {
         MWARNING("UPnP device was found but not recognized as IGD.");
       } else {
         MWARNING("UPNP_GetValidIGD returned an unknown result code.");
