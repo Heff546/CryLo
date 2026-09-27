@@ -51,12 +51,24 @@ find_package_handle_standard_args(HIDAPI
 if(HIDAPI_FOUND)
   set(HIDAPI_LIBRARIES "${HIDAPI_LIBRARY}")
 
-  # The Linux libusb backend depends on libusb, not libudev. HIDAPI 0.15's
-  # deterministic Linux recipe disables the separate hidraw backend.
+  # HIDAPI's Linux libusb backend requires libusb. The deterministic depends
+  # libusb recipe disables udev, while a static system libusb may require
+  # libudev as a private dependency.
   if((STATIC AND UNIX AND NOT APPLE) OR (DEPENDS AND CMAKE_SYSTEM_NAME STREQUAL "Linux") OR ANDROID)
     find_library(LIBUSB-1.0_LIBRARY usb-1.0)
     if(LIBUSB-1.0_LIBRARY)
       set(HIDAPI_LIBRARIES "${HIDAPI_LIBRARIES};${LIBUSB-1.0_LIBRARY}")
+
+      # System static libusb commonly carries a libudev dependency. Do not add
+      # it to deterministic depends builds, whose libusb is built --disable-udev.
+      if(NOT DEPENDS)
+        find_library(LIBUDEV_LIBRARY udev)
+        if(LIBUDEV_LIBRARY)
+          set(HIDAPI_LIBRARIES "${HIDAPI_LIBRARIES};${LIBUDEV_LIBRARY}")
+        elseif(NOT ANDROID)
+          message(WARNING "libudev library not found, binaries may fail to link.")
+        endif()
+      endif()
     else()
       message(WARNING "libusb-1.0 library not found, binaries may fail to link.")
     endif()
