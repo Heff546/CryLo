@@ -963,14 +963,130 @@ function expectedSignedBundleName(
   );
 }
 
-function authenticateRemoteRelease(
-  remoteCommit,
-  branch
+function fetchAuthenticatedReleaseSource(
+  manifest,
+  currentCommit
+) {
+  const releaseRef =
+    `refs/crylo/releases/${manifest.releaseTag}`;
+
+  git([
+    'fetch',
+    '--no-tags',
+    'origin',
+    `+refs/tags/${manifest.releaseTag}:${releaseRef}`
+  ]);
+
+  const objectType = git(
+    ['cat-file', '-t', releaseRef],
+    true
+  );
+
+  if (objectType !== 'tag') {
+    fail(
+      `Signed release ${manifest.releaseTag} does not resolve ` +
+      'to an annotated Git tag.'
+    );
+  }
+
+  const taggedCommit = git(
+    ['rev-parse', `${releaseRef}^{}`],
+    true
+  );
+
+  if (
+    taggedCommit.toLowerCase() !==
+      manifest.gitCommit.toLowerCase()
+  ) {
+    fail(
+      `Signed release tag ${manifest.releaseTag} does not point ` +
+      'to its authenticated Git commit.\n' +
+      `Manifest: ${manifest.gitCommit}\n` +
+      `Tag:      ${taggedCommit}`
+    );
+  }
+
+  const tagObject = git(
+    ['cat-file', '-p', releaseRef],
+    true
+  );
+
+  const tagNameMatch =
+    tagObject.match(/^tag (.+)$/m);
+
+  if (
+    !tagNameMatch ||
+    tagNameMatch[1] !== manifest.releaseTag
+  ) {
+    fail(
+      `Signed release ${manifest.releaseTag} has an invalid ` +
+      'annotated tag identity.'
+    );
+  }
+
+  if (
+    currentCommit.toLowerCase() !==
+      taggedCommit.toLowerCase()
+  ) {
+    const ancestry = spawnSync(
+      'git',
+      [
+        'merge-base',
+        '--is-ancestor',
+        currentCommit,
+        taggedCommit
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        stdio: 'ignore',
+        shell: false
+      }
+    );
+
+    if (
+      ancestry.error ||
+      ancestry.status !== 0
+    ) {
+      fail(
+        `Signed release ${manifest.releaseTag} is not a ` +
+        'fast-forward descendant of the current CryLo source.\n' +
+        `Current: ${currentCommit}\n` +
+        `Release: ${taggedCommit}`
+      );
+    }
+  }
+
+  console.log(
+    `Release source tag...... VERIFIED  ${manifest.releaseTag}`
+  );
+  console.log(
+    `Release source commit... VERIFIED  ${taggedCommit}`
+  );
+
+  return taggedCommit;
+}
+
+function authenticateSignedRelease(
+  currentCommit,
+  options = {}
 ) {
   const target = releaseTarget();
 
   if (!target) {
     return null;
+  }
+
+  const requiredCommit =
+    options.requireCommit || null;
+
+  if (
+    requiredCommit !== null &&
+    !/^[0-9a-f]{40}$/i.test(requiredCommit)
+  ) {
+    fail(
+      'The required signed CryLo release commit is invalid.'
+    );
   }
 
   const currentPublicKey = path.join(
@@ -1005,7 +1121,10 @@ function authenticateRemoteRelease(
 
   console.log();
   console.log('===== VERIFYING SIGNED CRYLO RELEASE =====');
-  console.log(`Candidate commit: ${remoteCommit}`);
+  console.log(`Current commit: ${currentCommit}`);
+  console.log(
+    `Target: ${target.platform}/${target.architecture}`
+  );
   console.log(`Rollback floor: ${minimumSequence}`);
 
   const apiUrl =
@@ -1137,10 +1256,22 @@ function authenticateRemoteRelease(
         !/^[0-9a-f]{40}$/i.test(
           manifest.gitCommit
         ) ||
-        manifest.gitCommit.toLowerCase() !==
-          remoteCommit.toLowerCase() ||
-        manifest.gitBranch !== branch ||
+        (
+          manifest.gitBranch !== undefined &&
+          (
+            typeof manifest.gitBranch !== 'string' ||
+            !manifest.gitBranch
+          )
+        ) ||
         manifest.releaseTag !== release.tag_name
+      ) {
+        continue;
+      }
+
+      if (
+        requiredCommit !== null &&
+        manifest.gitCommit.toLowerCase() !==
+          requiredCommit.toLowerCase()
       ) {
         continue;
       }
@@ -1179,19 +1310,72 @@ function authenticateRemoteRelease(
         }
       }
 
+      const matchingArtifacts = Array.isArray(
+        manifest.artifacts
+      )
+        ? manifest.artifacts.filter(
+            (artifact) =>
+              artifact &&
+              artifact.platform === target.platform &&
+              artifact.architecture === target.architecture
+          )
+        : [];
+
+      if (matchingArtifacts.length !== 1) {
+        continue;
+      }
+
+      const artifact = matchingArtifacts[0];
+
+      if (
+        typeof artifact.file !== 'string' ||
+        !artifact.file ||
+        artifact.file !== path.basename(artifact.file) ||
+        artifact.file.includes('/') ||
+        artifact.file.includes('\\')
+      ) {
+        continue;
+      }
+
+      const expectedArtifactName =
+        expectedSignedBundleName(
+          manifest.version,
+          target
+        );
+
+      if (artifact.file !== expectedArtifactName) {
+        continue;
+      }
+
+      const remoteArtifact = release.assets.find(
+        (asset) =>
+          asset &&
+          asset.name === artifact.file
+      );
+
+      if (
+        !remoteArtifact ||
+        typeof remoteArtifact.browser_download_url !== 'string'
+      ) {
+        continue;
+      }
+
       signedCandidates.push({
         release,
         manifest,
         manifestPath,
         signaturePath,
-        candidateDirectory
+        candidateDirectory,
+        artifact,
+        remoteArtifact
       });
     }
 
     if (!signedCandidates.length) {
       fail(
-        'No trusted signed CryLo testnet release authorizes ' +
-        `candidate commit ${remoteCommit}. ` +
+        'No trusted signed CryLo testnet release is available for ' +
+        `${target.platform}/${target.architecture} at or above ` +
+        `release sequence ${minimumSequence}. ` +
         'The source tree was not modified.'
       );
     }
@@ -1202,56 +1386,43 @@ function authenticateRemoteRelease(
         left.manifest.releaseSequence
     );
 
-    const selected = signedCandidates[0];
-    const manifest = selected.manifest;
+    const highestSequence =
+      signedCandidates[0].manifest.releaseSequence;
 
-    const matchingArtifacts = Array.isArray(
-      manifest.artifacts
-    )
-      ? manifest.artifacts.filter(
-          (artifact) =>
-            artifact &&
-            artifact.platform === target.platform &&
-            artifact.architecture === target.architecture
-        )
-      : [];
-
-    if (matchingArtifacts.length !== 1) {
-      fail(
-        `Signed release ${manifest.releaseTag} must contain exactly ` +
-        `one ${target.platform}/${target.architecture} artifact.`
+    const highestCandidates =
+      signedCandidates.filter(
+        (candidate) =>
+          candidate.manifest.releaseSequence ===
+            highestSequence
       );
-    }
 
-    const artifact = matchingArtifacts[0];
-
-    if (
-      typeof artifact.file !== 'string' ||
-      !artifact.file ||
-      artifact.file !== path.basename(artifact.file) ||
-      artifact.file.includes('/') ||
-      artifact.file.includes('\\')
-    ) {
-      fail(
-        'Signed release contains an invalid artifact filename.'
-      );
-    }
-
-    const remoteArtifact = selected.release.assets.find(
-      (asset) =>
-        asset &&
-        asset.name === artifact.file
+    const highestIdentities = new Set(
+      highestCandidates.map(
+        (candidate) =>
+          [
+            candidate.manifest.releaseTag,
+            candidate.manifest.version,
+            candidate.manifest.gitCommit.toLowerCase()
+          ].join('\0')
+      )
     );
 
-    if (
-      !remoteArtifact ||
-      typeof remoteArtifact.browser_download_url !== 'string'
-    ) {
+    if (highestIdentities.size !== 1) {
       fail(
-        `Signed artifact ${artifact.file} is missing from ` +
-        `${manifest.releaseTag}.`
+        `Multiple trusted CryLo releases reuse sequence ` +
+        `${highestSequence} for different release identities.`
       );
     }
+
+    const selected = highestCandidates[0];
+    const manifest = selected.manifest;
+    const artifact = selected.artifact;
+
+    const authenticatedCommit =
+      fetchAuthenticatedReleaseSource(
+        manifest,
+        currentCommit
+      );
 
     const artifactPath = path.join(
       selected.candidateDirectory,
@@ -1260,7 +1431,7 @@ function authenticateRemoteRelease(
 
     try {
       httpsDownload(
-        remoteArtifact.browser_download_url,
+        selected.remoteArtifact.browser_download_url,
         artifactPath
       );
     } catch (error) {
@@ -1310,14 +1481,20 @@ function authenticateRemoteRelease(
       `Authorized sequence...... ${manifest.releaseSequence}`
     );
     console.log(
-      `Authorized commit........ ${manifest.gitCommit}`
+      `Authorized commit........ ${authenticatedCommit}`
     );
+
+    if (manifest.gitBranch) {
+      console.log(
+        `Release provenance..... ${manifest.gitBranch}`
+      );
+    }
 
     return {
       releaseSequence: manifest.releaseSequence,
       releaseTag: manifest.releaseTag,
       version: manifest.version,
-      gitCommit: manifest.gitCommit
+      gitCommit: authenticatedCommit
     };
   } finally {
     try {
@@ -1335,8 +1512,7 @@ function authenticateRemoteRelease(
 }
 
 function resumedReleaseAuthorization(
-  currentCommit,
-  remoteCommit
+  currentCommit
 ) {
   const commit =
     process.env.CRYLO_AUTHORIZED_COMMIT || '';
@@ -1354,8 +1530,6 @@ function resumedReleaseAuthorization(
     !/^[0-9a-f]{40}$/i.test(commit) ||
     commit.toLowerCase() !==
       currentCommit.toLowerCase() ||
-    commit.toLowerCase() !==
-      remoteCommit.toLowerCase() ||
     !/^[1-9][0-9]*$/.test(sequenceText) ||
     !releaseTag ||
     !version
@@ -2833,45 +3007,6 @@ function update() {
     );
   }
 
-  const upstreamResult = spawnSync(
-    'git',
-    [
-      'rev-parse',
-      '--abbrev-ref',
-      '--symbolic-full-name',
-      '@{upstream}'
-    ],
-    {
-      cwd: root,
-      env: process.env,
-      encoding: 'utf8',
-      shell: false
-    }
-  );
-
-  let upstream;
-
-  if (
-    upstreamResult.error ||
-    upstreamResult.status !== 0
-  ) {
-    upstream = `origin/${branch}`;
-
-    console.log(
-      `No configured upstream; using "${upstream}".`
-    );
-  } else {
-    upstream = String(
-      upstreamResult.stdout || ''
-    ).trim();
-  }
-
-  if (!upstream.startsWith('origin/')) {
-    fail(
-      `CryLo update expected an origin upstream, found "${upstream}".`
-    );
-  }
-
   const before = git(
     ['rev-parse', 'HEAD'],
     true
@@ -2880,43 +3015,85 @@ function update() {
   console.log(`Branch: ${branch}`);
   console.log('Checking for CryLo updates...');
 
-  const remoteBranch =
-    upstream.slice('origin/'.length);
-
-  /*
-   * Fetch only updates the remote-tracking ref.
-   * No fetched source is checked out or executed here.
-   */
-  git([
-    'fetch',
-    'origin',
-    `+refs/heads/${remoteBranch}:refs/remotes/${upstream}`
-  ]);
-
-  const remote = git(
-    ['rev-parse', upstream],
-    true
-  );
-
-  if (before !== remote) {
-    const base = git(
-      ['merge-base', 'HEAD', upstream],
-      true
-    );
-
-    if (base !== before) {
-      fail(
-        'The local and remote CryLo histories have diverged. ' +
-        'Update stopped without modifying the source tree.'
-      );
-    }
-  }
-
   const resumed =
     process.env.CRYLO_UPDATE_RESUMED === '1';
 
   const signedTarget =
     releaseTarget();
+
+  let upstream = null;
+  let remote = before;
+
+  if (!signedTarget) {
+    const upstreamResult = spawnSync(
+      'git',
+      [
+        'rev-parse',
+        '--abbrev-ref',
+        '--symbolic-full-name',
+        '@{upstream}'
+      ],
+      {
+        cwd: root,
+        env: process.env,
+        encoding: 'utf8',
+        shell: false
+      }
+    );
+
+    if (
+      upstreamResult.error ||
+      upstreamResult.status !== 0
+    ) {
+      upstream = `origin/${branch}`;
+
+      console.log(
+        `No configured upstream; using "${upstream}".`
+      );
+    } else {
+      upstream = String(
+        upstreamResult.stdout || ''
+      ).trim();
+    }
+
+    if (!upstream.startsWith('origin/')) {
+      fail(
+        `CryLo update expected an origin upstream, found "${upstream}".`
+      );
+    }
+
+    const remoteBranch =
+      upstream.slice('origin/'.length);
+
+    /*
+     * Unsigned platforms retain the legacy branch-based update path.
+     * Signed platforms authenticate and fetch an exact release tag below.
+     */
+    git([
+      'fetch',
+      'origin',
+      `+refs/heads/${remoteBranch}:refs/remotes/${upstream}`
+    ]);
+
+    remote = git(
+      ['rev-parse', upstream],
+      true
+    );
+
+    if (before !== remote) {
+      const base = git(
+        ['merge-base', 'HEAD', upstream],
+        true
+      );
+
+      if (base !== before) {
+        fail(
+          'The local and remote CryLo histories have diverged. ' +
+          'Update stopped without modifying the source tree.'
+        );
+      }
+    }
+  }
 
   let authorization = null;
 
@@ -2932,8 +3109,7 @@ function update() {
     if (resumed) {
       if (resumedAuthorizationPresent) {
         authorization = resumedReleaseAuthorization(
-          before,
-          remote
+          before
         );
 
         console.log();
@@ -2956,9 +3132,9 @@ function update() {
           'Authenticating first signed Windows CryLo update...'
         );
 
-        authorization = authenticateRemoteRelease(
-          remote,
-          branch
+        authorization = authenticateSignedRelease(
+          before,
+          { requireCommit: before }
         );
       } else {
         fail(
@@ -2982,11 +3158,14 @@ function update() {
        * authenticate the candidate commit using the currently
        * installed updater, verifier, and public key BEFORE merge.
        */
-      authorization = authenticateRemoteRelease(
-        remote,
-        branch
+      authorization = authenticateSignedRelease(
+        before
       );
     }
+  }
+
+  if (signedTarget && authorization) {
+    remote = authorization.gitCommit;
   }
 
   if (
@@ -3028,7 +3207,7 @@ function update() {
     git([
       'merge',
       '--ff-only',
-      upstream
+      signedTarget ? remote : upstream
     ]);
 
     after = git(
