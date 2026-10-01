@@ -15,6 +15,7 @@ function platformDefinition(platform) {
   if (platform === 'win') {
     return {
       daemon: 'CryLo-daemon.exe',
+      walletCli: 'CryLo-wallet.exe',
       walletRpc: 'CryLo-wallet-rpc.exe'
     };
   }
@@ -22,6 +23,7 @@ function platformDefinition(platform) {
   if (platform === 'mac') {
     return {
       daemon: 'CryLo-daemon',
+      walletCli: null,
       walletRpc: 'CryLo-wallet-rpc'
     };
   }
@@ -29,10 +31,14 @@ function platformDefinition(platform) {
   fail('Platform must be win or mac.');
 }
 
-function hasPair(directory, names) {
+function hasRequiredNativeFiles(directory, names) {
   return (
     fs.existsSync(path.join(directory, names.daemon)) &&
-    fs.existsSync(path.join(directory, names.walletRpc))
+    fs.existsSync(path.join(directory, names.walletRpc)) &&
+    (
+      !names.walletCli ||
+      fs.existsSync(path.join(directory, names.walletCli))
+    )
   );
 }
 
@@ -46,7 +52,7 @@ function collectReleaseBins(directory, names, depth, results) {
     return;
   }
 
-  if (path.basename(directory) === 'bin' && hasPair(directory, names)) {
+  if (path.basename(directory) === 'bin' && hasRequiredNativeFiles(directory, names)) {
     results.push(path.resolve(directory));
     return;
   }
@@ -67,10 +73,10 @@ const names = platformDefinition(platform);
 
 if (process.env.CRYLO_RELEASE_BIN) {
   const configured = path.resolve(process.env.CRYLO_RELEASE_BIN);
-  if (!hasPair(configured, names)) {
+  if (!hasRequiredNativeFiles(configured, names)) {
     fail(
-      `CRYLO_RELEASE_BIN does not contain ${names.daemon} and ` +
-      `${names.walletRpc}: ${configured}`
+      `CRYLO_RELEASE_BIN does not contain the required ${platform} ` +
+      `CryLo native files: ${configured}`
     );
   }
 
@@ -79,7 +85,7 @@ if (process.env.CRYLO_RELEASE_BIN) {
 }
 
 const direct = path.join(root, 'build', 'bin');
-if (hasPair(direct, names)) {
+if (hasRequiredNativeFiles(direct, names)) {
   process.stdout.write(`${direct}\n`);
   process.exit(0);
 }
@@ -96,7 +102,7 @@ if (unique.length === 1) {
 
 if (unique.length === 0) {
   fail(
-    `No ${platform} CryLo release binary pair was found. ` +
+    `No complete ${platform} CryLo native release directory was found. ` +
     'Set CRYLO_RELEASE_BIN to the native release bin directory.'
   );
 }

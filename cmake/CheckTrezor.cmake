@@ -6,7 +6,7 @@ OPTION(TREZOR_DEBUG "Main trezor debugging switch" OFF)
 
 # Use Trezor master switch
 if (USE_DEVICE_TREZOR)
-    if(DEPENDS OR Protobuf_DIR)
+    if(DEPENDS OR Protobuf_DIR OR WIN32)
         # Protobuf's config package owns the FindProtobuf-compatible variables
         # used below.  This must be a cache entry because protobuf declares it
         # with option(), and CMP0077 is not available at CryLo's CMake 3.12

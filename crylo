@@ -37,7 +37,7 @@ if [ "$(uname -s)" = "Linux" ]; then
   esac
 
   NODE_VERSION=24.21.0
-  NPM_VERSION=12.0.2
+  NPM_VERSION=12.1.0
   NODE_NAME="node-v$NODE_VERSION-linux-$NODE_ARCH"
   NODE_BASE="$HOME/.local/share/crylo/runtime"
   NODE_DIRECTORY="$NODE_BASE/$NODE_NAME"

@@ -10,9 +10,13 @@ if /I not "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
     )
 )
 
-where powershell.exe >nul 2>nul
-if errorlevel 1 (
-    echo ERROR: Windows PowerShell is required to prepare the CryLo runtime.
+set "CRYLO_WINDOWS_ROOT=%SystemRoot%"
+if not defined CRYLO_WINDOWS_ROOT set "CRYLO_WINDOWS_ROOT=%WINDIR%"
+if not defined CRYLO_WINDOWS_ROOT set "CRYLO_WINDOWS_ROOT=C:\Windows"
+set "CRYLO_POWERSHELL=%CRYLO_WINDOWS_ROOT%\System32\WindowsPowerShell\v1.0\powershell.exe"
+
+if not exist "%CRYLO_POWERSHELL%" (
+    echo ERROR: The trusted Windows PowerShell executable was not found.
     exit /b 1
 )
 
@@ -34,17 +38,18 @@ set "CRYLO_NODE_NAME=node-v%CRYLO_NODE_VERSION%-win-x64"
 set "CRYLO_NODE_SHA256=158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
 set "CRYLO_NODE_DIRECTORY=%CRYLO_RUNTIME_ROOT%\%CRYLO_NODE_NAME%"
 set "CRYLO_NODE_EXE=%CRYLO_NODE_DIRECTORY%\node.exe"
-set "CRYLO_NPM_VERSION=12.0.2"
+set "CRYLO_NPM_VERSION=12.1.0"
 set "CRYLO_NPM_CMD=%CRYLO_NODE_DIRECTORY%\npm.cmd"
 set "CRYLO_NPM_CLI=%CRYLO_NODE_DIRECTORY%\node_modules\npm\bin\npm-cli.js"
 set "CRYLO_NODE_URL=https://nodejs.org/dist/v%CRYLO_NODE_VERSION%/%CRYLO_NODE_NAME%.zip"
 
-set "CRYLO_GIT_VERSION=2.55.0.5"
+set "CRYLO_GIT_VERSION=2.56.0"
+set "CRYLO_GIT_BUILD=2.56.0.windows.1"
 set "CRYLO_GIT_NAME=MinGit-%CRYLO_GIT_VERSION%-64-bit"
-set "CRYLO_GIT_SHA256=56d7b226b7693196cfc71fef26568f536c4a021ab6c37ff2db4287bed908e96e"
-set "CRYLO_GIT_DIRECTORY=%CRYLO_RUNTIME_ROOT%\mingit-%CRYLO_GIT_VERSION%-x64"
+set "CRYLO_GIT_SHA256=064b440ff870ed5198527e8f3a92cdf5bd2fd0fedf5e718af95e3fdaddeff718"
+set "CRYLO_GIT_DIRECTORY=%CRYLO_RUNTIME_ROOT%\mingit-%CRYLO_GIT_BUILD%-x64"
 set "CRYLO_GIT_EXE=%CRYLO_GIT_DIRECTORY%\cmd\git.exe"
-set "CRYLO_GIT_URL=https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/%CRYLO_GIT_NAME%.zip"
+set "CRYLO_GIT_URL=https://github.com/git-for-windows/git/releases/download/v%CRYLO_GIT_BUILD%/%CRYLO_GIT_NAME%.zip"
 
 call :ensure_node
 if errorlevel 1 exit /b %errorlevel%
@@ -85,7 +90,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-powershell.exe -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri $env:CRYLO_NODE_URL -OutFile $env:CRYLO_NODE_ARCHIVE; $actual=(Get-FileHash -LiteralPath $env:CRYLO_NODE_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant(); if ($actual -ne $env:CRYLO_NODE_SHA256.ToLowerInvariant()) { throw ('CryLo Node.js SHA256 mismatch. Expected ' + $env:CRYLO_NODE_SHA256 + ', received ' + $actual) }; Expand-Archive -LiteralPath $env:CRYLO_NODE_ARCHIVE -DestinationPath $env:CRYLO_NODE_TEMP -Force; $source=Join-Path $env:CRYLO_NODE_TEMP $env:CRYLO_NODE_NAME; $node=Join-Path $source 'node.exe'; if (-not (Test-Path -LiteralPath $node -PathType Leaf)) { throw 'Downloaded CryLo Node.js runtime is incomplete.' }; $version=& $node --version; if ($version -ne ('v' + $env:CRYLO_NODE_VERSION)) { throw ('Downloaded CryLo Node.js version mismatch: ' + $version) }; if (Test-Path -LiteralPath $env:CRYLO_NODE_DIRECTORY) { Remove-Item -LiteralPath $env:CRYLO_NODE_DIRECTORY -Recurse -Force }; Move-Item -LiteralPath $source -Destination $env:CRYLO_NODE_DIRECTORY"
+"%CRYLO_POWERSHELL%" -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri $env:CRYLO_NODE_URL -OutFile $env:CRYLO_NODE_ARCHIVE; $actual=(Get-FileHash -LiteralPath $env:CRYLO_NODE_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant(); if ($actual -ne $env:CRYLO_NODE_SHA256.ToLowerInvariant()) { throw ('CryLo Node.js SHA256 mismatch. Expected ' + $env:CRYLO_NODE_SHA256 + ', received ' + $actual) }; Expand-Archive -LiteralPath $env:CRYLO_NODE_ARCHIVE -DestinationPath $env:CRYLO_NODE_TEMP -Force; $source=Join-Path $env:CRYLO_NODE_TEMP $env:CRYLO_NODE_NAME; $node=Join-Path $source 'node.exe'; if (-not (Test-Path -LiteralPath $node -PathType Leaf)) { throw 'Downloaded CryLo Node.js runtime is incomplete.' }; $version=& $node --version; if ($version -ne ('v' + $env:CRYLO_NODE_VERSION)) { throw ('Downloaded CryLo Node.js version mismatch: ' + $version) }; if (Test-Path -LiteralPath $env:CRYLO_NODE_DIRECTORY) { Remove-Item -LiteralPath $env:CRYLO_NODE_DIRECTORY -Recurse -Force }; Move-Item -LiteralPath $source -Destination $env:CRYLO_NODE_DIRECTORY"
 set "CRYLO_NODE_INSTALL_RC=%ERRORLEVEL%"
 
 if not "%CRYLO_NODE_INSTALL_RC%"=="0" (
@@ -114,7 +119,7 @@ exit /b 0
 set "CRYLO_NPM_READY=false"
 
 if exist "%CRYLO_NPM_CMD%" if exist "%CRYLO_NPM_CLI%" (
-    powershell.exe -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_NPM_CMD --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne $env:CRYLO_NPM_VERSION) { exit 1 }" >nul 2>nul
+    "%CRYLO_POWERSHELL%" -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_NPM_CMD --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne $env:CRYLO_NPM_VERSION) { exit 1 }" >nul 2>nul
     if not errorlevel 1 set "CRYLO_NPM_READY=true"
 )
 
@@ -138,7 +143,7 @@ if not exist "%CRYLO_NPM_CMD%" (
     exit /b 1
 )
 
-powershell.exe -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_NPM_CMD --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne $env:CRYLO_NPM_VERSION) { exit 1 }" >nul 2>nul
+"%CRYLO_POWERSHELL%" -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_NPM_CMD --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne $env:CRYLO_NPM_VERSION) { exit 1 }" >nul 2>nul
 if errorlevel 1 (
     echo ERROR: CryLo npm runtime version verification failed.
     exit /b 1
@@ -151,7 +156,7 @@ exit /b 0
 set "CRYLO_GIT_READY=false"
 
 if exist "%CRYLO_GIT_EXE%" (
-    powershell.exe -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_GIT_EXE --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne 'git version 2.55.0.windows.5') { exit 1 }" >nul 2>nul
+    "%CRYLO_POWERSHELL%" -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_GIT_EXE --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne ('git version ' + $env:CRYLO_GIT_BUILD)) { exit 1 }" >nul 2>nul
     if not errorlevel 1 set "CRYLO_GIT_READY=true"
 )
 
@@ -169,7 +174,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-powershell.exe -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri $env:CRYLO_GIT_URL -OutFile $env:CRYLO_GIT_ARCHIVE; $actual=(Get-FileHash -LiteralPath $env:CRYLO_GIT_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant(); if ($actual -ne $env:CRYLO_GIT_SHA256.ToLowerInvariant()) { throw ('CryLo Git SHA256 mismatch. Expected ' + $env:CRYLO_GIT_SHA256 + ', received ' + $actual) }; New-Item -ItemType Directory -Force -Path $env:CRYLO_GIT_EXTRACT | Out-Null; Expand-Archive -LiteralPath $env:CRYLO_GIT_ARCHIVE -DestinationPath $env:CRYLO_GIT_EXTRACT -Force; $git=Join-Path $env:CRYLO_GIT_EXTRACT 'cmd\git.exe'; if (-not (Test-Path -LiteralPath $git -PathType Leaf)) { throw 'Downloaded CryLo Git runtime is incomplete.' }; $version=& $git --version; if ($version -notmatch '2\.55\.0\.windows\.5') { throw ('Downloaded CryLo Git version mismatch: ' + $version) }; if (Test-Path -LiteralPath $env:CRYLO_GIT_DIRECTORY) { Remove-Item -LiteralPath $env:CRYLO_GIT_DIRECTORY -Recurse -Force }; Move-Item -LiteralPath $env:CRYLO_GIT_EXTRACT -Destination $env:CRYLO_GIT_DIRECTORY"
+"%CRYLO_POWERSHELL%" -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri $env:CRYLO_GIT_URL -OutFile $env:CRYLO_GIT_ARCHIVE; $actual=(Get-FileHash -LiteralPath $env:CRYLO_GIT_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant(); if ($actual -ne $env:CRYLO_GIT_SHA256.ToLowerInvariant()) { throw ('CryLo Git SHA256 mismatch. Expected ' + $env:CRYLO_GIT_SHA256 + ', received ' + $actual) }; New-Item -ItemType Directory -Force -Path $env:CRYLO_GIT_EXTRACT | Out-Null; Expand-Archive -LiteralPath $env:CRYLO_GIT_ARCHIVE -DestinationPath $env:CRYLO_GIT_EXTRACT -Force; $git=Join-Path $env:CRYLO_GIT_EXTRACT 'cmd\git.exe'; if (-not (Test-Path -LiteralPath $git -PathType Leaf)) { throw 'Downloaded CryLo Git runtime is incomplete.' }; $version=& $git --version; if ($version -ne ('git version ' + $env:CRYLO_GIT_BUILD)) { throw ('Downloaded CryLo Git version mismatch: ' + $version) }; if (Test-Path -LiteralPath $env:CRYLO_GIT_DIRECTORY) { Remove-Item -LiteralPath $env:CRYLO_GIT_DIRECTORY -Recurse -Force }; Move-Item -LiteralPath $env:CRYLO_GIT_EXTRACT -Destination $env:CRYLO_GIT_DIRECTORY"
 set "CRYLO_GIT_INSTALL_RC=%ERRORLEVEL%"
 
 if not "%CRYLO_GIT_INSTALL_RC%"=="0" (
@@ -185,7 +190,7 @@ if not exist "%CRYLO_GIT_EXE%" (
     exit /b 1
 )
 
-powershell.exe -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_GIT_EXE --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne 'git version 2.55.0.windows.5') { exit 1 }" >nul 2>nul
+"%CRYLO_POWERSHELL%" -NoProfile -NonInteractive -Command "$version = (& $env:CRYLO_GIT_EXE --version 2>$null); if ($LASTEXITCODE -ne 0 -or [string]$version -ne ('git version ' + $env:CRYLO_GIT_BUILD)) { exit 1 }" >nul 2>nul
 if errorlevel 1 (
     echo ERROR: CryLo Git runtime version verification failed.
     exit /b 1

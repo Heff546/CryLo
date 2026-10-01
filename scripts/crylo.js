@@ -40,19 +40,93 @@ const generatedElectronInputs = [
   'electron/bin/win/CryLo-wallet-rpc.exe'
 ];
 
-const windowsRuntimeDlls = [
-  'libgcc_s_seh-1.dll',
-  'libiconv-2.dll',
-  'libicudt78.dll',
-  'libicuin78.dll',
-  'libicuuc78.dll',
-  'libstdc++-6.dll',
-  'libwinpthread-1.dll'
-];
+const {
+  WINDOWS_BUILD_RUNTIME_MANIFEST,
+  readWindowsBuildRuntimeManifest,
+  detectPeArchitecture,
+  isolatedWindowsPath
+} = require('../electron/scripts/windows-runtime-dlls');
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
   process.exit(1);
+}
+
+function gitExecutable() {
+  if (process.platform !== 'win32') {
+    return 'git';
+  }
+
+  const runtimeText = String(
+    process.env.CRYLO_GIT_RUNTIME || ''
+  ).trim();
+
+  if (!runtimeText) {
+    fail(
+      'CryLo Windows Git runtime is not declared. ' +
+      'Run CryLo through crylo.cmd.'
+    );
+  }
+
+  const localAppData = process.env.LOCALAPPDATA;
+
+  if (!localAppData) {
+    fail(
+      'LOCALAPPDATA is unavailable for the managed CryLo Git runtime.'
+    );
+  }
+
+  const trustedRoot = path.resolve(
+    localAppData,
+    'CryLo',
+    'runtime'
+  );
+
+  const runtimeDirectory = path.resolve(
+    runtimeText
+  );
+
+  let trustedReal;
+  let runtimeReal;
+
+  try {
+    trustedReal = fs.realpathSync(trustedRoot);
+    runtimeReal = fs.realpathSync(runtimeDirectory);
+  } catch (error) {
+    fail(
+      `Unable to verify the managed CryLo Git runtime: ${error.message}`
+    );
+  }
+
+  const trustedPrefix =
+    trustedReal.toLowerCase() + path.sep;
+
+  if (
+    runtimeReal.toLowerCase() ===
+      trustedReal.toLowerCase() ||
+    !runtimeReal.toLowerCase().startsWith(
+      trustedPrefix
+    )
+  ) {
+    fail(
+      'CryLo Windows Git runtime is outside the trusted ' +
+      'CryLo user runtime directory.'
+    );
+  }
+
+  const executable = path.join(
+    runtimeReal,
+    'cmd',
+    'git.exe'
+  );
+
+  if (!fs.existsSync(executable)) {
+    fail(
+      `Managed CryLo Git executable is missing: ${executable}`
+    );
+  }
+
+  return executable;
 }
 
 function run(command, args = [], options = {}) {
@@ -113,7 +187,7 @@ function runNode(script, args = []) {
 
 function git(args, capture = false) {
   return run(
-    'git',
+    gitExecutable(),
     args,
     { capture }
   );
@@ -639,17 +713,18 @@ function windowsPowerShellExecutable() {
     return null;
   }
 
-  if (process.env.SystemRoot) {
-    return path.join(
-      process.env.SystemRoot,
-      'System32',
-      'WindowsPowerShell',
-      'v1.0',
-      'powershell.exe'
-    );
-  }
+  const systemRoot =
+    process.env.SystemRoot ||
+    process.env.WINDIR ||
+    'C:\\Windows';
 
-  return 'powershell.exe';
+  return path.join(
+    systemRoot,
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe'
+  );
 }
 
 function httpsDownload(url, output) {
@@ -1029,7 +1104,7 @@ function fetchAuthenticatedReleaseSource(
       taggedCommit.toLowerCase()
   ) {
     const ancestry = spawnSync(
-      'git',
+      gitExecutable(),
       [
         'merge-base',
         '--is-ancestor',
@@ -2320,23 +2395,14 @@ function installAuthorizedWindowsBundle(
     const installerName =
       `CryLo-Wallet-Setup-${authorization.version}-x64.exe`;
 
-    const expectedEntries = [
-      native.daemon,
-      native.walletCli,
-      native.walletRpc,
-      ...windowsRuntimeDlls,
-      installerName
-    ].sort();
+    const powershell =
+      windowsPowerShellExecutable();
 
-    const powershell = process.env.SystemRoot
-      ? path.join(
-          process.env.SystemRoot,
-          'System32',
-          'WindowsPowerShell',
-          'v1.0',
-          'powershell.exe'
-        )
-      : 'powershell.exe';
+    if (!fs.existsSync(powershell)) {
+      throw new Error(
+        `Trusted Windows PowerShell executable was not found: ${powershell}`
+      );
+    }
 
     const archiveEnvironment = {
       ...process.env,
@@ -2377,22 +2443,52 @@ function installAuthorizedWindowsBundle(
       listing.stdout || ''
     )
       .split(/\r?\n/)
-      .filter(Boolean)
-      .sort();
+      .filter(Boolean);
 
-    if (
-      entries.length !== expectedEntries.length ||
-      entries.some(
-        (entry, index) =>
-          entry !== expectedEntries[index] ||
-          entry !== path.basename(entry) ||
-          entry.includes('/') ||
-          entry.includes('\\')
-      )
-    ) {
+    if (!entries.length) {
       throw new Error(
-        'Authenticated CryLo Windows release bundle contains unexpected entries.'
+        'Authenticated CryLo Windows release bundle is empty.'
       );
+    }
+
+    const entryNames = new Set();
+
+    for (const entry of entries) {
+      const key = entry.toLowerCase();
+
+      if (
+        entry !== path.basename(entry) ||
+        entry.includes('/') ||
+        entry.includes('\\') ||
+        entry.includes(':') ||
+        entry === '.' ||
+        entry === '..' ||
+        entryNames.has(key)
+      ) {
+        throw new Error(
+          `Authenticated CryLo Windows release bundle contains ` +
+          `an unsafe or duplicate entry: ${entry}`
+        );
+      }
+
+      entryNames.add(key);
+    }
+
+    const requiredBaseEntries = [
+      native.daemon,
+      native.walletCli,
+      native.walletRpc,
+      WINDOWS_BUILD_RUNTIME_MANIFEST,
+      'BINARY-MANIFEST.txt',
+      installerName
+    ];
+
+    for (const entry of requiredBaseEntries) {
+      if (!entryNames.has(entry.toLowerCase())) {
+        throw new Error(
+          `Authenticated CryLo Windows release bundle is missing: ${entry}`
+        );
+      }
     }
 
     const extractionDirectory = path.join(
@@ -2442,7 +2538,7 @@ function installAuthorizedWindowsBundle(
       );
     }
 
-    for (const entry of expectedEntries) {
+    for (const entry of entries) {
       const extracted = path.join(
         extractionDirectory,
         entry
@@ -2457,6 +2553,162 @@ function installAuthorizedWindowsBundle(
           `Authenticated Windows bundle entry is not a regular file: ${entry}`
         );
       }
+    }
+
+    const runtimeManifestSource = path.join(
+      extractionDirectory,
+      WINDOWS_BUILD_RUNTIME_MANIFEST
+    );
+
+    const binaryManifestSource = path.join(
+      extractionDirectory,
+      'BINARY-MANIFEST.txt'
+    );
+
+    const runtimeManifest =
+      readWindowsBuildRuntimeManifest(
+        runtimeManifestSource,
+        {
+          architecture: 'x64',
+          network: network.mode
+        }
+      );
+
+    if (
+      runtimeManifest.gitCommit.toLowerCase() !==
+        authorization.gitCommit.toLowerCase()
+    ) {
+      throw new Error(
+        'Windows build/runtime manifest commit does not match ' +
+        'the authenticated CryLo release.'
+      );
+    }
+
+    if (!runtimeManifest.runtime.length) {
+      throw new Error(
+        'Windows build/runtime manifest contains no runtime DLLs.'
+      );
+    }
+
+    const expectedRoots = [
+      native.daemon,
+      native.walletCli,
+      native.walletRpc
+    ].sort();
+
+    const manifestRoots = runtimeManifest.roots
+      .map((entry) => entry && entry.file)
+      .sort();
+
+    if (
+      JSON.stringify(expectedRoots) !==
+      JSON.stringify(manifestRoots)
+    ) {
+      throw new Error(
+        'Windows build/runtime manifest does not describe the exact ' +
+        'authenticated native root set.'
+      );
+    }
+
+    for (const rootEntry of runtimeManifest.roots) {
+      if (
+        !rootEntry ||
+        typeof rootEntry.file !== 'string' ||
+        !Number.isSafeInteger(rootEntry.size) ||
+        rootEntry.size <= 0 ||
+        !/^[a-f0-9]{64}$/i.test(rootEntry.sha256 || '') ||
+        rootEntry.architecture !== 'x64' ||
+        !Array.isArray(rootEntry.dependencies)
+      ) {
+        throw new Error(
+          'Windows build/runtime manifest contains an invalid root entry.'
+        );
+      }
+
+      const source = path.join(
+        extractionDirectory,
+        rootEntry.file
+      );
+
+      if (
+        fs.statSync(source).size !== rootEntry.size ||
+        sha256File(source) !== rootEntry.sha256 ||
+        detectPeArchitecture(source) !== 'x64'
+      ) {
+        throw new Error(
+          `Authenticated Windows native root mismatch: ${rootEntry.file}`
+        );
+      }
+    }
+
+    for (const runtimeEntry of runtimeManifest.runtime) {
+      const source = path.join(
+        extractionDirectory,
+        runtimeEntry.file
+      );
+
+      if (
+        fs.statSync(source).size !== runtimeEntry.size ||
+        sha256File(source) !== runtimeEntry.sha256 ||
+        detectPeArchitecture(source) !== 'x64'
+      ) {
+        throw new Error(
+          `Authenticated Windows runtime DLL mismatch: ${runtimeEntry.file}`
+        );
+      }
+    }
+
+    const binaryManifestText =
+      fs.readFileSync(
+        binaryManifestSource,
+        'utf8'
+      );
+
+    const runtimeManifestHash =
+      sha256File(
+        runtimeManifestSource
+      );
+
+    const requiredBinaryManifestLines = [
+      'Platform: win',
+      'Architecture: x64',
+      `Network: ${network.mode}`,
+      `Runtime-Manifest: ${WINDOWS_BUILD_RUNTIME_MANIFEST}`,
+      `Runtime-Manifest-SHA256: ${runtimeManifestHash}`,
+      `Windows-Runtime-DLL-Count: ${runtimeManifest.runtime.length}`
+    ];
+
+    for (const requiredLine of requiredBinaryManifestLines) {
+      if (!binaryManifestText.includes(requiredLine)) {
+        throw new Error(
+          `Windows binary manifest is missing authenticated metadata: ` +
+          `${requiredLine}`
+        );
+      }
+    }
+
+    const expectedEntries = [
+      ...expectedRoots,
+      ...runtimeManifest.runtime.map(
+        (runtimeEntry) => runtimeEntry.file
+      ),
+      WINDOWS_BUILD_RUNTIME_MANIFEST,
+      'BINARY-MANIFEST.txt',
+      installerName
+    ].sort();
+
+    const sortedEntries = [...entries].sort();
+
+    if (
+      sortedEntries.length !== expectedEntries.length ||
+      sortedEntries.some(
+        (entry, index) =>
+          entry !== expectedEntries[index]
+      )
+    ) {
+      throw new Error(
+        'Authenticated CryLo Windows release bundle contains unexpected entries.'
+      );
     }
 
     fs.mkdirSync(
@@ -2484,47 +2736,85 @@ function installAuthorizedWindowsBundle(
       installerName
     );
 
+    const installedRuntimeManifest = path.join(
+      native.directory,
+      WINDOWS_BUILD_RUNTIME_MANIFEST
+    );
+
+    let previousRuntime = [];
+
+    if (fs.existsSync(installedRuntimeManifest)) {
+      const previousManifest =
+        readWindowsBuildRuntimeManifest(
+          installedRuntimeManifest,
+          {
+            architecture: 'x64',
+            network: network.mode
+          }
+        );
+
+      previousRuntime =
+        previousManifest.runtime.map(
+          (runtimeEntry) => runtimeEntry.file
+        );
+    }
+
+    const newRuntimeNames = new Set(
+      runtimeManifest.runtime.map(
+        (runtimeEntry) =>
+          runtimeEntry.file.toLowerCase()
+      )
+    );
+
+    const staleRuntime = previousRuntime
+      .filter(
+        (file) =>
+          !newRuntimeNames.has(file.toLowerCase())
+      )
+      .sort((left, right) =>
+        left.localeCompare(
+          right,
+          undefined,
+          { sensitivity: 'base' }
+        )
+      );
+
     const installations = [
+      ...runtimeManifest.roots.map(
+        (rootEntry) => ({
+          source: path.join(
+            extractionDirectory,
+            rootEntry.file
+          ),
+          destination: path.join(
+            native.directory,
+            rootEntry.file
+          )
+        })
+      ),
+      ...runtimeManifest.runtime.map(
+        (runtimeEntry) => ({
+          source: path.join(
+            extractionDirectory,
+            runtimeEntry.file
+          ),
+          destination: path.join(
+            native.directory,
+            runtimeEntry.file
+          )
+        })
+      ),
       {
-        source: path.join(
-          extractionDirectory,
-          native.daemon
-        ),
-        destination: path.join(
-          native.directory,
-          native.daemon
-        )
+        source: runtimeManifestSource,
+        destination: installedRuntimeManifest
       },
       {
-        source: path.join(
-          extractionDirectory,
-          native.walletCli
-        ),
+        source: binaryManifestSource,
         destination: path.join(
           native.directory,
-          native.walletCli
+          'BINARY-MANIFEST.txt'
         )
       },
-      {
-        source: path.join(
-          extractionDirectory,
-          native.walletRpc
-        ),
-        destination: path.join(
-          native.directory,
-          native.walletRpc
-        )
-      },
-      ...windowsRuntimeDlls.map((file) => ({
-        source: path.join(
-          extractionDirectory,
-          file
-        ),
-        destination: path.join(
-          native.directory,
-          file
-        )
-      })),
       {
         source: path.join(
           extractionDirectory,
@@ -2538,6 +2828,7 @@ function installAuthorizedWindowsBundle(
       `${process.pid}-${Date.now()}`;
 
     const staged = [];
+    const removals = [];
     let transactionSucceeded = false;
     const daemonWasRunning = Boolean(runningDaemon());
     let daemonStoppedForInstall = false;
@@ -2612,6 +2903,56 @@ function installAuthorizedWindowsBundle(
         }
       }
 
+      for (const file of staleRuntime) {
+        const destination = path.join(
+          native.directory,
+          file
+        );
+
+        if (!fs.existsSync(destination)) {
+          continue;
+        }
+
+        const record = {
+          destination,
+          backup:
+            `${destination}.before-release-${transactionId}`,
+          expectedHash:
+            sha256File(destination),
+          removed: false,
+          rollbackFailed: false
+        };
+
+        removals.push(record);
+
+        fs.copyFileSync(
+          record.destination,
+          record.backup
+        );
+
+        if (
+          sha256File(record.backup) !==
+          record.expectedHash
+        ) {
+          throw new Error(
+            `CryLo obsolete runtime backup hash mismatch: ${file}`
+          );
+        }
+
+        fs.rmSync(
+          record.destination,
+          { force: true }
+        );
+
+        if (fs.existsSync(record.destination)) {
+          throw new Error(
+            `Unable to remove obsolete CryLo runtime DLL: ${file}`
+          );
+        }
+
+        record.removed = true;
+      }
+
       for (const item of staged) {
         if (item.hadExisting) {
           fs.copyFileSync(
@@ -2653,24 +2994,15 @@ function installAuthorizedWindowsBundle(
         }
       }
 
-      const systemRoot =
-        process.env.SystemRoot ||
-        process.env.WINDIR ||
-        'C:\\Windows';
+      const isolatedPath =
+        isolatedWindowsPath(
+          native.directory
+        );
 
-      const isolatedPath = [
-        path.join(systemRoot, 'System32'),
-        systemRoot
-      ].join(';');
-
-      for (const file of [
-        native.daemon,
-        native.walletCli,
-        native.walletRpc
-      ]) {
+      for (const rootEntry of runtimeManifest.roots) {
         const executable = path.join(
           native.directory,
-          file
+          rootEntry.file
         );
 
         const verification = spawnSync(
@@ -2693,7 +3025,8 @@ function installAuthorizedWindowsBundle(
           verification.status !== 0
         ) {
           throw new Error(
-            `Standalone Windows release verification failed for ${file}.`
+            `Standalone Windows release verification failed for ` +
+            `${rootEntry.file}.`
           );
         }
 
@@ -2701,10 +3034,23 @@ function installAuthorizedWindowsBundle(
           String(verification.stdout || '') +
           String(verification.stderr || '');
 
-        if (!output.includes("CryLo Chain 'Testnet'")) {
+        if (
+          network.mode === 'testnet' &&
+          !output.includes("CryLo Chain 'Testnet'")
+        ) {
           throw new Error(
-            `Standalone Windows release verification returned an unexpected ` +
-            `version for ${file}.`
+            `Standalone Windows release returned an unexpected ` +
+            `Testnet version for ${rootEntry.file}.`
+          );
+        }
+
+        if (
+          network.mode === 'mainnet' &&
+          /testnet/i.test(output)
+        ) {
+          throw new Error(
+            `Standalone Windows Mainnet release identifies as Testnet: ` +
+            `${rootEntry.file}.`
           );
         }
       }
@@ -2788,6 +3134,41 @@ function installAuthorizedWindowsBundle(
         }
       }
 
+      for (const item of [...removals].reverse()) {
+        if (!item.removed) {
+          continue;
+        }
+
+        try {
+          if (!fs.existsSync(item.backup)) {
+            throw new Error(
+              `rollback backup is missing: ${item.backup}`
+            );
+          }
+
+          fs.copyFileSync(
+            item.backup,
+            item.destination
+          );
+
+          if (
+            sha256File(item.destination) !==
+            item.expectedHash
+          ) {
+            throw new Error(
+              'restored obsolete runtime does not match rollback backup'
+            );
+          }
+        } catch (rollbackError) {
+          item.rollbackFailed = true;
+
+          rollbackErrors.push(
+            `${path.basename(item.destination)}: ` +
+            `${rollbackError.message}`
+          );
+        }
+      }
+
       if (daemonStoppedForInstall) {
         console.log();
         console.log(
@@ -2844,6 +3225,22 @@ function installAuthorizedWindowsBundle(
           }
         }
       }
+
+      for (const item of removals) {
+        if (
+          transactionSucceeded ||
+          !item.rollbackFailed
+        ) {
+          try {
+            fs.rmSync(
+              item.backup,
+              { force: true }
+            );
+          } catch (_) {
+            // Best-effort successful-transaction cleanup.
+          }
+        }
+      }
     }
 
     if (
@@ -2882,6 +3279,15 @@ function installAuthorizedWindowsBundle(
     console.log(
       `Commit.................. ${authorization.gitCommit}`
     );
+    console.log(
+      `Runtime DLLs............ ${runtimeManifest.runtime.length}`
+    );
+
+    if (staleRuntime.length) {
+      console.log(
+        `Obsolete runtime DLLs... ${staleRuntime.length} removed`
+      );
+    }
 
     for (const item of installations) {
       console.log(
@@ -3026,7 +3432,7 @@ function update() {
 
   if (!signedTarget) {
     const upstreamResult = spawnSync(
-      'git',
+      gitExecutable(),
       [
         'rev-parse',
         '--abbrev-ref',
@@ -3714,7 +4120,7 @@ function ensureLinuxNodeRuntime() {
     }
 
     console.log(
-      'Installing npm 12.0.2 inside the isolated CryLo runtime...'
+      'Installing npm 12.1.0 inside the isolated CryLo runtime...'
     );
 
     const npmExecutable =
@@ -3737,7 +4143,7 @@ function ensureLinuxNodeRuntime() {
       runtimeDirectory,
       '--no-audit',
       '--no-fund',
-      'npm@12.0.2'
+      'npm@12.1.0'
     ]);
 
     npm = probe('npm', ['--version']);
@@ -4019,7 +4425,7 @@ function installUserCommand() {
     );
 
     const userPathResult = spawnSync(
-      'powershell.exe',
+      windowsPowerShellExecutable(),
       [
         '-NoProfile',
         '-NonInteractive',
@@ -4064,7 +4470,7 @@ function installUserCommand() {
         : commandDirectory;
 
       const pathUpdate = spawnSync(
-        'powershell.exe',
+        windowsPowerShellExecutable(),
         [
           '-NoProfile',
           '-NonInteractive',
@@ -5207,17 +5613,17 @@ function status() {
   console.log('===== CRYLO STATUS =====');
 
   const branch = probe(
-    'git',
+    gitExecutable(),
     ['branch', '--show-current']
   );
 
   const head = probe(
-    'git',
+    gitExecutable(),
     ['rev-parse', '--short=9', 'HEAD']
   );
 
   const workTree = probe(
-    'git',
+    gitExecutable(),
     ['status', '--porcelain']
   );
 

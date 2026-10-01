@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/crylo-install-win-linux-pi
+      - feature/unified-electron-release-pipeline
   workflow_dispatch:
 
 permissions:
@@ -76,12 +77,24 @@ jobs:
             throw "MSYS2 was not found at $bash"
           }
 
+          & $bash -lc 'pacman -Syu --noconfirm'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Initial MSYS2 full upgrade failed."
+          }
+
+          # Start a fresh MSYS2 process after the first full upgrade in case
+          # core runtime packages were replaced, then finish synchronization.
+          & $bash -lc 'pacman -Syu --noconfirm'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Final MSYS2 full upgrade failed."
+          }
+
           & $bash -lc @'
           set -e
-          pacman -Sy --noconfirm
           pacman -S --needed --noconfirm \
             mingw-w64-x86_64-toolchain \
             mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-pkgconf \
             make \
             mingw-w64-x86_64-boost \
             mingw-w64-x86_64-openssl \
@@ -93,7 +106,10 @@ jobs:
             mingw-w64-x86_64-libiconv \
             mingw-w64-x86_64-readline \
             mingw-w64-x86_64-unbound \
-            mingw-w64-x86_64-miniupnpc
+            mingw-w64-x86_64-miniupnpc \
+            mingw-w64-x86_64-protobuf \
+            mingw-w64-x86_64-hidapi \
+            mingw-w64-x86_64-libusb
           '@
 
           if ($LASTEXITCODE -ne 0) {
@@ -133,4 +149,6 @@ jobs:
             build/win-x64/bin/CryLo-daemon.exe
             build/win-x64/bin/CryLo-wallet.exe
             build/win-x64/bin/CryLo-wallet-rpc.exe
+            build/electron-runtime/win/BINARY-MANIFEST.txt
+            build/electron-runtime/win/WINDOWS-BUILD-RUNTIME-MANIFEST.json
             electron/dist/*.exe

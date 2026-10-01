@@ -2,9 +2,17 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
-const windowsRuntimeDlls = require('./windows-runtime-dlls');
+const {
+  WINDOWS_BUILD_RUNTIME_MANIFEST,
+  sha256,
+  discoverWindowsBuildRuntime,
+  writeWindowsBuildRuntimeManifest,
+  windowsRuntimeDirectory,
+  isolatedWindowsPath
+} = require('./windows-runtime-dlls');
 
 const electronDir = path.resolve(__dirname, '..');
 const root = path.resolve(electronDir, '..');
@@ -14,19 +22,13 @@ function fail(message) {
   process.exit(1);
 }
 
-function sha256(file) {
-  return crypto
-    .createHash('sha256')
-    .update(fs.readFileSync(file))
-    .digest('hex');
-}
-
 function platformDefinition(platform) {
   if (platform === 'win') {
     return {
       host: 'win32',
       dir: 'win',
       daemon: 'CryLo-daemon.exe',
+      walletCli: 'CryLo-wallet.exe',
       walletRpc: 'CryLo-wallet-rpc.exe'
     };
   }
@@ -36,6 +38,7 @@ function platformDefinition(platform) {
       host: 'darwin',
       dir: 'mac',
       daemon: 'CryLo-daemon',
+      walletCli: null,
       walletRpc: 'CryLo-wallet-rpc'
     };
   }
@@ -43,14 +46,43 @@ function platformDefinition(platform) {
   fail('Platform must be win or mac.');
 }
 
-function runVersion(binary) {
+function runVersion(binary, options = {}) {
   const result = spawnSync(binary, ['--version'], {
+    cwd: options.cwd,
+    env: options.env || process.env,
     encoding: 'utf8',
-    timeout: 10000
+    timeout: 10000,
+    shell: false,
+    windowsHide: true
   });
+
+  if (result.error || result.status !== 0) {
+    const detail = (
+      String(result.stdout || '') +
+      String(result.stderr || '')
+    ).trim();
+
+    fail(
+      `${path.basename(binary)} --version failed` +
+      (detail ? `:\n${detail}` : '.')
+    );
+  }
 
   const text = `${result.stdout || ''}${result.stderr || ''}`.trim();
   return text.split(/\r?\n/)[0] || 'unknown';
+}
+
+function copyVerified(source, destination) {
+  fs.copyFileSync(source, destination);
+
+  const sourceHash = sha256(source);
+  const destinationHash = sha256(destination);
+
+  if (sourceHash !== destinationHash) {
+    fail(`Copy verification failed for ${path.basename(source)}.`);
+  }
+
+  return destinationHash;
 }
 
 const platform = process.argv[2];
@@ -74,6 +106,10 @@ if (platform === 'win' && requestedArch !== 'x64') {
   fail('Only Windows x64 is supported by the current CryLo release matrix.');
 }
 
+if (!['testnet', 'mainnet'].includes(network)) {
+  fail(`Unsupported network: ${network}`);
+}
+
 const sourceDirectory = execFileSync(
   process.execPath,
   [
@@ -83,58 +119,37 @@ const sourceDirectory = execFileSync(
   { encoding: 'utf8' }
 ).trim();
 
-const destinationDirectory = path.join(
-  electronDir,
-  'bin',
-  definition.dir
-);
+const destinationDirectory =
+  platform === 'win'
+    ? path.join(root, 'build', 'electron-runtime', definition.dir)
+    : path.join(electronDir, 'bin', definition.dir);
 
 const detector = path.join(
   __dirname,
   'detect-native-binary-arch.js'
 );
 
-const files = [
+const packagedNativeFiles = [
   definition.daemon,
   definition.walletRpc
 ];
 
-function findWindowsRuntimeDirectory() {
-  if (process.env.CRYLO_WINDOWS_RUNTIME_DLL_DIR) {
-    return path.resolve(process.env.CRYLO_WINDOWS_RUNTIME_DLL_DIR);
-  }
-
-  const bashCandidates = [
-    process.env.CRYLO_MSYS2_BASH,
-    'C:\\msys64\\usr\\bin\\bash.exe',
-    'C:\\tools\\msys64\\usr\\bin\\bash.exe'
-  ].filter(Boolean);
-
-  for (const bash of bashCandidates) {
-    if (fs.existsSync(bash)) {
-      return path.resolve(
-        path.dirname(bash),
-        '..',
-        '..',
-        'mingw64',
-        'bin'
-      );
-    }
-  }
-
-  fail(
-    'MSYS2 runtime DLL directory was not found. Set ' +
-    'CRYLO_WINDOWS_RUNTIME_DLL_DIR or CRYLO_MSYS2_BASH.'
-  );
-}
-
-const windowsRuntimeDirectory =
+const discoveryRootNames =
   platform === 'win'
-    ? findWindowsRuntimeDirectory()
-    : null;
+    ? [
+        definition.daemon,
+        definition.walletCli,
+        definition.walletRpc
+      ]
+    : packagedNativeFiles;
 
-for (const name of files) {
+for (const name of discoveryRootNames) {
   const source = path.join(sourceDirectory, name);
+
+  if (!fs.existsSync(source)) {
+    fail(`Required native release file is missing: ${source}`);
+  }
+
   const arch = execFileSync(
     process.execPath,
     [detector, source],
@@ -146,24 +161,6 @@ for (const name of files) {
       `${name} is ${arch}, but the requested Electron target is ` +
       `${requestedArch}.`
     );
-  }
-}
-
-if (platform === 'win') {
-  for (const runtime of windowsRuntimeDlls) {
-    const source = path.join(windowsRuntimeDirectory, runtime.file);
-
-    if (!fs.existsSync(source)) {
-      fail(`Required pinned Windows runtime DLL is missing: ${source}`);
-    }
-
-    if (fs.statSync(source).size !== runtime.size) {
-      fail(`Pinned Windows runtime DLL size mismatch: ${runtime.file}`);
-    }
-
-    if (sha256(source) !== runtime.sha256) {
-      fail(`Pinned Windows runtime DLL SHA-256 mismatch: ${runtime.file}`);
-    }
   }
 }
 
@@ -186,8 +183,6 @@ if (network === 'testnet') {
       'with --testnet.'
     );
   }
-} else {
-  fail(`Unsupported network: ${network}`);
 }
 
 fs.mkdirSync(destinationDirectory, { recursive: true });
@@ -197,13 +192,201 @@ for (const entry of fs.readdirSync(destinationDirectory)) {
     entry.endsWith('.log') ||
     entry.includes('.old-') ||
     entry.includes('.before-') ||
-    entry.endsWith('.bak')
+    entry.endsWith('.bak') ||
+    (
+      platform === 'win' &&
+      (
+        entry.toLowerCase().endsWith('.dll') ||
+        entry === 'CryLo-daemon.exe' ||
+        entry === 'CryLo-wallet.exe' ||
+        entry === 'CryLo-wallet-rpc.exe' ||
+        entry === 'BINARY-MANIFEST.txt' ||
+        entry === WINDOWS_BUILD_RUNTIME_MANIFEST
+      )
+    )
   ) {
     fs.rmSync(
       path.join(destinationDirectory, entry),
       { force: true, recursive: true }
     );
   }
+}
+
+if (platform === 'win') {
+  let runtimeManifest;
+
+  try {
+    runtimeManifest = discoverWindowsBuildRuntime({
+      rootFiles: discoveryRootNames.map((name) =>
+        path.join(sourceDirectory, name)
+      ),
+      architecture: requestedArch,
+      network
+    });
+  } catch (error) {
+    fail(error.message);
+  }
+
+  runtimeManifest.gitCommit = execFileSync(
+    'git',
+    ['rev-parse', 'HEAD'],
+    {
+      cwd: root,
+      encoding: 'utf8'
+    }
+  ).trim();
+
+  const runtimeSourceDirectory = windowsRuntimeDirectory();
+
+  for (const runtime of runtimeManifest.runtime) {
+    const source = path.join(runtimeSourceDirectory, runtime.file);
+    const destination = path.join(destinationDirectory, runtime.file);
+    const copiedHash = copyVerified(source, destination);
+
+    if (
+      fs.statSync(destination).size !== runtime.size ||
+      copiedHash !== runtime.sha256
+    ) {
+      fail(`Runtime DLL changed during staging: ${runtime.file}`);
+    }
+
+    console.log(
+      `Synchronized runtime: ${runtime.file} ` +
+      `[${runtime.package} ${runtime.packageVersion}]`
+    );
+  }
+
+  const validationDirectory = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'crylo-win-runtime-verify-')
+  );
+
+  try {
+    for (const name of discoveryRootNames) {
+      copyVerified(
+        path.join(sourceDirectory, name),
+        path.join(validationDirectory, name)
+      );
+    }
+
+    for (const runtime of runtimeManifest.runtime) {
+      copyVerified(
+        path.join(destinationDirectory, runtime.file),
+        path.join(validationDirectory, runtime.file)
+      );
+    }
+
+    const validationEnv = {
+      ...process.env,
+      PATH: isolatedWindowsPath(validationDirectory)
+    };
+
+    for (const rootEntry of runtimeManifest.roots) {
+      const executable = path.join(validationDirectory, rootEntry.file);
+      const version = runVersion(
+        executable,
+        {
+          cwd: validationDirectory,
+          env: validationEnv
+        }
+      );
+
+      if (network === 'testnet' && !/testnet/i.test(version)) {
+        fail(`${rootEntry.file} does not identify as Testnet.`);
+      }
+
+      if (network === 'mainnet' && /testnet/i.test(version)) {
+        fail(`${rootEntry.file} identifies as Testnet during a Mainnet build.`);
+      }
+
+      rootEntry.version = version;
+    }
+  } finally {
+    fs.rmSync(
+      validationDirectory,
+      { recursive: true, force: true }
+    );
+  }
+
+  for (const name of packagedNativeFiles) {
+    const source = path.join(sourceDirectory, name);
+    const destination = path.join(destinationDirectory, name);
+
+    copyVerified(source, destination);
+    console.log(`Synchronized: ${name} [${requestedArch}]`);
+  }
+
+  const runtimeManifestPath = path.join(
+    destinationDirectory,
+    WINDOWS_BUILD_RUNTIME_MANIFEST
+  );
+
+  try {
+    writeWindowsBuildRuntimeManifest(
+      runtimeManifestPath,
+      runtimeManifest
+    );
+  } catch (error) {
+    fail(error.message);
+  }
+
+  const manifest = [];
+  manifest.push('CryLo Electron win Binary Manifest');
+  manifest.push(`Generated-UTC: ${new Date().toISOString()}`);
+  manifest.push('Platform: win');
+  manifest.push(`Architecture: ${requestedArch}`);
+  manifest.push(`Network: ${network}`);
+  manifest.push(
+    `Runtime-Manifest: ${WINDOWS_BUILD_RUNTIME_MANIFEST}`
+  );
+  manifest.push(
+    `Runtime-Manifest-SHA256: ${sha256(runtimeManifestPath)}`
+  );
+  manifest.push('');
+
+  for (const name of packagedNativeFiles) {
+    const destination = path.join(destinationDirectory, name);
+    const rootEntry = runtimeManifest.roots.find(
+      (entry) => entry.file === name
+    );
+
+    manifest.push(`File: ${name}`);
+    manifest.push(`Size: ${fs.statSync(destination).size}`);
+    manifest.push(`SHA256: ${sha256(destination)}`);
+    manifest.push(`Version: ${rootEntry.version}`);
+    manifest.push('');
+  }
+
+  const discoveryOnlyRoot = runtimeManifest.roots.find(
+    (entry) => entry.file === definition.walletCli
+  );
+
+  if (discoveryOnlyRoot) {
+    manifest.push(`Discovery-Root: ${discoveryOnlyRoot.file}`);
+    manifest.push(`Size: ${discoveryOnlyRoot.size}`);
+    manifest.push(`SHA256: ${discoveryOnlyRoot.sha256}`);
+    manifest.push(`Version: ${discoveryOnlyRoot.version}`);
+    manifest.push('');
+  }
+
+  manifest.push(
+    `Windows-Runtime-DLL-Count: ${runtimeManifest.runtime.length}`
+  );
+  manifest.push('');
+
+  fs.writeFileSync(
+    path.join(destinationDirectory, 'BINARY-MANIFEST.txt'),
+    `${manifest.join('\n')}\n`,
+    'utf8'
+  );
+
+  console.log(
+    fs.readFileSync(
+      path.join(destinationDirectory, 'BINARY-MANIFEST.txt'),
+      'utf8'
+    )
+  );
+
+  process.exit(0);
 }
 
 const manifest = [];
@@ -215,19 +398,11 @@ manifest.push(`Network: ${network}`);
 manifest.push(`Source-Directory: ${sourceDirectory}`);
 manifest.push('');
 
-for (const name of files) {
+for (const name of packagedNativeFiles) {
   const source = path.join(sourceDirectory, name);
   const destination = path.join(destinationDirectory, name);
 
-  fs.copyFileSync(source, destination);
-
-  const sourceHash = sha256(source);
-  const destinationHash = sha256(destination);
-
-  if (sourceHash !== destinationHash) {
-    fail(`Copy verification failed for ${name}.`);
-  }
-
+  const destinationHash = copyVerified(source, destination);
   const version = runVersion(destination);
 
   if (network === 'testnet' && !/testnet/i.test(version)) {
@@ -245,34 +420,6 @@ for (const name of files) {
   manifest.push('');
 
   console.log(`Synchronized: ${name} [${requestedArch}]`);
-}
-
-if (platform === 'win') {
-  manifest.push(`Runtime-DLL-Directory: ${windowsRuntimeDirectory}`);
-  manifest.push('');
-
-  for (const runtime of windowsRuntimeDlls) {
-    const source = path.join(windowsRuntimeDirectory, runtime.file);
-    const destination = path.join(destinationDirectory, runtime.file);
-
-    fs.copyFileSync(source, destination);
-
-    const destinationHash = sha256(destination);
-    if (
-      fs.statSync(destination).size !== runtime.size ||
-      destinationHash !== runtime.sha256
-    ) {
-      fail(`Copy verification failed for pinned runtime DLL ${runtime.file}.`);
-    }
-
-    manifest.push(`File: ${runtime.file}`);
-    manifest.push(`Size: ${runtime.size}`);
-    manifest.push(`SHA256: ${runtime.sha256}`);
-    manifest.push('Pinned-Windows-Runtime: yes');
-    manifest.push('');
-
-    console.log(`Synchronized pinned runtime: ${runtime.file}`);
-  }
 }
 
 fs.writeFileSync(

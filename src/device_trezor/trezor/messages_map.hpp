@@ -64,7 +64,7 @@ namespace trezor {
 
     template<class t_message=google::protobuf::Message>
     static messages::MessageType get_message_wire_number() {
-      BOOST_STATIC_ASSERT(boost::is_base_of<google::protobuf::Message, t_message>::value);
+      static_assert(std::is_base_of<google::protobuf::Message, t_message>::value);
       const auto descriptor_name = t_message::default_instance().GetDescriptor()->name();
       return get_message_wire_number(
           std::string(descriptor_name.data(), descriptor_name.size()));
@@ -73,7 +73,7 @@ namespace trezor {
 
   template<class t_message=google::protobuf::Message>
   std::shared_ptr<t_message> message_ptr_retype(std::shared_ptr<google::protobuf::Message> & in){
-    BOOST_STATIC_ASSERT(boost::is_base_of<google::protobuf::Message, t_message>::value);
+    static_assert(std::is_base_of<google::protobuf::Message, t_message>::value);
     if (!in){
       return nullptr;
     }
@@ -83,7 +83,7 @@ namespace trezor {
 
   template<class t_message=google::protobuf::Message>
   std::shared_ptr<t_message> message_ptr_retype_static(std::shared_ptr<google::protobuf::Message> & in){
-    BOOST_STATIC_ASSERT(boost::is_base_of<google::protobuf::Message, t_message>::value);
+    static_assert(std::is_base_of<google::protobuf::Message, t_message>::value);
     if (!in){
       return nullptr;
     }

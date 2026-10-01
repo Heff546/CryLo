@@ -1,16 +1,12 @@
 'use strict';
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const windowsRuntimeDlls = require('./windows-runtime-dlls');
-
-function sha256(file) {
-  return crypto
-    .createHash('sha256')
-    .update(fs.readFileSync(file))
-    .digest('hex');
-}
+const {
+  WINDOWS_BUILD_RUNTIME_MANIFEST,
+  sha256,
+  readWindowsBuildRuntimeManifest
+} = require('./windows-runtime-dlls');
 
 function platformDefinition(electronPlatformName) {
   if (electronPlatformName === 'linux') {
@@ -31,7 +27,7 @@ function platformDefinition(electronPlatformName) {
         'CryLo-daemon.exe',
         'CryLo-wallet-rpc.exe',
         'BINARY-MANIFEST.txt',
-        ...windowsRuntimeDlls.map((runtime) => runtime.file)
+        WINDOWS_BUILD_RUNTIME_MANIFEST
       ]
     };
   }
@@ -58,12 +54,13 @@ module.exports = async function afterPack(context) {
     return;
   }
 
-  const stagedDir = path.resolve(
-    __dirname,
-    '..',
-    'bin',
-    definition.dir
-  );
+  const electronDir = path.resolve(__dirname, '..');
+  const root = path.resolve(electronDir, '..');
+
+  const stagedDir =
+    context.electronPlatformName === 'win32'
+      ? path.join(root, 'build', 'electron-runtime', definition.dir)
+      : path.join(electronDir, 'bin', definition.dir);
 
   const packagedDir = path.join(
     context.appOutDir,
@@ -72,9 +69,27 @@ module.exports = async function afterPack(context) {
     definition.dir
   );
 
-  for (const name of definition.required) {
+  let required = [...definition.required];
+  let runtimeManifest = null;
+
+  if (context.electronPlatformName === 'win32') {
+    runtimeManifest = readWindowsBuildRuntimeManifest(
+      path.join(stagedDir, WINDOWS_BUILD_RUNTIME_MANIFEST),
+      { architecture: 'x64' }
+    );
+
+    required.push(
+      ...runtimeManifest.runtime.map((runtime) => runtime.file)
+    );
+  }
+
+  for (const name of required) {
     const staged = path.join(stagedDir, name);
     const packaged = path.join(packagedDir, name);
+
+    if (!fs.existsSync(staged)) {
+      throw new Error(`Staged runtime file is missing: ${staged}`);
+    }
 
     if (!fs.existsSync(packaged)) {
       throw new Error(
@@ -93,23 +108,53 @@ module.exports = async function afterPack(context) {
       );
     }
 
-    const pinnedRuntime = windowsRuntimeDlls.find(
-      (runtime) => runtime.file === name
-    );
+    if (runtimeManifest) {
+      const runtime = runtimeManifest.runtime.find(
+        (entry) => entry.file === name
+      );
 
-    if (pinnedRuntime) {
-      const packagedSize = fs.statSync(packaged).size;
       if (
-        packagedSize !== pinnedRuntime.size ||
-        packagedHash !== pinnedRuntime.sha256
+        runtime &&
+        (
+          fs.statSync(packaged).size !== runtime.size ||
+          packagedHash !== runtime.sha256
+        )
       ) {
-        throw new Error(`Packaged pinned runtime DLL mismatch: ${name}`);
+        throw new Error(
+          `Packaged Windows runtime DLL mismatch: ${name}`
+        );
       }
     }
 
     console.log(
       `Verified packaged runtime: ${name} (${packagedHash})`
     );
+  }
+
+  if (runtimeManifest) {
+    const expectedDlls = new Set(
+      runtimeManifest.runtime.map(
+        (entry) => entry.file.toLowerCase()
+      )
+    );
+
+    const packagedDlls = fs.readdirSync(packagedDir)
+      .filter((name) => name.toLowerCase().endsWith('.dll'));
+
+    for (const name of packagedDlls) {
+      if (!expectedDlls.has(name.toLowerCase())) {
+        throw new Error(
+          `Unexpected Windows runtime DLL entered package: ${name}`
+        );
+      }
+    }
+
+    if (packagedDlls.length !== expectedDlls.size) {
+      throw new Error(
+        `Packaged Windows runtime DLL count mismatch: ` +
+        `packaged=${packagedDlls.length}, manifest=${expectedDlls.size}`
+      );
+    }
   }
 
   const forbidden = fs.readdirSync(packagedDir).filter(name =>

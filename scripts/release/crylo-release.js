@@ -9,7 +9,7 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..', '..');
 const electronDir = path.join(root, 'electron');
 const managedNodeVersion = '24.21.0';
-const managedNpmVersion = '12.0.2';
+const managedNpmVersion = '12.1.0';
 
 const packageJson = JSON.parse(
   fs.readFileSync(
@@ -18,7 +18,15 @@ const packageJson = JSON.parse(
   )
 );
 
-const windowsRuntimeDlls = require('../../electron/scripts/windows-runtime-dlls');
+const releaseNetwork = process.env.CRYLO_NETWORK || 'testnet';
+
+const {
+  WINDOWS_BUILD_RUNTIME_MANIFEST,
+  sha256: windowsRuntimeSha256,
+  readWindowsBuildRuntimeManifest,
+  detectPeArchitecture,
+  isolatedWindowsPath
+} = require('../../electron/scripts/windows-runtime-dlls');
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -41,9 +49,105 @@ function argument(name, fallback = null) {
   return value;
 }
 
+function gitExecutable() {
+  if (process.platform !== 'win32') {
+    return 'git';
+  }
+
+  const runtimeText = String(
+    process.env.CRYLO_GIT_RUNTIME || ''
+  ).trim();
+
+  if (!runtimeText) {
+    fail(
+      'CryLo Windows Git runtime is not declared. ' +
+      'Run the release through crylo.cmd.'
+    );
+  }
+
+  const localAppData = process.env.LOCALAPPDATA;
+
+  if (!localAppData) {
+    fail(
+      'LOCALAPPDATA is unavailable for the managed CryLo Git runtime.'
+    );
+  }
+
+  const trustedRoot = path.resolve(
+    localAppData,
+    'CryLo',
+    'runtime'
+  );
+
+  const runtimeDirectory = path.resolve(
+    runtimeText
+  );
+
+  let trustedReal;
+  let runtimeReal;
+
+  try {
+    trustedReal = fs.realpathSync(trustedRoot);
+    runtimeReal = fs.realpathSync(runtimeDirectory);
+  } catch (error) {
+    fail(
+      `Unable to verify the managed CryLo Git runtime: ${error.message}`
+    );
+  }
+
+  const trustedPrefix =
+    trustedReal.toLowerCase() + path.sep;
+
+  if (
+    runtimeReal.toLowerCase() ===
+      trustedReal.toLowerCase() ||
+    !runtimeReal.toLowerCase().startsWith(
+      trustedPrefix
+    )
+  ) {
+    fail(
+      'CryLo Windows Git runtime is outside the trusted ' +
+      'CryLo user runtime directory.'
+    );
+  }
+
+  const executable = path.join(
+    runtimeReal,
+    'cmd',
+    'git.exe'
+  );
+
+  if (!fs.existsSync(executable)) {
+    fail(
+      `Managed CryLo Git executable is missing: ${executable}`
+    );
+  }
+
+  return executable;
+}
+
+function windowsPowerShellExecutable() {
+  if (process.platform !== 'win32') {
+    return null;
+  }
+
+  const systemRoot =
+    process.env.SystemRoot ||
+    process.env.WINDIR ||
+    'C:\\Windows';
+
+  return path.join(
+    systemRoot,
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe'
+  );
+}
+
 function gitCapture(args) {
   const result = spawnSync(
-    'git',
+    gitExecutable(),
     args,
     {
       cwd: root,
@@ -563,6 +667,30 @@ set -e
 export MSYSTEM=MINGW64
 export PATH="/mingw64/bin:/usr/bin:$PATH"
 
+command -v pacman >/dev/null || {
+  echo "ERROR: MSYS2 pacman missing"
+  exit 1
+}
+
+command -v pkg-config >/dev/null || {
+  echo "ERROR: pkg-config missing"
+  exit 1
+}
+
+pacman -Q   mingw-w64-x86_64-protobuf   mingw-w64-x86_64-hidapi   mingw-w64-x86_64-libusb   mingw-w64-x86_64-pkgconf >/dev/null || {
+  echo "ERROR: required Windows Trezor/runtime packages are missing"
+  exit 1
+}
+
+for pc in protobuf hidapi libusb-1.0; do
+  pkg-config --exists "$pc" || {
+    echo "ERROR: required pkg-config module missing: $pc"
+    exit 1
+  }
+done
+
+pacman -Q   mingw-w64-x86_64-protobuf   mingw-w64-x86_64-hidapi   mingw-w64-x86_64-libusb   mingw-w64-x86_64-pkgconf
+
 command -v cmake >/dev/null || { echo "ERROR: cmake missing"; exit 1; }
 command -v make >/dev/null || { echo "ERROR: make missing"; exit 1; }
 command -v x86_64-w64-mingw32-gcc >/dev/null || {
@@ -908,45 +1036,114 @@ function createWindowsReleaseBundle(
     }
   }
 
-  const mingwBin = windowsMingwBin();
+  const runtimeStaging = path.join(
+    root,
+    'build',
+    'electron-runtime',
+    'win'
+  );
 
-  for (const runtime of windowsRuntimeDlls) {
-    const source = path.join(
-      mingwBin,
-      runtime.file
+  const runtimeManifestSource = path.join(
+    runtimeStaging,
+    WINDOWS_BUILD_RUNTIME_MANIFEST
+  );
+
+  const binaryManifestSource = path.join(
+    runtimeStaging,
+    'BINARY-MANIFEST.txt'
+  );
+
+  if (!fs.existsSync(runtimeManifestSource)) {
+    fail(
+      `Windows build/runtime manifest is missing: ${runtimeManifestSource}`
     );
+  }
+
+  if (!fs.existsSync(binaryManifestSource)) {
+    fail(
+      `Windows binary manifest is missing: ${binaryManifestSource}`
+    );
+  }
+
+  let runtimeManifest;
+
+  try {
+    runtimeManifest = readWindowsBuildRuntimeManifest(
+      runtimeManifestSource,
+      {
+        architecture: target.arch,
+        network: releaseNetwork
+      }
+    );
+  } catch (error) {
+    fail(error.message);
+  }
+
+  const releaseCommit = gitCapture(['rev-parse', 'HEAD']);
+
+  if (runtimeManifest.gitCommit !== releaseCommit) {
+    fail(
+      `Windows build/runtime manifest commit mismatch.\n` +
+      `Manifest: ${runtimeManifest.gitCommit}\n` +
+      `HEAD:     ${releaseCommit}`
+    );
+  }
+
+  const expectedRoots = [...nativeFiles].sort();
+  const manifestRoots = runtimeManifest.roots
+    .map((entry) => entry.file)
+    .sort();
+
+  if (JSON.stringify(expectedRoots) !== JSON.stringify(manifestRoots)) {
+    fail(
+      'Windows build/runtime manifest does not describe the exact ' +
+      'official native release root set.'
+    );
+  }
+
+  for (const rootEntry of runtimeManifest.roots) {
+    const source = path.join(nativeBin, rootEntry.file);
+
+    if (
+      fs.statSync(source).size !== rootEntry.size ||
+      sha256File(source) !== rootEntry.sha256 ||
+      detectPeArchitecture(source) !== target.arch
+    ) {
+      fail(
+        `Windows build/runtime manifest root mismatch: ${rootEntry.file}`
+      );
+    }
+  }
+
+  for (const runtime of runtimeManifest.runtime) {
+    const source = path.join(runtimeStaging, runtime.file);
 
     if (!fs.existsSync(source)) {
-      fail(
-        `Required pinned Windows runtime DLL is missing: ${source}`
-      );
+      fail(`Required staged Windows runtime DLL is missing: ${source}`);
     }
 
-    const stat = fs.statSync(source);
-
-    if (stat.size !== runtime.size) {
-      fail(
-        `Pinned Windows runtime DLL size mismatch: ${runtime.file}\n` +
-        `Expected: ${runtime.size}\n` +
-        `Actual:   ${stat.size}`
-      );
+    if (
+      fs.statSync(source).size !== runtime.size ||
+      windowsRuntimeSha256(source) !== runtime.sha256 ||
+      detectPeArchitecture(source) !== target.arch
+    ) {
+      fail(`Staged Windows runtime DLL mismatch: ${runtime.file}`);
     }
+  }
 
-    const actualHash = sha256File(source);
+  const binaryManifestText = fs.readFileSync(
+    binaryManifestSource,
+    'utf8'
+  );
 
-    if (actualHash !== runtime.sha256) {
-      fail(
-        `Pinned Windows runtime DLL SHA-256 mismatch: ${runtime.file}\n` +
-        `Expected: ${runtime.sha256}\n` +
-        `Actual:   ${actualHash}`
-      );
-    }
-
-    if (peMachine(source) !== 0x8664) {
-      fail(
-        `Pinned Windows runtime DLL is not AMD64/x64: ${runtime.file}`
-      );
-    }
+  if (
+    !binaryManifestText.includes(
+      `Runtime-Manifest-SHA256: ${sha256File(runtimeManifestSource)}`
+    )
+  ) {
+    fail(
+      'Windows binary manifest does not authenticate the build/runtime manifest.'
+    );
   }
 
   const canonicalInstaller =
@@ -976,42 +1173,38 @@ function createWindowsReleaseBundle(
       );
     }
 
-    for (const runtime of windowsRuntimeDlls) {
-      const source = path.join(
-        mingwBin,
-        runtime.file
-      );
-      const destination = path.join(
-        staging,
-        runtime.file
-      );
+    for (const runtime of runtimeManifest.runtime) {
+      const source = path.join(runtimeStaging, runtime.file);
+      const destination = path.join(staging, runtime.file);
 
-      fs.copyFileSync(
-        source,
-        destination
-      );
+      fs.copyFileSync(source, destination);
 
-      if (sha256File(destination) !== runtime.sha256) {
+      if (
+        fs.statSync(destination).size !== runtime.size ||
+        sha256File(destination) !== runtime.sha256
+      ) {
         fail(
-          `Pinned Windows runtime DLL changed during staging: ${runtime.file}`
+          `Windows runtime DLL changed during official staging: ${runtime.file}`
         );
       }
     }
+
+    fs.copyFileSync(
+      runtimeManifestSource,
+      path.join(staging, WINDOWS_BUILD_RUNTIME_MANIFEST)
+    );
+
+    fs.copyFileSync(
+      binaryManifestSource,
+      path.join(staging, 'BINARY-MANIFEST.txt')
+    );
 
     fs.copyFileSync(
       installerSource,
       path.join(staging, canonicalInstaller)
     );
 
-    const systemRoot =
-      process.env.SystemRoot ||
-      process.env.WINDIR ||
-      'C:\\Windows';
-
-    const isolatedPath = [
-      path.join(systemRoot, 'System32'),
-      systemRoot
-    ].join(';');
+    const isolatedPath = isolatedWindowsPath(staging);
 
     for (const file of nativeFiles) {
       const executable = path.join(
@@ -1047,10 +1240,22 @@ function createWindowsReleaseBundle(
         String(verification.stdout || '') +
         String(verification.stderr || '');
 
-      if (!output.includes("CryLo Chain 'Testnet'")) {
+      if (
+        releaseNetwork === 'testnet' &&
+        !output.includes("CryLo Chain 'Testnet'")
+      ) {
         fail(
           `Standalone Windows release verification returned an unexpected ` +
-          `version for ${file}.`
+          `Testnet version for ${file}.`
+        );
+      }
+
+      if (
+        releaseNetwork === 'mainnet' &&
+        /testnet/i.test(output)
+      ) {
+        fail(
+          `Standalone Windows Mainnet release identifies as Testnet: ${file}.`
         );
       }
     }
@@ -1060,15 +1265,14 @@ function createWindowsReleaseBundle(
       { force: true }
     );
 
-    const powershell = process.env.SystemRoot
-      ? path.join(
-          process.env.SystemRoot,
-          'System32',
-          'WindowsPowerShell',
-          'v1.0',
-          'powershell.exe'
-        )
-      : 'powershell.exe';
+    const powershell =
+      windowsPowerShellExecutable();
+
+    if (!fs.existsSync(powershell)) {
+      fail(
+        `Trusted Windows PowerShell executable was not found: ${powershell}`
+      );
+    }
 
     const archiveEnvironment = {
       ...process.env,
@@ -1101,18 +1305,25 @@ function createWindowsReleaseBundle(
       );
     }
 
+    const entries = [
+      ...nativeFiles,
+      ...runtimeManifest.runtime.map((runtime) => runtime.file),
+      WINDOWS_BUILD_RUNTIME_MANIFEST,
+      'BINARY-MANIFEST.txt',
+      canonicalInstaller
+    ].sort();
+
     console.log();
     console.log(
       '===== OFFICIAL SIGNABLE RELEASE BUNDLE ====='
     );
     console.log(`Release tag: ${releaseTag}`);
     console.log(`Bundle: ${bundlePath}`);
+    console.log(
+      `Verified Windows runtime DLLs: ${runtimeManifest.runtime.length}`
+    );
 
-    for (const entry of [
-      ...nativeFiles,
-      ...windowsRuntimeDlls.map((runtime) => runtime.file),
-      canonicalInstaller
-    ].sort()) {
+    for (const entry of entries) {
       console.log(`  ${entry}`);
     }
 
