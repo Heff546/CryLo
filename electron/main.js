@@ -6,7 +6,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron')
 
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const crypto = require('crypto');
+const { spawn, spawnSync } = require('child_process');
 const http = require('http');
 const os = require('os');
 const { ethers } = require('ethers');
@@ -1581,6 +1582,142 @@ ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
 });
 
 
+const CRYLO_MANAGED_NODE_VERSION = '24.21.0';
+const CRYLO_MANAGED_NODE_SHA256 =
+  'ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32';
+
+function trustedWindowsPowerShellPath() {
+  const windowsRoot =
+    process.env.SystemRoot ||
+    process.env.WINDIR ||
+    'C:\\Windows';
+
+  return path.join(
+    windowsRoot,
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe'
+  );
+}
+
+function secureWindowsOperatorPathSync(
+  targetPath,
+  isDirectory
+) {
+  if (!IS_WIN) {
+    return;
+  }
+
+  const script = String.raw`
+$ErrorActionPreference = 'Stop'
+$target = $env:CRYLO_ACL_TARGET
+$isDirectory = $env:CRYLO_ACL_DIRECTORY -eq '1'
+
+if ([string]::IsNullOrWhiteSpace($target)) {
+  throw 'CryLo ACL target is missing.'
+}
+
+$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$userSid = $identity.User
+$systemSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')
+$administratorsSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
+$allow = [System.Security.AccessControl.AccessControlType]::Allow
+$fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
+
+if ($isDirectory) {
+  $acl = New-Object System.Security.AccessControl.DirectorySecurity
+  $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+  $propagation = [System.Security.AccessControl.PropagationFlags]::None
+} else {
+  $acl = New-Object System.Security.AccessControl.FileSecurity
+  $inheritance = [System.Security.AccessControl.InheritanceFlags]::None
+  $propagation = [System.Security.AccessControl.PropagationFlags]::None
+}
+
+$acl.SetOwner($userSid)
+$acl.SetAccessRuleProtection($true, $false)
+
+foreach ($sid in @($userSid, $systemSid, $administratorsSid)) {
+  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $fullControl, $inheritance, $propagation, $allow)
+  [void]$acl.AddAccessRule($rule)
+}
+
+Set-Acl -LiteralPath $target -AclObject $acl
+
+$verified = Get-Acl -LiteralPath $target
+if (-not $verified.AreAccessRulesProtected) {
+  throw 'CryLo private ACL inheritance remains enabled.'
+}
+
+$allowed = @($userSid.Value, $systemSid.Value, $administratorsSid.Value)
+$rules = $verified.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+$seen = @{}
+
+foreach ($rule in $rules) {
+  $sid = $rule.IdentityReference.Value
+  if ($allowed -notcontains $sid) { throw ('Unexpected ACL principal: ' + $sid) }
+  if ($rule.IsInherited) { throw ('Inherited ACL entry detected: ' + $sid) }
+  if ($rule.AccessControlType -ne $allow) { throw ('Non-Allow ACL entry detected: ' + $sid) }
+  $granted = [int64]$rule.FileSystemRights
+  $required = [int64][System.Security.AccessControl.FileSystemRights]::FullControl
+  if (($granted -band $required) -ne $required) { throw ('Incomplete ACL rights for: ' + $sid) }
+  $seen[$sid] = $true
+}
+
+foreach ($sid in $allowed) {
+  if (-not $seen.ContainsKey($sid)) { throw ('Required ACL principal is missing: ' + $sid) }
+}
+`;
+
+  const encodedScript =
+    Buffer.from(
+      script,
+      'utf16le'
+    ).toString('base64');
+
+  const result = spawnSync(
+    trustedWindowsPowerShellPath(),
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      encodedScript
+    ],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+      env: {
+        ...process.env,
+        CRYLO_ACL_TARGET:
+          targetPath,
+        CRYLO_ACL_DIRECTORY:
+          isDirectory ? '1' : '0'
+      }
+    }
+  );
+
+  if (result.error) {
+    throw new Error(
+      `Unable to protect CryLo operator path: ${targetPath}`,
+      { cause: result.error }
+    );
+  }
+
+  if (result.status !== 0) {
+    const detail = String(
+      result.stderr ||
+      result.stdout ||
+      'Windows ACL protection failed.'
+    ).trim();
+
+    throw new Error(
+      `Unable to protect CryLo operator path: ${targetPath}: ${detail}`
+    );
+  }
+}
 function saveOperatorConfig({
   operatorAddress,
   tier,
@@ -1596,6 +1733,13 @@ function saveOperatorConfig({
     recursive: true,
     mode: 0o700
   });
+
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      dir,
+      true
+    );
+  }
 
   const file = path.join(dir, 'operator.json');
 
@@ -1695,13 +1839,23 @@ function saveOperatorConfig({
     }
   );
 
-  if (!IS_WIN) {
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      temporaryFile,
+      false
+    );
+  } else {
     fs.chmodSync(temporaryFile, 0o600);
   }
 
   fs.renameSync(temporaryFile, file);
 
-  if (!IS_WIN) {
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      file,
+      false
+    );
+  } else {
     fs.chmodSync(file, 0o600);
   }
 
@@ -2350,6 +2504,123 @@ async function resolveBundledOperatorRuntimePath() {
   );
 }
 
+async function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash =
+      crypto.createHash('sha256');
+
+    const stream =
+      fs.createReadStream(filePath);
+
+    stream.on('error', reject);
+
+    stream.on('data', (chunk) => {
+      hash.update(chunk);
+    });
+
+    stream.on('end', () => {
+      resolve(hash.digest('hex'));
+    });
+  });
+}
+
+function getCryLoManagedWindowsNodeBinary() {
+  const localAppData =
+    process.env.LOCALAPPDATA ||
+    path.join(
+      os.homedir(),
+      'AppData',
+      'Local'
+    );
+
+  return path.join(
+    localAppData,
+    'CryLo',
+    'runtime',
+    `node-v${CRYLO_MANAGED_NODE_VERSION}-win-x64`,
+    'node.exe'
+  );
+}
+
+async function resolveNodeServiceBinary() {
+  if (!IS_WIN) {
+    return resolveSystemNodeBinary();
+  }
+
+  const managedNode =
+    getCryLoManagedWindowsNodeBinary();
+
+  if (!(await pathExists(managedNode))) {
+    throw new Error(
+      `CryLo-managed Node.js ${CRYLO_MANAGED_NODE_VERSION} is required for the Windows Node Service. ` +
+      'Run the CryLo installer or crylo update to repair the managed runtime.'
+    );
+  }
+
+  const managedNodeStat =
+    await fs.promises.lstat(managedNode);
+
+  if (
+    !managedNodeStat.isFile() ||
+    managedNodeStat.isSymbolicLink()
+  ) {
+    throw new Error(
+      'CryLo-managed Node.js runtime is not a trusted regular file.'
+    );
+  }
+
+  const managedNodeHash =
+    await sha256File(managedNode);
+
+  if (
+    managedNodeHash.toLowerCase() !==
+      CRYLO_MANAGED_NODE_SHA256
+  ) {
+    throw new Error(
+      'CryLo-managed Node.js runtime SHA256 validation failed. Run the CryLo installer or crylo update to repair the managed runtime.'
+    );
+  }
+
+  const versionResult =
+    await runLocalCommand(
+      managedNode,
+      ['--version']
+    );
+
+  const expectedVersion =
+    `v${CRYLO_MANAGED_NODE_VERSION}`;
+
+  if (
+    !versionResult.ok ||
+    String(versionResult.stdout).trim() !==
+      expectedVersion
+  ) {
+    throw new Error(
+      `CryLo-managed Node.js runtime validation failed. Expected ${expectedVersion}.`
+    );
+  }
+
+  const architectureResult =
+    await runLocalCommand(
+      managedNode,
+      [
+        '-p',
+        'process.arch'
+      ]
+    );
+
+  if (
+    !architectureResult.ok ||
+    String(architectureResult.stdout).trim() !==
+      'x64'
+  ) {
+    throw new Error(
+      'CryLo-managed Node.js runtime must be Windows x64.'
+    );
+  }
+
+  return managedNode;
+}
 async function resolveSystemNodeBinary() {
   const configured =
     process.env.CRYLONEXUS_NODE_BINARY;
@@ -2848,6 +3119,13 @@ async function writeOperatorServiceDefinition({
     }
   );
 
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      path.dirname(servicePath),
+      true
+    );
+  }
+
   const temporaryPath =
     `${servicePath}.tmp-${process.pid}`;
 
@@ -2860,7 +3138,12 @@ async function writeOperatorServiceDefinition({
     }
   );
 
-  if (!IS_WIN) {
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      temporaryPath,
+      false
+    );
+  } else {
     await fs.promises.chmod(
       temporaryPath,
       0o600
@@ -2871,6 +3154,13 @@ async function writeOperatorServiceDefinition({
     temporaryPath,
     servicePath
   );
+
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      servicePath,
+      false
+    );
+  }
 }
 
 async function registerOperatorServiceDefinition(
@@ -3039,6 +3329,13 @@ async function installBundledOperatorRuntime() {
     }
   );
 
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      paths.operatorDirectory,
+      true
+    );
+  }
+
   await fs.promises.mkdir(
     path.join(
       paths.operatorDirectory,
@@ -3154,7 +3451,7 @@ async function installBundledOperatorRuntime() {
   }
 
   const nodeBinary =
-    await resolveSystemNodeBinary();
+    await resolveNodeServiceBinary();
 
   const nodeVersionResult =
     await runLocalCommand(
@@ -3165,7 +3462,7 @@ async function installBundledOperatorRuntime() {
   if (!nodeVersionResult.ok) {
     throw new Error(
       nodeVersionResult.stderr ||
-      'Unable to validate the system Node.js installation.'
+      'Unable to validate the selected Node.js runtime.'
     );
   }
 
@@ -3283,10 +3580,24 @@ async function installBundledOperatorRuntime() {
     }
   );
 
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      temporaryManifest,
+      false
+    );
+  }
+
   await fs.promises.rename(
     temporaryManifest,
     manifestPath
   );
+
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      manifestPath,
+      false
+    );
+  }
 
   const service =
     await readOperatorServiceStatus();
@@ -3796,6 +4107,13 @@ function writePrivateJsonAtomic(filePath, value) {
     mode: 0o700
   });
 
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      directory,
+      true
+    );
+  }
+
   fs.writeFileSync(
     temporaryPath,
     `${JSON.stringify(value, null, 2)}\n`,
@@ -3806,13 +4124,23 @@ function writePrivateJsonAtomic(filePath, value) {
     }
   );
 
-  if (!IS_WIN) {
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      temporaryPath,
+      false
+    );
+  } else {
     fs.chmodSync(temporaryPath, 0o600);
   }
 
   fs.renameSync(temporaryPath, filePath);
 
-  if (!IS_WIN) {
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      filePath,
+      false
+    );
+  } else {
     fs.chmodSync(filePath, 0o600);
   }
 }
@@ -3827,6 +4155,13 @@ function writePrivateTextAtomic(filePath, value) {
     mode: 0o700
   });
 
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      directory,
+      true
+    );
+  }
+
   fs.writeFileSync(
     temporaryPath,
     `${String(value).trim()}\n`,
@@ -3837,13 +4172,23 @@ function writePrivateTextAtomic(filePath, value) {
     }
   );
 
-  if (!IS_WIN) {
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      temporaryPath,
+      false
+    );
+  } else {
     fs.chmodSync(temporaryPath, 0o600);
   }
 
   fs.renameSync(temporaryPath, filePath);
 
-  if (!IS_WIN) {
+  if (IS_WIN) {
+    secureWindowsOperatorPathSync(
+      filePath,
+      false
+    );
+  } else {
     fs.chmodSync(filePath, 0o600);
   }
 }

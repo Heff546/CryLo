@@ -28,6 +28,71 @@ function assertStatePath(statePath) {
   return path.resolve(statePath);
 }
 
+function normalizePathForComparison(value) {
+  const normalized =
+    path.normalize(
+      path.resolve(value)
+    );
+
+  return process.platform === 'win32'
+    ? normalized.toLowerCase()
+    : normalized;
+}
+
+function assertNoSequenceStatePathRedirection(
+  statePath
+) {
+  const resolvedPath =
+    assertStatePath(statePath);
+
+  let candidatePath = resolvedPath;
+
+  while (true) {
+    try {
+      const stat =
+        fs.lstatSync(candidatePath);
+
+      if (stat.isSymbolicLink()) {
+        throw new Error(
+          `Sequence state path must not use a symbolic link or reparse redirect: ${statePath}`
+        );
+      }
+
+      const realPath =
+        fs.realpathSync(candidatePath);
+
+      if (
+        normalizePathForComparison(realPath) !==
+        normalizePathForComparison(candidatePath)
+      ) {
+        throw new Error(
+          `Sequence state path must not traverse a symbolic link or reparse redirect: ${statePath}`
+        );
+      }
+
+      return resolvedPath;
+    } catch (error) {
+      if (
+        !error ||
+        error.code !== 'ENOENT'
+      ) {
+        throw error;
+      }
+    }
+
+    const parentPath =
+      path.dirname(candidatePath);
+
+    if (parentPath === candidatePath) {
+      throw new Error(
+        `Sequence state path could not be safely resolved: ${statePath}`
+      );
+    }
+
+    candidatePath = parentPath;
+  }
+}
+
 function validateSequenceState(state) {
   if (!isPlainObject(state)) {
     throw new TypeError('Sequence state must be a plain object');
@@ -73,7 +138,8 @@ function initialSequenceState() {
 }
 
 function readSequenceState(statePath) {
-  const resolvedPath = assertStatePath(statePath);
+  const resolvedPath =
+    assertNoSequenceStatePathRedirection(statePath);
 
   let serialized;
 
@@ -102,6 +168,10 @@ function readSequenceState(statePath) {
 }
 
 function fsyncDirectory(directoryPath) {
+  if (process.platform === 'win32') {
+    return;
+  }
+
   let descriptor;
 
   try {
@@ -115,7 +185,8 @@ function fsyncDirectory(directoryPath) {
 }
 
 function writeSequenceStateAtomic(statePath, state) {
-  const resolvedPath = assertStatePath(statePath);
+  const resolvedPath =
+    assertNoSequenceStatePathRedirection(statePath);
   const normalizedState = validateSequenceState(state);
   const directoryPath = path.dirname(resolvedPath);
   const filename = path.basename(resolvedPath);
@@ -124,6 +195,10 @@ function writeSequenceStateAtomic(statePath, state) {
     recursive: true,
     mode: 0o700
   });
+
+  assertNoSequenceStatePathRedirection(
+    resolvedPath
+  );
 
   const temporaryPath = path.join(
     directoryPath,
@@ -173,7 +248,10 @@ function writeSequenceStateAtomic(statePath, state) {
 }
 
 function acquireSequenceLock(statePath) {
-  const lockPath = `${statePath}.lock`;
+  const resolvedPath =
+    assertNoSequenceStatePathRedirection(statePath);
+
+  const lockPath = `${resolvedPath}.lock`;
 
   try {
     fs.mkdirSync(lockPath, {
@@ -202,13 +280,20 @@ function createSequenceManager(options) {
     throw new TypeError('Sequence manager options must be a plain object');
   }
 
-  const statePath = assertStatePath(options.statePath);
+  const statePath =
+    assertNoSequenceStatePathRedirection(
+      options.statePath
+    );
 
   function peekNextSequence() {
     return readSequenceState(statePath).nextSequence;
   }
 
   function allocateNextSequence() {
+    assertNoSequenceStatePathRedirection(
+      statePath
+    );
+
     fs.mkdirSync(path.dirname(statePath), {
       recursive: true,
       mode: 0o700

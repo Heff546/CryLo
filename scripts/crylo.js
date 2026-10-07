@@ -2744,19 +2744,33 @@ function installAuthorizedWindowsBundle(
     let previousRuntime = [];
 
     if (fs.existsSync(installedRuntimeManifest)) {
-      const previousManifest =
-        readWindowsBuildRuntimeManifest(
-          installedRuntimeManifest,
-          {
-            architecture: 'x64',
-            network: network.mode
-          }
-        );
+      try {
+        const previousManifest =
+          readWindowsBuildRuntimeManifest(
+            installedRuntimeManifest,
+            {
+              architecture: 'x64',
+              network: network.mode
+            }
+          );
 
-      previousRuntime =
-        previousManifest.runtime.map(
-          (runtimeEntry) => runtimeEntry.file
+        previousRuntime =
+          previousManifest.runtime.map(
+            (runtimeEntry) => runtimeEntry.file
+          );
+      } catch (error) {
+        console.warn(
+          'WARNING: Existing CryLo Windows runtime manifest is invalid. ' +
+          'The authenticated release will replace it.'
         );
+        console.warn(
+          `Existing runtime manifest error: ${error.message}`
+        );
+        console.warn(
+          'Obsolete runtime DLL cleanup will be skipped because the ' +
+          'previous runtime manifest cannot be trusted.'
+        );
+      }
     }
 
     const newRuntimeNames = new Set(

@@ -2,12 +2,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const os = require('node:os');
 const path = require('node:path');
 
 const {
   computeAddress
 } = require('ethers');
+
+const {
+  defaultOperatorDirectory
+} = require('../src/config');
 
 const {
   createLocalHeartbeatRuntime,
@@ -26,6 +29,25 @@ const PRIVATE_KEY =
 
 const SESSION_ADDRESS =
   computeAddress(PRIVATE_KEY);
+
+const TEST_KEY_PATH =
+  path.resolve(
+    'test-runtime',
+    'secure',
+    'signing-key'
+  );
+
+const TEST_OUTPUT_PATH =
+  path.resolve(
+    'test-runtime',
+    'latest.json'
+  );
+
+const TEST_SEQUENCE_STATE_PATH =
+  path.resolve(
+    'test-runtime',
+    'sequence.json'
+  );
 
 const TEST_AUTHORIZATION =
   Object.freeze({
@@ -81,7 +103,7 @@ function dependencies(overrides = {}) {
 
       return Object.freeze({
         keyPath:
-          '/secure/signing-key',
+          TEST_KEY_PATH,
         privateKey: PRIVATE_KEY
       });
     },
@@ -150,11 +172,11 @@ test(
         nodeId:
           'operator-node-001',
         keyPath:
-          '/secure/signing-key',
+          TEST_KEY_PATH,
         outputPath:
-          '/runtime/latest.json',
+          TEST_OUTPUT_PATH,
         sequenceStatePath:
-          '/runtime/sequence.json',
+          TEST_SEQUENCE_STATE_PATH,
         ...deps
       });
 
@@ -174,7 +196,7 @@ test(
       calls.key,
       {
         keyPath:
-          '/secure/signing-key',
+          TEST_KEY_PATH,
         expectedSignerAddress:
           SESSION_ADDRESS
       }
@@ -184,7 +206,7 @@ test(
       calls.sequence,
       {
         statePath:
-          '/runtime/sequence.json'
+          TEST_SEQUENCE_STATE_PATH
       }
     );
 
@@ -205,7 +227,7 @@ test(
 
     assert.equal(
       calls.writer.outputPath,
-      '/runtime/latest.json'
+      TEST_OUTPUT_PATH
     );
 
     assert.equal(
@@ -521,7 +543,7 @@ test(
       async loadSigningKey() {
         return {
           keyPath:
-            '/secure/signing-key'
+            TEST_KEY_PATH
         };
       }
     });
@@ -620,10 +642,7 @@ test(
   () => {
     const expectedDirectory =
       path.join(
-        os.homedir(),
-        '.config',
-        'crylo-wallet',
-        'operator',
+        defaultOperatorDirectory(),
         'heartbeat'
       );
 

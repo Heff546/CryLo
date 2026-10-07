@@ -963,6 +963,11 @@ int main(void) { return 0; }")
   add_c_flag_if_supported(  -Werror=return-type C_SECURITY_FLAGS)
   add_cxx_flag_if_supported(-Werror=return-type CXX_SECURITY_FLAGS)
 
+  # A missing WinAPI prototype (e.g. TryAcquireSRWLock*) must fail the build
+  if(MINGW)
+    add_c_flag_if_supported(-Werror=implicit-function-declaration C_SECURITY_FLAGS)
+  endif()
+
   message(STATUS "Using C security hardening flags: ${C_SECURITY_FLAGS}")
   message(STATUS "Using C++ security hardening flags: ${CXX_SECURITY_FLAGS}")
   message(STATUS "Using linker security hardening flags: ${LD_SECURITY_FLAGS}")

@@ -1,9 +1,9 @@
 package=openssl
-$(package)_version=3.5.8
+$(package)_version=3.5.9
 $(package)_download_path=https://www.openssl.org/source
 $(package)_file_name=$(package)-$($(package)_version).tar.gz
-$(package)_sha256_hash=a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2
-$(package)_patches=openssl-3.5.8-build-cleanup.patch
+$(package)_sha256_hash=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
+$(package)_patches=openssl-3.5.9-build-cleanup.patch
 
 define $(package)_set_vars
 $(package)_config_env=AR="$($(package)_ar)" ARFLAGS=$($(package)_arflags) RANLIB="$($(package)_ranlib)" CC="$($(package)_cc)"
@@ -49,7 +49,7 @@ $(package)_config_opts_x86_64_freebsd=BSD-x86_64
 endef
 
 define $(package)_preprocess_cmds
-  patch -p1 < $($(package)_patch_dir)/openssl-3.5.8-build-cleanup.patch &&\
+  patch -p1 < $($(package)_patch_dir)/openssl-3.5.9-build-cleanup.patch &&\
   sed -i.old 's|crypto ssl apps util tools fuzz providers doc|crypto ssl util tools providers|' build.info
 endef
 

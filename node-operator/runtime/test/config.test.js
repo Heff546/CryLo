@@ -9,7 +9,11 @@ const {
 } = require('../src/config');
 
 const ROOT =
-  '/home/test/.config/crylo-wallet/operator';
+  path.resolve(
+    'test-fixtures',
+    'crylo-wallet',
+    'operator'
+  );
 
 function validConfig() {
   return {
@@ -77,7 +81,12 @@ test(
     const config = validConfig();
 
     config.service.statusPath =
-      `${ROOT}/data/../status.json`;
+      [
+        ROOT,
+        'data',
+        '..',
+        'status.json'
+      ].join(path.sep);
 
     assert.throws(
       () =>
@@ -96,7 +105,11 @@ test(
     const config = validConfig();
 
     config.service.dataDirectory =
-      '/tmp/crylonexus-operator';
+      path.resolve(
+        ROOT,
+        '..',
+        'crylonexus-operator-outside'
+      );
 
     assert.throws(
       () =>
@@ -115,7 +128,10 @@ test(
     const config = validConfig();
 
     config.service.logDirectory =
-      `${ROOT}-attacker/logs`;
+      path.join(
+        `${ROOT}-attacker`,
+        'logs'
+      );
 
     assert.throws(
       () =>

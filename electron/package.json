@@ -27,8 +27,8 @@
     "release-mac-arm64": "node scripts/release-native.js mac arm64"
   },
   "devDependencies": {
-    "electron": "44.3.0",
-    "electron-builder": "26.16.1"
+    "electron": "44.5.1",
+    "electron-builder": "26.17.0"
   },
   "build": {
     "appId": "com.crylo.wallet",
@@ -51,8 +51,14 @@
           "package.json",
           "package-lock.json",
           "src/**/*",
-          "abis/**/*",
-          "node_modules/**/*"
+          "abis/**/*"
+        ]
+      },
+      {
+        "from": "../node-operator/runtime/node_modules",
+        "to": "operator-runtime/node_modules",
+        "filter": [
+          "**/*"
         ]
       },
       {
@@ -161,7 +167,7 @@
     "ethers": "^6.17.0"
   },
   "allowScripts": {
-    "electron@44.3.0": true,
+    "electron@44.5.1": true,
     "electron-winstaller": false
   },
   "desktopName": "com.crylo.wallet"

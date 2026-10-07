@@ -111,10 +111,12 @@ test('persists the exact versioned state schema', () => {
       nextSequence: 1
     });
 
-    assert.equal(
-      fs.statSync(fixture.statePath).mode & 0o777,
-      0o600
-    );
+    if (process.platform !== 'win32') {
+      assert.equal(
+        fs.statSync(fixture.statePath).mode & 0o777,
+        0o600
+      );
+    }
   } finally {
     removeFixture(fixture);
   }
@@ -181,6 +183,105 @@ test('rejects invalid sequence values', () => {
   }
 });
 
+test('rejects a sequence state path reached through a directory symlink or junction', () => {
+  const fixture = createFixture();
+  const realDirectory = path.join(fixture.directory, 'real');
+  const redirectDirectory = path.join(fixture.directory, 'redirect');
+
+  try {
+    fs.mkdirSync(realDirectory);
+    fs.symlinkSync(
+      realDirectory,
+      redirectDirectory,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+
+    const redirectedStatePath =
+      path.join(redirectDirectory, 'sequence.json');
+
+    assert.throws(
+      () => createSequenceManager({
+        statePath: redirectedStatePath
+      }),
+      /symbolic link|reparse redirect/
+    );
+
+    assert.throws(
+      () => readSequenceState(redirectedStatePath),
+      /symbolic link|reparse redirect/
+    );
+
+    assert.throws(
+      () => writeSequenceStateAtomic(
+        redirectedStatePath,
+        {
+          protocolVersion: PROTOCOL_VERSION,
+          nextSequence: 1
+        }
+      ),
+      /symbolic link|reparse redirect/
+    );
+
+    assert.deepEqual(
+      fs.readdirSync(realDirectory),
+      []
+    );
+  } finally {
+    try {
+      fs.unlinkSync(redirectDirectory);
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') {
+        throw error;
+      }
+    }
+
+    removeFixture(fixture);
+  }
+});
+
+test('rejects sequence directory replacement after manager creation', () => {
+  const fixture = createFixture();
+  const stateDirectory = path.join(fixture.directory, 'state');
+  const movedDirectory = path.join(fixture.directory, 'state-original');
+  const redirectTarget = path.join(fixture.directory, 'redirect-target');
+  const statePath = path.join(stateDirectory, 'sequence.json');
+
+  try {
+    fs.mkdirSync(stateDirectory);
+    fs.mkdirSync(redirectTarget);
+
+    const manager = createSequenceManager({
+      statePath
+    });
+
+    fs.renameSync(stateDirectory, movedDirectory);
+    fs.symlinkSync(
+      redirectTarget,
+      stateDirectory,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+
+    assert.throws(
+      () => manager.allocateNextSequence(),
+      /symbolic link|reparse redirect/
+    );
+
+    assert.deepEqual(
+      fs.readdirSync(redirectTarget),
+      []
+    );
+  } finally {
+    try {
+      fs.unlinkSync(stateDirectory);
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') {
+        throw error;
+      }
+    }
+
+    removeFixture(fixture);
+  }
+});
 test('rejects invalid manager options and paths', () => {
   assert.throws(
     () => createSequenceManager(),
