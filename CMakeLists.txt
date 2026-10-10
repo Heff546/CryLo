@@ -1136,7 +1136,6 @@ if (${BOOST_IGNORE_SYSTEM_PATHS} STREQUAL "ON")
 endif()
 
 set(OLD_LIB_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
-set(Boost_NO_BOOST_CMAKE ON)
 if(STATIC)
   if(MINGW)
     set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
@@ -1148,7 +1147,7 @@ endif()
 
 # Find Boost headers
 set(BOOST_MIN_VER 1.62)
-find_package(Boost ${BOOST_MIN_VER} QUIET REQUIRED)
+find_package(Boost ${BOOST_MIN_VER} QUIET REQUIRED CONFIG)
 
 if(NOT Boost_FOUND)
   die("Could not find Boost libraries, please make sure you have installed Boost or libboost-all-dev (>=${BOOST_MIN_VER}) or the equivalent")
@@ -1170,7 +1169,7 @@ elseif(Boost_FOUND)
   message(STATUS "Boost components: ${BOOST_COMPONENTS}")
 
   # Find required Boost libraries
-  find_package(Boost ${BOOST_MIN_VER} QUIET REQUIRED COMPONENTS ${BOOST_COMPONENTS})
+  find_package(Boost ${BOOST_MIN_VER} QUIET REQUIRED CONFIG COMPONENTS ${BOOST_COMPONENTS})
   set(CMAKE_FIND_LIBRARY_SUFFIXES ${OLD_LIB_SUFFIXES})
 endif()
 

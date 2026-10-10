@@ -22,6 +22,16 @@ const fullBuildWorkflow = readText(
   'workflows',
   'full-build-win-linux-pi.yml'
 );
+const beforePack = readText(
+  'electron',
+  'scripts',
+  'before-pack.js'
+);
+const installerNsh = readText(
+  'electron',
+  'build',
+  'installer.nsh'
+);
 
 assert(
   cryloJs.includes(
@@ -79,14 +89,14 @@ assert(
 
 assert(
   linuxLauncher.includes('NODE_VERSION=24.21.0') &&
-  linuxLauncher.includes('NPM_VERSION=12.0.2') &&
+  linuxLauncher.includes('NPM_VERSION=12.1.0') &&
   linuxLauncher.includes('"npm@$NPM_VERSION"'),
   'Linux/Pi launcher must prepare the exact managed Node/npm toolchain.'
 );
 
 assert(
   windowsLauncher.includes('set "CRYLO_NODE_VERSION=24.21.0"') &&
-  windowsLauncher.includes('set "CRYLO_NPM_VERSION=12.0.2"') &&
+  windowsLauncher.includes('set "CRYLO_NPM_VERSION=12.1.0"') &&
   windowsLauncher.includes('call :ensure_npm') &&
   windowsLauncher.includes(
     'set "PATH=%CRYLO_NODE_DIRECTORY%;%CRYLO_GIT_DIRECTORY%\\cmd;%PATH%"'
@@ -96,16 +106,53 @@ assert(
 
 assert(
   windowsLauncher.includes(
-    '"npm@%CRYLO_NPM_VERSION%"'
+    "('npm@' + $env:CRYLO_NPM_VERSION)"
   ),
   'Windows launcher must repair npm inside the isolated CryLo runtime.'
 );
 
 assert(
   releaseBuilder.includes("const managedNodeVersion = '24.21.0';") &&
-  releaseBuilder.includes("const managedNpmVersion = '12.0.2';") &&
+  releaseBuilder.includes("const managedNpmVersion = '12.1.0';") &&
   releaseBuilder.includes('verifyManagedReleaseToolchain(target)'),
   'Release builder must enforce the exact managed CryLo toolchain.'
+);
+
+assert(
+  beforePack.includes("const WINDOWS_GIT_VERSION = '2.56.0';") &&
+  beforePack.includes("const WINDOWS_GIT_BUILD = '2.56.0.windows.1';") &&
+  beforePack.includes(
+    "'064b440ff870ed5198527e8f3a92cdf5bd2fd0fedf5e718af95e3fdaddeff718'"
+  ) &&
+  beforePack.includes('stageWindowsGitInstallerResource') &&
+  beforePack.includes('await stageWindowsGitInstallerResource('),
+  'Windows Electron packaging must stage the authenticated MinGit runtime.'
+);
+
+assert(
+  installerNsh.includes('MinGit-2.56.0-64-bit.zip') &&
+  installerNsh.includes('mingit-2.56.0.windows.1-x64') &&
+  installerNsh.includes(
+    '064b440ff870ed5198527e8f3a92cdf5bd2fd0fedf5e718af95e3fdaddeff718'
+  ) &&
+  installerNsh.includes('git version 2.56.0.windows.1'),
+  'Windows installer must provision and verify the exact managed MinGit runtime.'
+);
+
+assert(
+  installerNsh.includes("$$repo='https://github.com/Heff546/CryLo.git'") &&
+  installerNsh.includes("$$final=Join-Path $$env:USERPROFILE 'CryLo'") &&
+  installerNsh.includes("$$branch='crylo-managed'") &&
+  installerNsh.includes('$$manifest.gitCommit') &&
+  installerNsh.includes('checkout -B $$branch $$commit'),
+  'Windows installer must bootstrap %USERPROFILE%\\CryLo at the packaged release commit.'
+);
+
+assert(
+  installerNsh.includes("$$marker=':: CryLo managed launcher'") &&
+  installerNsh.includes("Join-Path $$env:LOCALAPPDATA 'CryLo\\bin'") &&
+  installerNsh.includes("[Environment]::SetEnvironmentVariable('Path',$$updated,'User')"),
+  'Windows installer must register the managed per-user CryLo lifecycle command.'
 );
 
 assert(

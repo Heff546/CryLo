@@ -34,6 +34,7 @@
 #include <boost/cerrno.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/asio/strand.hpp>
+#include <boost/asio/bind_executor.hpp>
 #include <condition_variable>
 #include <boost/lambda/lambda.hpp>
 #include <openssl/ssl.h>
@@ -601,7 +602,7 @@ bool ssl_options_t::handshake(
         socket.async_handshake(
           type,
           boost::asio::buffer(buffer),
-          strand.wrap(on_handshake)
+          boost::asio::bind_executor(strand, on_handshake)
         );
       }
     );

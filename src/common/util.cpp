@@ -169,7 +169,7 @@ namespace tools
     if (!GetTokenInformation(process.get(), TokenOwner, sid.get(), sid_size, std::addressof(sid_size)))
       return {};
 
-    const PSID psid = reinterpret_cast<const PTOKEN_OWNER>(sid.get())->Owner;
+    const PSID psid = reinterpret_cast<const TOKEN_OWNER *>(sid.get())->Owner;
     const DWORD daclSize =
       sizeof(ACL) + sizeof(ACCESS_ALLOWED_ACE) + GetLengthSid(psid) - sizeof(DWORD);
 
@@ -347,10 +347,10 @@ namespace tools
     char pszOS[BUFSIZE] = {0};
     OSVERSIONINFOEX osvi;
     SYSTEM_INFO si;
-    PGNSI pGNSI;
-    PGPI pGPI;
+    PGNSI pGNSI = nullptr;
+    PGPI pGPI = nullptr;
     BOOL bOsVersionInfoEx;
-    DWORD dwType;
+    DWORD dwType = 0;
 
     ZeroMemory(&si, sizeof(SYSTEM_INFO));
     ZeroMemory(&osvi, sizeof(OSVERSIONINFOEX));
@@ -362,9 +362,11 @@ namespace tools
 
     // Call GetNativeSystemInfo if supported or GetSystemInfo otherwise.
 
-    pGNSI = (PGNSI) GetProcAddress(
+    FARPROC pGNSIRaw = GetProcAddress(
       GetModuleHandle(TEXT("kernel32.dll")), 
       "GetNativeSystemInfo");
+    static_assert(sizeof(pGNSI) == sizeof(pGNSIRaw), "Unexpected Windows function-pointer size");
+    memcpy(&pGNSI, &pGNSIRaw, sizeof(pGNSI));
     if(NULL != pGNSI)
       pGNSI(&si);
     else GetSystemInfo(&si);
@@ -415,11 +417,14 @@ namespace tools
           else StringCchCat(pszOS, BUFSIZE, TEXT("Windows Server 2012 R2 " ));
         }
 
-        pGPI = (PGPI) GetProcAddress(
+        FARPROC pGPIRaw = GetProcAddress(
           GetModuleHandle(TEXT("kernel32.dll")), 
           "GetProductInfo");
+        static_assert(sizeof(pGPI) == sizeof(pGPIRaw), "Unexpected Windows function-pointer size");
+        memcpy(&pGPI, &pGPIRaw, sizeof(pGPI));
 
-        pGPI( osvi.dwMajorVersion, osvi.dwMinorVersion, 0, 0, &dwType);
+        if (pGPI)
+          pGPI( osvi.dwMajorVersion, osvi.dwMinorVersion, 0, 0, &dwType);
 
         switch( dwType )
         {

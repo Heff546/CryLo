@@ -132,7 +132,8 @@ bool do_serialize_container(Archive<true> &ar, C &v)
       return false;
     if (i != v.begin())
       ar.delimit_array();
-    if(!::serialization::detail::serialize_container_element(ar, (typename C::value_type&)*i))
+    auto &i_ref = const_cast<typename C::value_type&>(reinterpret_cast<const typename C::value_type&>(*i));
+    if(!::serialization::detail::serialize_container_element(ar, i_ref))
       return false;
     if (!ar.good())
       return false;

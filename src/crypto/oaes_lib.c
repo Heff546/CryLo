@@ -493,7 +493,7 @@ static void oaes_get_seed( char buf[RANDSIZ + 1] )
 	milliseconds = (int)(timer.tv_nsec / 1000000L);
 	gmTimer = gmtime(&timer.tv_sec);
 	#endif
-	_test = (char *) calloc( sizeof( char ), (size_t)milliseconds );
+	_test = (char *) calloc( (size_t)milliseconds, sizeof( char ) );
 	sprintf( buf, "%04d%02d%02d%02d%02d%02d%03d%p%d",
 		gmTimer->tm_year + 1900, gmTimer->tm_mon + 1, gmTimer->tm_mday,
 		gmTimer->tm_hour, gmTimer->tm_min, gmTimer->tm_sec, milliseconds,
@@ -505,7 +505,7 @@ static void oaes_get_seed( char buf[RANDSIZ + 1] )
 	
 	gettimeofday(&timer, NULL);
 	gmTimer = gmtime( &timer.tv_sec );
-	_test = (char *) calloc( sizeof( char ), timer.tv_usec/1000 );
+	_test = (char *) calloc( timer.tv_usec/1000, sizeof( char ) );
 	sprintf( buf, "%04d%02d%02d%02d%02d%02d%03d%p%d",
 		gmTimer->tm_year + 1900, gmTimer->tm_mon + 1, gmTimer->tm_mday,
 		gmTimer->tm_hour, gmTimer->tm_min, gmTimer->tm_sec, timer.tv_usec/1000,
@@ -538,7 +538,7 @@ static uint32_t oaes_get_seed(void)
 	milliseconds = (int)(timer.tv_nsec / 1000000L);
 	gmTimer = gmtime(&timer.tv_sec);
 	#endif
-	_test = (char *) calloc( sizeof( char ), (size_t)milliseconds );
+	_test = (char *) calloc( (size_t)milliseconds, sizeof( char ) );
 	_ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
 			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + milliseconds +
 			(uintptr_t) ( _test + milliseconds ) + GETPID();
@@ -550,7 +550,7 @@ static uint32_t oaes_get_seed(void)
 	
 	gettimeofday(&timer, NULL);
 	gmTimer = gmtime( &timer.tv_sec );
-	_test = (char *) calloc( sizeof( char ), timer.tv_usec/1000 );
+	_test = (char *) calloc( timer.tv_usec/1000, sizeof( char ) );
 	_ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
 			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + timer.tv_usec/1000 +
 			(uintptr_t) ( _test + timer.tv_usec/1000 ) + GETPID();
@@ -659,7 +659,7 @@ static OAES_RET oaes_key_gen( OAES_CTX * ctx, size_t key_size )
 	if( NULL == _ctx )
 		return OAES_RET_ARG1;
 	
-	_key = (oaes_key *) calloc( sizeof( oaes_key ), 1 );
+	_key = (oaes_key *) calloc( 1, sizeof( oaes_key ) );
 	
 	if( NULL == _key )
 		return OAES_RET_MEM;
@@ -836,7 +836,7 @@ OAES_RET oaes_key_import( OAES_CTX * ctx,
 	if( _ctx->key )
 		oaes_key_destroy( &(_ctx->key) );
 	
-	_ctx->key = (oaes_key *) calloc( sizeof( oaes_key ), 1 );
+	_ctx->key = (oaes_key *) calloc( 1, sizeof( oaes_key ) );
 	
 	if( NULL == _ctx->key )
 		return OAES_RET_MEM;
@@ -888,7 +888,7 @@ OAES_RET oaes_key_import_data( OAES_CTX * ctx,
 	if( _ctx->key )
 		oaes_key_destroy( &(_ctx->key) );
 	
-	_ctx->key = (oaes_key *) calloc( sizeof( oaes_key ), 1 );
+	_ctx->key = (oaes_key *) calloc( 1, sizeof( oaes_key ) );
 	
 	if( NULL == _ctx->key )
 		return OAES_RET_MEM;
@@ -917,7 +917,7 @@ OAES_RET oaes_key_import_data( OAES_CTX * ctx,
 
 OAES_CTX * oaes_alloc(void)
 {
-	oaes_ctx * _ctx = (oaes_ctx *) calloc( sizeof( oaes_ctx ), 1 );
+	oaes_ctx * _ctx = (oaes_ctx *) calloc( 1, sizeof( oaes_ctx ) );
 	
 	if( NULL == _ctx )
 		return NULL;
@@ -927,7 +927,7 @@ OAES_CTX * oaes_alloc(void)
 	  ub4 _i = 0;
 		char _seed[RANDSIZ + 1];
 		
-		_ctx->rctx = (randctx *) calloc( sizeof( randctx ), 1 );
+		_ctx->rctx = (randctx *) calloc( 1, sizeof( randctx ) );
 
 		if( NULL == _ctx->rctx )
 		{

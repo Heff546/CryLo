@@ -24,6 +24,15 @@ const WINDOWS_NODE_SHA256 =
 const WINDOWS_NODE_URL =
   `https://nodejs.org/dist/v${WINDOWS_NODE_VERSION}/${WINDOWS_NODE_ARCHIVE}`;
 
+const WINDOWS_GIT_VERSION = '2.56.0';
+const WINDOWS_GIT_BUILD = '2.56.0.windows.1';
+const WINDOWS_GIT_ARCHIVE =
+  `MinGit-${WINDOWS_GIT_VERSION}-64-bit.zip`;
+const WINDOWS_GIT_SHA256 =
+  '064b440ff870ed5198527e8f3a92cdf5bd2fd0fedf5e718af95e3fdaddeff718';
+const WINDOWS_GIT_URL =
+  `https://github.com/git-for-windows/git/releases/download/v${WINDOWS_GIT_BUILD}/${WINDOWS_GIT_ARCHIVE}`;
+
 function runChecked(command, args, cwd, label) {
   const result = spawnSync(command, args, {
     cwd,
@@ -95,7 +104,7 @@ function downloadFile(url, destination, redirects = 0) {
           response.resume();
           reject(
             new Error(
-              `Node.js download failed with HTTP ${statusCode}`
+              `CryLo installer resource download failed with HTTP ${statusCode}`
             )
           );
           return;
@@ -247,6 +256,124 @@ async function stageWindowsNodeInstallerResource(
   );
 }
 
+async function stageWindowsGitInstallerResource(
+  electronDir
+) {
+  const buildDir =
+    path.join(
+      electronDir,
+      'build'
+    );
+
+  const destination =
+    path.join(
+      buildDir,
+      WINDOWS_GIT_ARCHIVE
+    );
+
+  fs.mkdirSync(
+    buildDir,
+    {
+      recursive: true
+    }
+  );
+
+  if (fs.existsSync(destination)) {
+    const stat =
+      fs.lstatSync(destination);
+
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error(
+        `Invalid staged MinGit installer resource: ${destination}`
+      );
+    }
+
+    const existingHash =
+      sha256(destination);
+
+    if (
+      existingHash ===
+      WINDOWS_GIT_SHA256
+    ) {
+      console.log(
+        `Verified staged MinGit installer resource: ${WINDOWS_GIT_ARCHIVE}`
+      );
+      return;
+    }
+
+    fs.unlinkSync(destination);
+  }
+
+  const temporary =
+    `${destination}.tmp-${process.pid}`;
+
+  if (fs.existsSync(temporary)) {
+    fs.unlinkSync(temporary);
+  }
+
+  try {
+    console.log(
+      `Downloading authenticated MinGit ${WINDOWS_GIT_BUILD} installer resource...`
+    );
+
+    await downloadFile(
+      WINDOWS_GIT_URL,
+      temporary
+    );
+
+    const downloadedHash =
+      sha256(temporary);
+
+    if (
+      downloadedHash !==
+      WINDOWS_GIT_SHA256
+    ) {
+      throw new Error(
+        'Downloaded MinGit archive SHA256 mismatch.\n' +
+        `Expected: ${WINDOWS_GIT_SHA256}\n` +
+        `Actual:   ${downloadedHash}`
+      );
+    }
+
+    fs.renameSync(
+      temporary,
+      destination
+    );
+  } finally {
+    if (fs.existsSync(temporary)) {
+      fs.unlinkSync(temporary);
+    }
+  }
+
+  const finalStat =
+    fs.lstatSync(destination);
+
+  if (
+    !finalStat.isFile() ||
+    finalStat.isSymbolicLink()
+  ) {
+    throw new Error(
+      `Invalid staged MinGit installer resource: ${destination}`
+    );
+  }
+
+  const finalHash =
+    sha256(destination);
+
+  if (
+    finalHash !==
+    WINDOWS_GIT_SHA256
+  ) {
+    throw new Error(
+      'Staged MinGit installer resource failed final SHA256 verification.'
+    );
+  }
+
+  console.log(
+    `Staged authenticated MinGit installer resource: ${WINDOWS_GIT_ARCHIVE}`
+  );
+}
+
 module.exports = async function beforePack(context) {
   const electronDir = path.resolve(__dirname, '..');
   const targetArch =
@@ -339,6 +466,10 @@ module.exports = async function beforePack(context) {
 
   if (platform === 'win') {
     await stageWindowsNodeInstallerResource(
+      electronDir
+    );
+
+    await stageWindowsGitInstallerResource(
       electronDir
     );
   }

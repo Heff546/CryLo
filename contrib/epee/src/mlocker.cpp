@@ -34,6 +34,8 @@
 #include <unistd.h>
 #if defined HAVE_MLOCK
 #include <sys/mman.h>
+#elif defined _WIN32
+#include <windows.h>
 #endif
 #include "misc_log_ex.h"
 #include "syncobj.h"
@@ -58,6 +60,15 @@ static size_t query_page_size()
     return 0;
   }
   return ret;
+#elif defined _WIN32
+  SYSTEM_INFO info;
+  GetSystemInfo(&info);
+  if (info.dwPageSize == 0)
+  {
+    MERROR("Failed to determine page size");
+    return 0;
+  }
+  return info.dwPageSize;
 #else
 #warning Missing query_page_size implementation
 #endif
@@ -70,6 +81,13 @@ static void do_lock(void *ptr, size_t len)
   int ret = mlock(ptr, len);
   if (ret < 0 && !previously_failed.exchange(true))
     MERROR("Error locking page at " << ptr << ": " << strerror(errno) << ", subsequent mlock errors will be silenced");
+#elif defined _WIN32
+  if (!VirtualLock(ptr, len))
+  {
+    const DWORD error = GetLastError();
+    if (!previously_failed.exchange(true))
+      MERROR("Error locking page at " << ptr << ": Windows error " << error << ", subsequent VirtualLock errors will be silenced");
+  }
 #else
 #warning Missing do_lock implementation
 #endif
@@ -84,8 +102,15 @@ static void do_unlock(void *ptr, size_t len)
   // is also not going to work of course
   if (ret < 0 && !previously_failed.load())
     MERROR("Error unlocking page at " << ptr << ": " << strerror(errno));
+#elif defined _WIN32
+  if (!VirtualUnlock(ptr, len))
+  {
+    const DWORD error = GetLastError();
+    if (!previously_failed.load())
+      MERROR("Error unlocking page at " << ptr << ": Windows error " << error);
+  }
 #else
-#warning Missing implementation of page size detection
+#warning Missing do_unlock implementation
 #endif
 }
 

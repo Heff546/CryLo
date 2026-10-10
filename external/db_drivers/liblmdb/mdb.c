@@ -1703,13 +1703,15 @@ char *
 mdb_strerror(int err)
 {
 #ifdef _WIN32
-	/** HACK: pad 4KB on stack over the buf. Return system msgs in buf.
-	 *	This works as long as no function between the call to mdb_strerror
-	 *	and the actual use of the message uses more than 4K of stack.
+	/* FormatMessageA needs storage that remains valid after this function returns.
+	 * Keep one buffer per thread so concurrent callers do not overwrite each other.
 	 */
-#define MSGSIZE	1024
-#define PADSIZE	4096
-	char buf[MSGSIZE+PADSIZE], *ptr = buf;
+#if defined(_MSC_VER)
+	__declspec(thread) static char buf[1024];
+#else
+	static __thread char buf[1024];
+#endif
+	char *ptr = buf;
 #endif
 	int i;
 	if (!err)
@@ -1741,7 +1743,7 @@ mdb_strerror(int err)
 	buf[0] = 0;
 	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM |
 		FORMAT_MESSAGE_IGNORE_INSERTS,
-		NULL, err, 0, ptr, MSGSIZE, (va_list *)buf+MSGSIZE);
+		NULL, err, 0, ptr, sizeof(buf), NULL);
 	return ptr;
 #else
 	if (err < 0)
