@@ -11,7 +11,7 @@
 /* fallback entries for: linux rxvt vt100 xterm xterm-256color screen screen.linux screen.rxvt screen.xterm-new screen.xterm-256color */
 /* linux */
 
-static char linux_alias_data[] = "linux|linux console";
+static char linux_alias_data[] = "linux|Linux console";
 
 static char linux_s_bel         [] = "\007";
 static char linux_s_cr          [] = "\015";
@@ -88,8 +88,8 @@ static char linux_s_sgr         [] = "\033[0;10%?%p1%t;7%;%?%p2%t;4%;%?%p3%t;7%;
 static char linux_s_hts         [] = "\033H";
 static char linux_s_ht          [] = "\011";
 static char linux_s_kb2         [] = "\033[G";
-static char linux_s_acsc        [] = "++,,--..00__``aaffgghhiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}c~~";
-static char linux_s_kcbt        [] = "\033[Z";
+static char linux_s_acsc        [] = "++,,--..00``aaffgghhiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~";
+static char linux_s_kcbt        [] = "\033\011";
 static char linux_s_smam        [] = "\033[?7h";
 static char linux_s_rmam        [] = "\033[?7l";
 static char linux_s_enacs       [] = "\033)0";
@@ -112,12 +112,14 @@ static char linux_s_u8          [] = "\033[?6c";
 static char linux_s_u9          [] = "\033[c";
 static char linux_s_op          [] = "\033[39;49m";
 static char linux_s_oc          [] = "\033]R";
-static char linux_s_initc       [] = "\033]P%p1%x%p2%{255}%*%{1000}%/%02x%p3%{255}%*%{1000}%/%02x%p4%{255}%*%{1000}%/%02x";
+static char linux_s_initc       [] = "\033]P%p1%x%p2%'\377'%*%{1000}%/%02x%p3%'\377'%*%{1000}%/%02x%p4%'\377'%*%{1000}%/%02x";
 static char linux_s_kmous       [] = "\033[M";
 static char linux_s_setaf       [] = "\033[3%p1%dm";
 static char linux_s_setab       [] = "\033[4%p1%dm";
 static char linux_s_smpch       [] = "\033[11m";
 static char linux_s_rmpch       [] = "\033[10m";
+static char linux_s_E3          [] = "\033[3J";
+static char linux_s_kcbt2       [] = "\033[Z";
 
 static char linux_bool_data[] = {
 	/*   0: bw       */	FALSE,
@@ -164,6 +166,7 @@ static char linux_bool_data[] = {
 	/*  41: OTNL     */	FALSE,
 	/*  42: OTpt     */	FALSE,
 	/*  43: OTxr     */	FALSE,
+	/*  44: AX       */	TRUE,
 };
 static NCURSES_INT2 linux_number_data[] = {
 	/*   0: cols     */	ABSENT_NUMERIC,
@@ -205,6 +208,7 @@ static NCURSES_INT2 linux_number_data[] = {
 	/*  36: OTdB     */	ABSENT_NUMERIC,
 	/*  37: OTdT     */	ABSENT_NUMERIC,
 	/*  38: OTkn     */	ABSENT_NUMERIC,
+	/*  39: U8       */	1,
 };
 static char * linux_string_data[] = {
 	/*   0: cbt      */	ABSENT_STRING,
@@ -621,10 +625,39 @@ static char * linux_string_data[] = {
 	/* 411: meml     */	ABSENT_STRING,
 	/* 412: memu     */	ABSENT_STRING,
 	/* 413: box1     */	ABSENT_STRING,
+	/* 414: E3       */	linux_s_E3,
+	/* 415: kcbt2    */	linux_s_kcbt2,
+};
+
+#ifndef extension_AX
+static char name_of_AX[] = "AX";
+#define extension_AX 1
+#endif
+
+#ifndef extension_U8
+static char name_of_U8[] = "U8";
+#define extension_U8 1
+#endif
+
+#ifndef extension_E3
+static char name_of_E3[] = "E3";
+#define extension_E3 1
+#endif
+
+#ifndef extension_kcbt2
+static char name_of_kcbt2[] = "kcbt2";
+#define extension_kcbt2 1
+#endif
+
+static char * linux_string_ext_data[] = {
+	/*  44: bool */	name_of_AX,
+	/*  39: num */	name_of_U8,
+	/* 414: str */	name_of_E3,
+	/* 415: str */	name_of_kcbt2,
 };
 /* rxvt */
 
-static char rxvt_alias_data[] = "rxvt|rxvt terminal emulator (X Window System)";
+static char rxvt_alias_data[] = "rxvt|rxvt-color|rxvt terminal emulator (X Window System)";
 
 static char rxvt_s_bel          [] = "\007";
 static char rxvt_s_cr           [] = "\015";
@@ -642,6 +675,7 @@ static char rxvt_s_cub1         [] = "\010";
 static char rxvt_s_cnorm        [] = "\033[?25h";
 static char rxvt_s_cuf1         [] = "\033[C";
 static char rxvt_s_cuu1         [] = "\033[A";
+static char rxvt_s_dch1         [] = "\033[P";
 static char rxvt_s_dl1          [] = "\033[M";
 static char rxvt_s_smacs        [] = "\016";
 static char rxvt_s_blink        [] = "\033[5m";
@@ -688,6 +722,7 @@ static char rxvt_s_kri          [] = "\033[b";
 static char rxvt_s_kcuu1        [] = "\033[A";
 static char rxvt_s_rmkx         [] = "\033>";
 static char rxvt_s_smkx         [] = "\033=";
+static char rxvt_s_dch          [] = "\033[%p1%dP";
 static char rxvt_s_dl           [] = "\033[%p1%dM";
 static char rxvt_s_cud          [] = "\033[%p1%dB";
 static char rxvt_s_ich          [] = "\033[%p1%d@";
@@ -770,6 +805,28 @@ static char rxvt_s_setaf        [] = "\033[3%p1%dm";
 static char rxvt_s_setab        [] = "\033[4%p1%dm";
 static char rxvt_s_s0ds         [] = "\033(B";
 static char rxvt_s_s1ds         [] = "\033(0";
+static char rxvt_s_kDC5         [] = "\033[3^";
+static char rxvt_s_kDC6         [] = "\033[3@";
+static char rxvt_s_kDN          [] = "\033[b";
+static char rxvt_s_kDN5         [] = "\033Ob";
+static char rxvt_s_kEND5        [] = "\033[8^";
+static char rxvt_s_kEND6        [] = "\033[8@";
+static char rxvt_s_kHOM5        [] = "\033[7^";
+static char rxvt_s_kHOM6        [] = "\033[7@";
+static char rxvt_s_kIC5         [] = "\033[2^";
+static char rxvt_s_kIC6         [] = "\033[2@";
+static char rxvt_s_kLFT5        [] = "\033Od";
+static char rxvt_s_kNXT5        [] = "\033[6^";
+static char rxvt_s_kNXT6        [] = "\033[6@";
+static char rxvt_s_kPRV5        [] = "\033[5^";
+static char rxvt_s_kPRV6        [] = "\033[5@";
+static char rxvt_s_kRIT5        [] = "\033Oc";
+static char rxvt_s_kUP          [] = "\033[a";
+static char rxvt_s_kUP5         [] = "\033Oa";
+static char rxvt_s_ka2          [] = "\033Ox";
+static char rxvt_s_kb1          [] = "\033Ot";
+static char rxvt_s_kb3          [] = "\033Ov";
+static char rxvt_s_kc2          [] = "\033Or";
 
 static char rxvt_bool_data[] = {
 	/*   0: bw       */	FALSE,
@@ -816,6 +873,8 @@ static char rxvt_bool_data[] = {
 	/*  41: OTNL     */	FALSE,
 	/*  42: OTpt     */	FALSE,
 	/*  43: OTxr     */	FALSE,
+	/*  44: AX       */	TRUE,
+	/*  45: XT       */	TRUE,
 };
 static NCURSES_INT2 rxvt_number_data[] = {
 	/*   0: cols     */	80,
@@ -880,7 +939,7 @@ static char * rxvt_string_data[] = {
 	/*  18: ll       */	ABSENT_STRING,
 	/*  19: cuu1     */	rxvt_s_cuu1,
 	/*  20: cvvis    */	ABSENT_STRING,
-	/*  21: dch1     */	ABSENT_STRING,
+	/*  21: dch1     */	rxvt_s_dch1,
 	/*  22: dl1      */	rxvt_s_dl1,
 	/*  23: dsl      */	ABSENT_STRING,
 	/*  24: hd       */	ABSENT_STRING,
@@ -964,7 +1023,7 @@ static char * rxvt_string_data[] = {
 	/* 102: smm      */	ABSENT_STRING,
 	/* 103: nel      */	ABSENT_STRING,
 	/* 104: pad      */	ABSENT_STRING,
-	/* 105: dch      */	ABSENT_STRING,
+	/* 105: dch      */	rxvt_s_dch,
 	/* 106: dl       */	rxvt_s_dl,
 	/* 107: cud      */	rxvt_s_cud,
 	/* 108: ich      */	rxvt_s_ich,
@@ -1273,10 +1332,179 @@ static char * rxvt_string_data[] = {
 	/* 411: meml     */	ABSENT_STRING,
 	/* 412: memu     */	ABSENT_STRING,
 	/* 413: box1     */	ABSENT_STRING,
+	/* 414: kDC5     */	rxvt_s_kDC5,
+	/* 415: kDC6     */	rxvt_s_kDC6,
+	/* 416: kDN      */	rxvt_s_kDN,
+	/* 417: kDN5     */	rxvt_s_kDN5,
+	/* 418: kEND5    */	rxvt_s_kEND5,
+	/* 419: kEND6    */	rxvt_s_kEND6,
+	/* 420: kHOM5    */	rxvt_s_kHOM5,
+	/* 421: kHOM6    */	rxvt_s_kHOM6,
+	/* 422: kIC5     */	rxvt_s_kIC5,
+	/* 423: kIC6     */	rxvt_s_kIC6,
+	/* 424: kLFT5    */	rxvt_s_kLFT5,
+	/* 425: kNXT5    */	rxvt_s_kNXT5,
+	/* 426: kNXT6    */	rxvt_s_kNXT6,
+	/* 427: kPRV5    */	rxvt_s_kPRV5,
+	/* 428: kPRV6    */	rxvt_s_kPRV6,
+	/* 429: kRIT5    */	rxvt_s_kRIT5,
+	/* 430: kUP      */	rxvt_s_kUP,
+	/* 431: kUP5     */	rxvt_s_kUP5,
+	/* 432: ka2      */	rxvt_s_ka2,
+	/* 433: kb1      */	rxvt_s_kb1,
+	/* 434: kb3      */	rxvt_s_kb3,
+	/* 435: kc2      */	rxvt_s_kc2,
+};
+
+#ifndef extension_AX
+static char name_of_AX[] = "AX";
+#define extension_AX 1
+#endif
+
+#ifndef extension_XT
+static char name_of_XT[] = "XT";
+#define extension_XT 1
+#endif
+
+#ifndef extension_kDC5
+static char name_of_kDC5[] = "kDC5";
+#define extension_kDC5 1
+#endif
+
+#ifndef extension_kDC6
+static char name_of_kDC6[] = "kDC6";
+#define extension_kDC6 1
+#endif
+
+#ifndef extension_kDN
+static char name_of_kDN[] = "kDN";
+#define extension_kDN 1
+#endif
+
+#ifndef extension_kDN5
+static char name_of_kDN5[] = "kDN5";
+#define extension_kDN5 1
+#endif
+
+#ifndef extension_kEND5
+static char name_of_kEND5[] = "kEND5";
+#define extension_kEND5 1
+#endif
+
+#ifndef extension_kEND6
+static char name_of_kEND6[] = "kEND6";
+#define extension_kEND6 1
+#endif
+
+#ifndef extension_kHOM5
+static char name_of_kHOM5[] = "kHOM5";
+#define extension_kHOM5 1
+#endif
+
+#ifndef extension_kHOM6
+static char name_of_kHOM6[] = "kHOM6";
+#define extension_kHOM6 1
+#endif
+
+#ifndef extension_kIC5
+static char name_of_kIC5[] = "kIC5";
+#define extension_kIC5 1
+#endif
+
+#ifndef extension_kIC6
+static char name_of_kIC6[] = "kIC6";
+#define extension_kIC6 1
+#endif
+
+#ifndef extension_kLFT5
+static char name_of_kLFT5[] = "kLFT5";
+#define extension_kLFT5 1
+#endif
+
+#ifndef extension_kNXT5
+static char name_of_kNXT5[] = "kNXT5";
+#define extension_kNXT5 1
+#endif
+
+#ifndef extension_kNXT6
+static char name_of_kNXT6[] = "kNXT6";
+#define extension_kNXT6 1
+#endif
+
+#ifndef extension_kPRV5
+static char name_of_kPRV5[] = "kPRV5";
+#define extension_kPRV5 1
+#endif
+
+#ifndef extension_kPRV6
+static char name_of_kPRV6[] = "kPRV6";
+#define extension_kPRV6 1
+#endif
+
+#ifndef extension_kRIT5
+static char name_of_kRIT5[] = "kRIT5";
+#define extension_kRIT5 1
+#endif
+
+#ifndef extension_kUP
+static char name_of_kUP[] = "kUP";
+#define extension_kUP 1
+#endif
+
+#ifndef extension_kUP5
+static char name_of_kUP5[] = "kUP5";
+#define extension_kUP5 1
+#endif
+
+#ifndef extension_ka2
+static char name_of_ka2[] = "ka2";
+#define extension_ka2 1
+#endif
+
+#ifndef extension_kb1
+static char name_of_kb1[] = "kb1";
+#define extension_kb1 1
+#endif
+
+#ifndef extension_kb3
+static char name_of_kb3[] = "kb3";
+#define extension_kb3 1
+#endif
+
+#ifndef extension_kc2
+static char name_of_kc2[] = "kc2";
+#define extension_kc2 1
+#endif
+
+static char * rxvt_string_ext_data[] = {
+	/*  44: bool */	name_of_AX,
+	/*  45: bool */	name_of_XT,
+	/* 414: str */	name_of_kDC5,
+	/* 415: str */	name_of_kDC6,
+	/* 416: str */	name_of_kDN,
+	/* 417: str */	name_of_kDN5,
+	/* 418: str */	name_of_kEND5,
+	/* 419: str */	name_of_kEND6,
+	/* 420: str */	name_of_kHOM5,
+	/* 421: str */	name_of_kHOM6,
+	/* 422: str */	name_of_kIC5,
+	/* 423: str */	name_of_kIC6,
+	/* 424: str */	name_of_kLFT5,
+	/* 425: str */	name_of_kNXT5,
+	/* 426: str */	name_of_kNXT6,
+	/* 427: str */	name_of_kPRV5,
+	/* 428: str */	name_of_kPRV6,
+	/* 429: str */	name_of_kRIT5,
+	/* 430: str */	name_of_kUP,
+	/* 431: str */	name_of_kUP5,
+	/* 432: str */	name_of_ka2,
+	/* 433: str */	name_of_kb1,
+	/* 434: str */	name_of_kb3,
+	/* 435: str */	name_of_kc2,
 };
 /* vt100 */
 
-static char vt100_alias_data[] = "vt100|vt100-am|dec vt100 (w/advanced video)";
+static char vt100_alias_data[] = "vt100|vt100-am|DEC VT100 (w/advanced video)";
 
 static char vt100_s_bel         [] = "\007";
 static char vt100_s_cr          [] = "\015";
@@ -1349,6 +1577,10 @@ static char vt100_s_rmam        [] = "\033[?7l";
 static char vt100_s_enacs       [] = "\033(B\033)0";
 static char vt100_s_kent        [] = "\033OM";
 static char vt100_s_el1         [] = "\033[1K$<3>";
+static char vt100_s_u6          [] = "\033[%i%d;%dR";
+static char vt100_s_u7          [] = "\033[6n";
+static char vt100_s_u8          [] = "\033[?%[;0123456789]c";
+static char vt100_s_u9          [] = "\033Z";
 
 static char vt100_bool_data[] = {
 	/*   0: bw       */	FALSE,
@@ -1731,10 +1963,10 @@ static char * vt100_string_data[] = {
 	/* 290: u3       */	ABSENT_STRING,
 	/* 291: u4       */	ABSENT_STRING,
 	/* 292: u5       */	ABSENT_STRING,
-	/* 293: u6       */	ABSENT_STRING,
-	/* 294: u7       */	ABSENT_STRING,
-	/* 295: u8       */	ABSENT_STRING,
-	/* 296: u9       */	ABSENT_STRING,
+	/* 293: u6       */	vt100_s_u6,
+	/* 294: u7       */	vt100_s_u7,
+	/* 295: u8       */	vt100_s_u8,
+	/* 296: u9       */	vt100_s_u9,
 	/* 297: op       */	ABSENT_STRING,
 	/* 298: oc       */	ABSENT_STRING,
 	/* 299: initc    */	ABSENT_STRING,
@@ -1896,6 +2128,7 @@ static char xterm_s_rmso        [] = "\033[27m";
 static char xterm_s_rmul        [] = "\033[24m";
 static char xterm_s_flash       [] = "\033[?5h$<100/>\033[?5l";
 static char xterm_s_is2         [] = "\033[!p\033[?3;4l\033[4l\033>";
+static char xterm_s_ich1        [] = "\033[@";
 static char xterm_s_il1         [] = "\033[L";
 static char xterm_s_kbs         [] = "\010";
 static char xterm_s_kdch1       [] = "\033[3~";
@@ -1923,6 +2156,7 @@ static char xterm_s_rmkx        [] = "\033[?1l\033>";
 static char xterm_s_smkx        [] = "\033[?1h\033=";
 static char xterm_s_rmm         [] = "\033[?1034l";
 static char xterm_s_smm         [] = "\033[?1034h";
+static char xterm_s_nel         [] = "\033E";
 static char xterm_s_dch         [] = "\033[%p1%dP";
 static char xterm_s_dl          [] = "\033[%p1%dM";
 static char xterm_s_cud         [] = "\033[%p1%dB";
@@ -1947,11 +2181,16 @@ static char xterm_s_ri          [] = "\033M";
 static char xterm_s_sgr         [] = "%?%p9%t\033(0%e\033(B%;\033[0%?%p6%t;1%;%?%p5%t;2%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p7%t;8%;m";
 static char xterm_s_hts         [] = "\033H";
 static char xterm_s_ht          [] = "\011";
-static char xterm_s_kb2         [] = "\033OE";
+static char xterm_s_ka1         [] = "\033Ow";
+static char xterm_s_ka3         [] = "\033Oy";
+static char xterm_s_kb2         [] = "\033Ou";
+static char xterm_s_kc1         [] = "\033Oq";
+static char xterm_s_kc3         [] = "\033Os";
 static char xterm_s_acsc        [] = "``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~";
 static char xterm_s_kcbt        [] = "\033[Z";
 static char xterm_s_smam        [] = "\033[?7h";
 static char xterm_s_rmam        [] = "\033[?7l";
+static char xterm_s_kbeg        [] = "\033OE";
 static char xterm_s_kend        [] = "\033OF";
 static char xterm_s_kent        [] = "\033OM";
 static char xterm_s_kDC         [] = "\033[3;2~";
@@ -2016,6 +2255,7 @@ static char xterm_s_kf61        [] = "\033[1;4P";
 static char xterm_s_kf62        [] = "\033[1;4Q";
 static char xterm_s_kf63        [] = "\033[1;4R";
 static char xterm_s_el1         [] = "\033[1K";
+static char xterm_s_mgc         [] = "\033[?69l";
 static char xterm_s_u6          [] = "\033[%i%d;%dR";
 static char xterm_s_u7          [] = "\033[6n";
 static char xterm_s_u8          [] = "\033[?%[;0123456789]c";
@@ -2025,11 +2265,109 @@ static char xterm_s_setf        [] = "\033[3%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4
 static char xterm_s_setb        [] = "\033[4%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m";
 static char xterm_s_sitm        [] = "\033[3m";
 static char xterm_s_ritm        [] = "\033[23m";
+static char xterm_s_smglp       [] = "\033[?69h\033[%i%p1%ds";
+static char xterm_s_smgrp       [] = "\033[?69h\033[%i;%p1%ds";
 static char xterm_s_kmous       [] = "\033[<";
 static char xterm_s_setaf       [] = "\033[3%p1%dm";
 static char xterm_s_setab       [] = "\033[4%p1%dm";
+static char xterm_s_smglr       [] = "\033[?69h\033[%i%p1%d;%p2%ds";
 static char xterm_s_meml        [] = "\033l";
 static char xterm_s_memu        [] = "\033m";
+static char xterm_s_BD          [] = "\033[?2004l";
+static char xterm_s_BE          [] = "\033[?2004h";
+static char xterm_s_Cr          [] = "\033]112\033\134";
+static char xterm_s_Cs          [] = "\033]12;%p1%s\033\134";
+static char xterm_s_E3          [] = "\033[3J";
+static char xterm_s_Ms          [] = "\033]52;%p1%s;%p2%s\033\134";
+static char xterm_s_PE          [] = "\033[201~";
+static char xterm_s_PS          [] = "\033[200~";
+static char xterm_s_RV          [] = "\033[>c";
+static char xterm_s_Se          [] = "\033[ q";
+static char xterm_s_Ss          [] = "\033[%p1%d q";
+static char xterm_s_XM          [] = "\033[?1006;1000%?%p1%{1}%=%th%el%;";
+static char xterm_s_XR          [] = "\033[>0q";
+static char xterm_s_fd          [] = "\033[?1004l";
+static char xterm_s_fe          [] = "\033[?1004h";
+static char xterm_s_kDC3        [] = "\033[3;3~";
+static char xterm_s_kDC4        [] = "\033[3;4~";
+static char xterm_s_kDC5        [] = "\033[3;5~";
+static char xterm_s_kDC6        [] = "\033[3;6~";
+static char xterm_s_kDC7        [] = "\033[3;7~";
+static char xterm_s_kDN         [] = "\033[1;2B";
+static char xterm_s_kDN3        [] = "\033[1;3B";
+static char xterm_s_kDN4        [] = "\033[1;4B";
+static char xterm_s_kDN5        [] = "\033[1;5B";
+static char xterm_s_kDN6        [] = "\033[1;6B";
+static char xterm_s_kDN7        [] = "\033[1;7B";
+static char xterm_s_kEND3       [] = "\033[1;3F";
+static char xterm_s_kEND4       [] = "\033[1;4F";
+static char xterm_s_kEND5       [] = "\033[1;5F";
+static char xterm_s_kEND6       [] = "\033[1;6F";
+static char xterm_s_kEND7       [] = "\033[1;7F";
+static char xterm_s_kHOM3       [] = "\033[1;3H";
+static char xterm_s_kHOM4       [] = "\033[1;4H";
+static char xterm_s_kHOM5       [] = "\033[1;5H";
+static char xterm_s_kHOM6       [] = "\033[1;6H";
+static char xterm_s_kHOM7       [] = "\033[1;7H";
+static char xterm_s_kIC3        [] = "\033[2;3~";
+static char xterm_s_kIC4        [] = "\033[2;4~";
+static char xterm_s_kIC5        [] = "\033[2;5~";
+static char xterm_s_kIC6        [] = "\033[2;6~";
+static char xterm_s_kIC7        [] = "\033[2;7~";
+static char xterm_s_kLFT3       [] = "\033[1;3D";
+static char xterm_s_kLFT4       [] = "\033[1;4D";
+static char xterm_s_kLFT5       [] = "\033[1;5D";
+static char xterm_s_kLFT6       [] = "\033[1;6D";
+static char xterm_s_kLFT7       [] = "\033[1;7D";
+static char xterm_s_kNXT3       [] = "\033[6;3~";
+static char xterm_s_kNXT4       [] = "\033[6;4~";
+static char xterm_s_kNXT5       [] = "\033[6;5~";
+static char xterm_s_kNXT6       [] = "\033[6;6~";
+static char xterm_s_kNXT7       [] = "\033[6;7~";
+static char xterm_s_kPRV3       [] = "\033[5;3~";
+static char xterm_s_kPRV4       [] = "\033[5;4~";
+static char xterm_s_kPRV5       [] = "\033[5;5~";
+static char xterm_s_kPRV6       [] = "\033[5;6~";
+static char xterm_s_kPRV7       [] = "\033[5;7~";
+static char xterm_s_kPause      [] = "\033[26;2~";
+static char xterm_s_kPrint      [] = "\033[25~";
+static char xterm_s_kPrint2     [] = "\033[25;2~";
+static char xterm_s_kPrint3     [] = "\033[25;3~";
+static char xterm_s_kPrint4     [] = "\033[25;4~";
+static char xterm_s_kPrint5     [] = "\033[25;5~";
+static char xterm_s_kPrint6     [] = "\033[25;6~";
+static char xterm_s_kPrint7     [] = "\033[25;7~";
+static char xterm_s_kRIT3       [] = "\033[1;3C";
+static char xterm_s_kRIT4       [] = "\033[1;4C";
+static char xterm_s_kRIT5       [] = "\033[1;5C";
+static char xterm_s_kRIT6       [] = "\033[1;6C";
+static char xterm_s_kRIT7       [] = "\033[1;7C";
+static char xterm_s_kScroll     [] = "\033[28;2~";
+static char xterm_s_kUP         [] = "\033[1;2A";
+static char xterm_s_kUP3        [] = "\033[1;3A";
+static char xterm_s_kUP4        [] = "\033[1;4A";
+static char xterm_s_kUP5        [] = "\033[1;5A";
+static char xterm_s_kUP6        [] = "\033[1;6A";
+static char xterm_s_kUP7        [] = "\033[1;7A";
+static char xterm_s_ka2         [] = "\033Ox";
+static char xterm_s_kb1         [] = "\033Ot";
+static char xterm_s_kb3         [] = "\033Ov";
+static char xterm_s_kc2         [] = "\033Or";
+static char xterm_s_kp5         [] = "\033OE";
+static char xterm_s_kpADD       [] = "\033Ok";
+static char xterm_s_kpCMA       [] = "\033Ol";
+static char xterm_s_kpDIV       [] = "\033Oo";
+static char xterm_s_kpDOT       [] = "\033On";
+static char xterm_s_kpMUL       [] = "\033Oj";
+static char xterm_s_kpSUB       [] = "\033Om";
+static char xterm_s_kpZRO       [] = "\033Op";
+static char xterm_s_kxIN        [] = "\033[I";
+static char xterm_s_kxOUT       [] = "\033[O";
+static char xterm_s_rmxx        [] = "\033[29m";
+static char xterm_s_rv          [] = "\033\134[>41;[1-6][0-9][0-9];0c";
+static char xterm_s_smxx        [] = "\033[9m";
+static char xterm_s_xm          [] = "\033[<%i%p3%d;%p1%d;%p2%d;%?%p4%tM%em%;";
+static char xterm_s_xr          [] = "\033P>\134|XTerm\134(([1-9][0-9]+)\134)\033\134\134";
 
 static char xterm_bool_data[] = {
 	/*   0: bw       */	FALSE,
@@ -2076,6 +2414,9 @@ static char xterm_bool_data[] = {
 	/*  41: OTNL     */	FALSE,
 	/*  42: OTpt     */	FALSE,
 	/*  43: OTxr     */	FALSE,
+	/*  44: AX       */	TRUE,
+	/*  45: XF       */	TRUE,
+	/*  46: XT       */	TRUE,
 };
 static NCURSES_INT2 xterm_number_data[] = {
 	/*   0: cols     */	80,
@@ -2171,7 +2512,7 @@ static char * xterm_string_data[] = {
 	/*  49: is2      */	xterm_s_is2,
 	/*  50: is3      */	ABSENT_STRING,
 	/*  51: if       */	ABSENT_STRING,
-	/*  52: ich1     */	ABSENT_STRING,
+	/*  52: ich1     */	xterm_s_ich1,
 	/*  53: il1      */	xterm_s_il1,
 	/*  54: ip       */	ABSENT_STRING,
 	/*  55: kbs      */	xterm_s_kbs,
@@ -2222,7 +2563,7 @@ static char * xterm_string_data[] = {
 	/* 100: lf9      */	ABSENT_STRING,
 	/* 101: rmm      */	xterm_s_rmm,
 	/* 102: smm      */	xterm_s_smm,
-	/* 103: nel      */	ABSENT_STRING,
+	/* 103: nel      */	xterm_s_nel,
 	/* 104: pad      */	ABSENT_STRING,
 	/* 105: dch      */	xterm_s_dch,
 	/* 106: dl       */	xterm_s_dl,
@@ -2258,11 +2599,11 @@ static char * xterm_string_data[] = {
 	/* 136: uc       */	ABSENT_STRING,
 	/* 137: hu       */	ABSENT_STRING,
 	/* 138: iprog    */	ABSENT_STRING,
-	/* 139: ka1      */	ABSENT_STRING,
-	/* 140: ka3      */	ABSENT_STRING,
+	/* 139: ka1      */	xterm_s_ka1,
+	/* 140: ka3      */	xterm_s_ka3,
 	/* 141: kb2      */	xterm_s_kb2,
-	/* 142: kc1      */	ABSENT_STRING,
-	/* 143: kc3      */	ABSENT_STRING,
+	/* 142: kc1      */	xterm_s_kc1,
+	/* 143: kc3      */	xterm_s_kc3,
 	/* 144: mc5p     */	ABSENT_STRING,
 	/* 145: rmp      */	ABSENT_STRING,
 	/* 146: acsc     */	xterm_s_acsc,
@@ -2277,7 +2618,7 @@ static char * xterm_string_data[] = {
 	/* 155: enacs    */	ABSENT_STRING,
 	/* 156: smln     */	ABSENT_STRING,
 	/* 157: rmln     */	ABSENT_STRING,
-	/* 158: kbeg     */	ABSENT_STRING,
+	/* 158: kbeg     */	xterm_s_kbeg,
 	/* 159: kcan     */	ABSENT_STRING,
 	/* 160: kclo     */	ABSENT_STRING,
 	/* 161: kcmd     */	ABSENT_STRING,
@@ -2389,7 +2730,7 @@ static char * xterm_string_data[] = {
 	/* 267: kf62     */	xterm_s_kf62,
 	/* 268: kf63     */	xterm_s_kf63,
 	/* 269: el1      */	xterm_s_el1,
-	/* 270: mgc      */	ABSENT_STRING,
+	/* 270: mgc      */	xterm_s_mgc,
 	/* 271: smgl     */	ABSENT_STRING,
 	/* 272: smgr     */	ABSENT_STRING,
 	/* 273: fln      */	ABSENT_STRING,
@@ -2461,8 +2802,8 @@ static char * xterm_string_data[] = {
 	/* 339: scs      */	ABSENT_STRING,
 	/* 340: smgb     */	ABSENT_STRING,
 	/* 341: smgbp    */	ABSENT_STRING,
-	/* 342: smglp    */	ABSENT_STRING,
-	/* 343: smgrp    */	ABSENT_STRING,
+	/* 342: smglp    */	xterm_s_smglp,
+	/* 343: smgrp    */	xterm_s_smgrp,
 	/* 344: smgt     */	ABSENT_STRING,
 	/* 345: smgtp    */	ABSENT_STRING,
 	/* 346: sbim     */	ABSENT_STRING,
@@ -2487,7 +2828,7 @@ static char * xterm_string_data[] = {
 	/* 365: s1ds     */	ABSENT_STRING,
 	/* 366: s2ds     */	ABSENT_STRING,
 	/* 367: s3ds     */	ABSENT_STRING,
-	/* 368: smglr    */	ABSENT_STRING,
+	/* 368: smglr    */	xterm_s_smglr,
 	/* 369: smgtb    */	ABSENT_STRING,
 	/* 370: birep    */	ABSENT_STRING,
 	/* 371: binel    */	ABSENT_STRING,
@@ -2533,6 +2874,692 @@ static char * xterm_string_data[] = {
 	/* 411: meml     */	xterm_s_meml,
 	/* 412: memu     */	xterm_s_memu,
 	/* 413: box1     */	ABSENT_STRING,
+	/* 414: BD       */	xterm_s_BD,
+	/* 415: BE       */	xterm_s_BE,
+	/* 416: Cr       */	xterm_s_Cr,
+	/* 417: Cs       */	xterm_s_Cs,
+	/* 418: E3       */	xterm_s_E3,
+	/* 419: Ms       */	xterm_s_Ms,
+	/* 420: PE       */	xterm_s_PE,
+	/* 421: PS       */	xterm_s_PS,
+	/* 422: RV       */	xterm_s_RV,
+	/* 423: Se       */	xterm_s_Se,
+	/* 424: Ss       */	xterm_s_Ss,
+	/* 425: XM       */	xterm_s_XM,
+	/* 426: XR       */	xterm_s_XR,
+	/* 427: fd       */	xterm_s_fd,
+	/* 428: fe       */	xterm_s_fe,
+	/* 429: kDC3     */	xterm_s_kDC3,
+	/* 430: kDC4     */	xterm_s_kDC4,
+	/* 431: kDC5     */	xterm_s_kDC5,
+	/* 432: kDC6     */	xterm_s_kDC6,
+	/* 433: kDC7     */	xterm_s_kDC7,
+	/* 434: kDN      */	xterm_s_kDN,
+	/* 435: kDN3     */	xterm_s_kDN3,
+	/* 436: kDN4     */	xterm_s_kDN4,
+	/* 437: kDN5     */	xterm_s_kDN5,
+	/* 438: kDN6     */	xterm_s_kDN6,
+	/* 439: kDN7     */	xterm_s_kDN7,
+	/* 440: kEND3    */	xterm_s_kEND3,
+	/* 441: kEND4    */	xterm_s_kEND4,
+	/* 442: kEND5    */	xterm_s_kEND5,
+	/* 443: kEND6    */	xterm_s_kEND6,
+	/* 444: kEND7    */	xterm_s_kEND7,
+	/* 445: kHOM3    */	xterm_s_kHOM3,
+	/* 446: kHOM4    */	xterm_s_kHOM4,
+	/* 447: kHOM5    */	xterm_s_kHOM5,
+	/* 448: kHOM6    */	xterm_s_kHOM6,
+	/* 449: kHOM7    */	xterm_s_kHOM7,
+	/* 450: kIC3     */	xterm_s_kIC3,
+	/* 451: kIC4     */	xterm_s_kIC4,
+	/* 452: kIC5     */	xterm_s_kIC5,
+	/* 453: kIC6     */	xterm_s_kIC6,
+	/* 454: kIC7     */	xterm_s_kIC7,
+	/* 455: kLFT3    */	xterm_s_kLFT3,
+	/* 456: kLFT4    */	xterm_s_kLFT4,
+	/* 457: kLFT5    */	xterm_s_kLFT5,
+	/* 458: kLFT6    */	xterm_s_kLFT6,
+	/* 459: kLFT7    */	xterm_s_kLFT7,
+	/* 460: kNXT3    */	xterm_s_kNXT3,
+	/* 461: kNXT4    */	xterm_s_kNXT4,
+	/* 462: kNXT5    */	xterm_s_kNXT5,
+	/* 463: kNXT6    */	xterm_s_kNXT6,
+	/* 464: kNXT7    */	xterm_s_kNXT7,
+	/* 465: kPRV3    */	xterm_s_kPRV3,
+	/* 466: kPRV4    */	xterm_s_kPRV4,
+	/* 467: kPRV5    */	xterm_s_kPRV5,
+	/* 468: kPRV6    */	xterm_s_kPRV6,
+	/* 469: kPRV7    */	xterm_s_kPRV7,
+	/* 470: kPause   */	xterm_s_kPause,
+	/* 471: kPrint   */	xterm_s_kPrint,
+	/* 472: kPrint2  */	xterm_s_kPrint2,
+	/* 473: kPrint3  */	xterm_s_kPrint3,
+	/* 474: kPrint4  */	xterm_s_kPrint4,
+	/* 475: kPrint5  */	xterm_s_kPrint5,
+	/* 476: kPrint6  */	xterm_s_kPrint6,
+	/* 477: kPrint7  */	xterm_s_kPrint7,
+	/* 478: kRIT3    */	xterm_s_kRIT3,
+	/* 479: kRIT4    */	xterm_s_kRIT4,
+	/* 480: kRIT5    */	xterm_s_kRIT5,
+	/* 481: kRIT6    */	xterm_s_kRIT6,
+	/* 482: kRIT7    */	xterm_s_kRIT7,
+	/* 483: kScroll  */	xterm_s_kScroll,
+	/* 484: kUP      */	xterm_s_kUP,
+	/* 485: kUP3     */	xterm_s_kUP3,
+	/* 486: kUP4     */	xterm_s_kUP4,
+	/* 487: kUP5     */	xterm_s_kUP5,
+	/* 488: kUP6     */	xterm_s_kUP6,
+	/* 489: kUP7     */	xterm_s_kUP7,
+	/* 490: ka2      */	xterm_s_ka2,
+	/* 491: kb1      */	xterm_s_kb1,
+	/* 492: kb3      */	xterm_s_kb3,
+	/* 493: kc2      */	xterm_s_kc2,
+	/* 494: kp5      */	xterm_s_kp5,
+	/* 495: kpADD    */	xterm_s_kpADD,
+	/* 496: kpCMA    */	xterm_s_kpCMA,
+	/* 497: kpDIV    */	xterm_s_kpDIV,
+	/* 498: kpDOT    */	xterm_s_kpDOT,
+	/* 499: kpMUL    */	xterm_s_kpMUL,
+	/* 500: kpSUB    */	xterm_s_kpSUB,
+	/* 501: kpZRO    */	xterm_s_kpZRO,
+	/* 502: kxIN     */	xterm_s_kxIN,
+	/* 503: kxOUT    */	xterm_s_kxOUT,
+	/* 504: rmxx     */	xterm_s_rmxx,
+	/* 505: rv       */	xterm_s_rv,
+	/* 506: smxx     */	xterm_s_smxx,
+	/* 507: xm       */	xterm_s_xm,
+	/* 508: xr       */	xterm_s_xr,
+};
+
+#ifndef extension_AX
+static char name_of_AX[] = "AX";
+#define extension_AX 1
+#endif
+
+#ifndef extension_XF
+static char name_of_XF[] = "XF";
+#define extension_XF 1
+#endif
+
+#ifndef extension_XT
+static char name_of_XT[] = "XT";
+#define extension_XT 1
+#endif
+
+#ifndef extension_BD
+static char name_of_BD[] = "BD";
+#define extension_BD 1
+#endif
+
+#ifndef extension_BE
+static char name_of_BE[] = "BE";
+#define extension_BE 1
+#endif
+
+#ifndef extension_Cr
+static char name_of_Cr[] = "Cr";
+#define extension_Cr 1
+#endif
+
+#ifndef extension_Cs
+static char name_of_Cs[] = "Cs";
+#define extension_Cs 1
+#endif
+
+#ifndef extension_E3
+static char name_of_E3[] = "E3";
+#define extension_E3 1
+#endif
+
+#ifndef extension_Ms
+static char name_of_Ms[] = "Ms";
+#define extension_Ms 1
+#endif
+
+#ifndef extension_PE
+static char name_of_PE[] = "PE";
+#define extension_PE 1
+#endif
+
+#ifndef extension_PS
+static char name_of_PS[] = "PS";
+#define extension_PS 1
+#endif
+
+#ifndef extension_RV
+static char name_of_RV[] = "RV";
+#define extension_RV 1
+#endif
+
+#ifndef extension_Se
+static char name_of_Se[] = "Se";
+#define extension_Se 1
+#endif
+
+#ifndef extension_Ss
+static char name_of_Ss[] = "Ss";
+#define extension_Ss 1
+#endif
+
+#ifndef extension_XM
+static char name_of_XM[] = "XM";
+#define extension_XM 1
+#endif
+
+#ifndef extension_XR
+static char name_of_XR[] = "XR";
+#define extension_XR 1
+#endif
+
+#ifndef extension_fd
+static char name_of_fd[] = "fd";
+#define extension_fd 1
+#endif
+
+#ifndef extension_fe
+static char name_of_fe[] = "fe";
+#define extension_fe 1
+#endif
+
+#ifndef extension_kDC3
+static char name_of_kDC3[] = "kDC3";
+#define extension_kDC3 1
+#endif
+
+#ifndef extension_kDC4
+static char name_of_kDC4[] = "kDC4";
+#define extension_kDC4 1
+#endif
+
+#ifndef extension_kDC5
+static char name_of_kDC5[] = "kDC5";
+#define extension_kDC5 1
+#endif
+
+#ifndef extension_kDC6
+static char name_of_kDC6[] = "kDC6";
+#define extension_kDC6 1
+#endif
+
+#ifndef extension_kDC7
+static char name_of_kDC7[] = "kDC7";
+#define extension_kDC7 1
+#endif
+
+#ifndef extension_kDN
+static char name_of_kDN[] = "kDN";
+#define extension_kDN 1
+#endif
+
+#ifndef extension_kDN3
+static char name_of_kDN3[] = "kDN3";
+#define extension_kDN3 1
+#endif
+
+#ifndef extension_kDN4
+static char name_of_kDN4[] = "kDN4";
+#define extension_kDN4 1
+#endif
+
+#ifndef extension_kDN5
+static char name_of_kDN5[] = "kDN5";
+#define extension_kDN5 1
+#endif
+
+#ifndef extension_kDN6
+static char name_of_kDN6[] = "kDN6";
+#define extension_kDN6 1
+#endif
+
+#ifndef extension_kDN7
+static char name_of_kDN7[] = "kDN7";
+#define extension_kDN7 1
+#endif
+
+#ifndef extension_kEND3
+static char name_of_kEND3[] = "kEND3";
+#define extension_kEND3 1
+#endif
+
+#ifndef extension_kEND4
+static char name_of_kEND4[] = "kEND4";
+#define extension_kEND4 1
+#endif
+
+#ifndef extension_kEND5
+static char name_of_kEND5[] = "kEND5";
+#define extension_kEND5 1
+#endif
+
+#ifndef extension_kEND6
+static char name_of_kEND6[] = "kEND6";
+#define extension_kEND6 1
+#endif
+
+#ifndef extension_kEND7
+static char name_of_kEND7[] = "kEND7";
+#define extension_kEND7 1
+#endif
+
+#ifndef extension_kHOM3
+static char name_of_kHOM3[] = "kHOM3";
+#define extension_kHOM3 1
+#endif
+
+#ifndef extension_kHOM4
+static char name_of_kHOM4[] = "kHOM4";
+#define extension_kHOM4 1
+#endif
+
+#ifndef extension_kHOM5
+static char name_of_kHOM5[] = "kHOM5";
+#define extension_kHOM5 1
+#endif
+
+#ifndef extension_kHOM6
+static char name_of_kHOM6[] = "kHOM6";
+#define extension_kHOM6 1
+#endif
+
+#ifndef extension_kHOM7
+static char name_of_kHOM7[] = "kHOM7";
+#define extension_kHOM7 1
+#endif
+
+#ifndef extension_kIC3
+static char name_of_kIC3[] = "kIC3";
+#define extension_kIC3 1
+#endif
+
+#ifndef extension_kIC4
+static char name_of_kIC4[] = "kIC4";
+#define extension_kIC4 1
+#endif
+
+#ifndef extension_kIC5
+static char name_of_kIC5[] = "kIC5";
+#define extension_kIC5 1
+#endif
+
+#ifndef extension_kIC6
+static char name_of_kIC6[] = "kIC6";
+#define extension_kIC6 1
+#endif
+
+#ifndef extension_kIC7
+static char name_of_kIC7[] = "kIC7";
+#define extension_kIC7 1
+#endif
+
+#ifndef extension_kLFT3
+static char name_of_kLFT3[] = "kLFT3";
+#define extension_kLFT3 1
+#endif
+
+#ifndef extension_kLFT4
+static char name_of_kLFT4[] = "kLFT4";
+#define extension_kLFT4 1
+#endif
+
+#ifndef extension_kLFT5
+static char name_of_kLFT5[] = "kLFT5";
+#define extension_kLFT5 1
+#endif
+
+#ifndef extension_kLFT6
+static char name_of_kLFT6[] = "kLFT6";
+#define extension_kLFT6 1
+#endif
+
+#ifndef extension_kLFT7
+static char name_of_kLFT7[] = "kLFT7";
+#define extension_kLFT7 1
+#endif
+
+#ifndef extension_kNXT3
+static char name_of_kNXT3[] = "kNXT3";
+#define extension_kNXT3 1
+#endif
+
+#ifndef extension_kNXT4
+static char name_of_kNXT4[] = "kNXT4";
+#define extension_kNXT4 1
+#endif
+
+#ifndef extension_kNXT5
+static char name_of_kNXT5[] = "kNXT5";
+#define extension_kNXT5 1
+#endif
+
+#ifndef extension_kNXT6
+static char name_of_kNXT6[] = "kNXT6";
+#define extension_kNXT6 1
+#endif
+
+#ifndef extension_kNXT7
+static char name_of_kNXT7[] = "kNXT7";
+#define extension_kNXT7 1
+#endif
+
+#ifndef extension_kPRV3
+static char name_of_kPRV3[] = "kPRV3";
+#define extension_kPRV3 1
+#endif
+
+#ifndef extension_kPRV4
+static char name_of_kPRV4[] = "kPRV4";
+#define extension_kPRV4 1
+#endif
+
+#ifndef extension_kPRV5
+static char name_of_kPRV5[] = "kPRV5";
+#define extension_kPRV5 1
+#endif
+
+#ifndef extension_kPRV6
+static char name_of_kPRV6[] = "kPRV6";
+#define extension_kPRV6 1
+#endif
+
+#ifndef extension_kPRV7
+static char name_of_kPRV7[] = "kPRV7";
+#define extension_kPRV7 1
+#endif
+
+#ifndef extension_kPause
+static char name_of_kPause[] = "kPause";
+#define extension_kPause 1
+#endif
+
+#ifndef extension_kPrint
+static char name_of_kPrint[] = "kPrint";
+#define extension_kPrint 1
+#endif
+
+#ifndef extension_kPrint2
+static char name_of_kPrint2[] = "kPrint2";
+#define extension_kPrint2 1
+#endif
+
+#ifndef extension_kPrint3
+static char name_of_kPrint3[] = "kPrint3";
+#define extension_kPrint3 1
+#endif
+
+#ifndef extension_kPrint4
+static char name_of_kPrint4[] = "kPrint4";
+#define extension_kPrint4 1
+#endif
+
+#ifndef extension_kPrint5
+static char name_of_kPrint5[] = "kPrint5";
+#define extension_kPrint5 1
+#endif
+
+#ifndef extension_kPrint6
+static char name_of_kPrint6[] = "kPrint6";
+#define extension_kPrint6 1
+#endif
+
+#ifndef extension_kPrint7
+static char name_of_kPrint7[] = "kPrint7";
+#define extension_kPrint7 1
+#endif
+
+#ifndef extension_kRIT3
+static char name_of_kRIT3[] = "kRIT3";
+#define extension_kRIT3 1
+#endif
+
+#ifndef extension_kRIT4
+static char name_of_kRIT4[] = "kRIT4";
+#define extension_kRIT4 1
+#endif
+
+#ifndef extension_kRIT5
+static char name_of_kRIT5[] = "kRIT5";
+#define extension_kRIT5 1
+#endif
+
+#ifndef extension_kRIT6
+static char name_of_kRIT6[] = "kRIT6";
+#define extension_kRIT6 1
+#endif
+
+#ifndef extension_kRIT7
+static char name_of_kRIT7[] = "kRIT7";
+#define extension_kRIT7 1
+#endif
+
+#ifndef extension_kScroll
+static char name_of_kScroll[] = "kScroll";
+#define extension_kScroll 1
+#endif
+
+#ifndef extension_kUP
+static char name_of_kUP[] = "kUP";
+#define extension_kUP 1
+#endif
+
+#ifndef extension_kUP3
+static char name_of_kUP3[] = "kUP3";
+#define extension_kUP3 1
+#endif
+
+#ifndef extension_kUP4
+static char name_of_kUP4[] = "kUP4";
+#define extension_kUP4 1
+#endif
+
+#ifndef extension_kUP5
+static char name_of_kUP5[] = "kUP5";
+#define extension_kUP5 1
+#endif
+
+#ifndef extension_kUP6
+static char name_of_kUP6[] = "kUP6";
+#define extension_kUP6 1
+#endif
+
+#ifndef extension_kUP7
+static char name_of_kUP7[] = "kUP7";
+#define extension_kUP7 1
+#endif
+
+#ifndef extension_ka2
+static char name_of_ka2[] = "ka2";
+#define extension_ka2 1
+#endif
+
+#ifndef extension_kb1
+static char name_of_kb1[] = "kb1";
+#define extension_kb1 1
+#endif
+
+#ifndef extension_kb3
+static char name_of_kb3[] = "kb3";
+#define extension_kb3 1
+#endif
+
+#ifndef extension_kc2
+static char name_of_kc2[] = "kc2";
+#define extension_kc2 1
+#endif
+
+#ifndef extension_kp5
+static char name_of_kp5[] = "kp5";
+#define extension_kp5 1
+#endif
+
+#ifndef extension_kpADD
+static char name_of_kpADD[] = "kpADD";
+#define extension_kpADD 1
+#endif
+
+#ifndef extension_kpCMA
+static char name_of_kpCMA[] = "kpCMA";
+#define extension_kpCMA 1
+#endif
+
+#ifndef extension_kpDIV
+static char name_of_kpDIV[] = "kpDIV";
+#define extension_kpDIV 1
+#endif
+
+#ifndef extension_kpDOT
+static char name_of_kpDOT[] = "kpDOT";
+#define extension_kpDOT 1
+#endif
+
+#ifndef extension_kpMUL
+static char name_of_kpMUL[] = "kpMUL";
+#define extension_kpMUL 1
+#endif
+
+#ifndef extension_kpSUB
+static char name_of_kpSUB[] = "kpSUB";
+#define extension_kpSUB 1
+#endif
+
+#ifndef extension_kpZRO
+static char name_of_kpZRO[] = "kpZRO";
+#define extension_kpZRO 1
+#endif
+
+#ifndef extension_kxIN
+static char name_of_kxIN[] = "kxIN";
+#define extension_kxIN 1
+#endif
+
+#ifndef extension_kxOUT
+static char name_of_kxOUT[] = "kxOUT";
+#define extension_kxOUT 1
+#endif
+
+#ifndef extension_rmxx
+static char name_of_rmxx[] = "rmxx";
+#define extension_rmxx 1
+#endif
+
+#ifndef extension_rv
+static char name_of_rv[] = "rv";
+#define extension_rv 1
+#endif
+
+#ifndef extension_smxx
+static char name_of_smxx[] = "smxx";
+#define extension_smxx 1
+#endif
+
+#ifndef extension_xm
+static char name_of_xm[] = "xm";
+#define extension_xm 1
+#endif
+
+#ifndef extension_xr
+static char name_of_xr[] = "xr";
+#define extension_xr 1
+#endif
+
+static char * xterm_string_ext_data[] = {
+	/*  44: bool */	name_of_AX,
+	/*  45: bool */	name_of_XF,
+	/*  46: bool */	name_of_XT,
+	/* 414: str */	name_of_BD,
+	/* 415: str */	name_of_BE,
+	/* 416: str */	name_of_Cr,
+	/* 417: str */	name_of_Cs,
+	/* 418: str */	name_of_E3,
+	/* 419: str */	name_of_Ms,
+	/* 420: str */	name_of_PE,
+	/* 421: str */	name_of_PS,
+	/* 422: str */	name_of_RV,
+	/* 423: str */	name_of_Se,
+	/* 424: str */	name_of_Ss,
+	/* 425: str */	name_of_XM,
+	/* 426: str */	name_of_XR,
+	/* 427: str */	name_of_fd,
+	/* 428: str */	name_of_fe,
+	/* 429: str */	name_of_kDC3,
+	/* 430: str */	name_of_kDC4,
+	/* 431: str */	name_of_kDC5,
+	/* 432: str */	name_of_kDC6,
+	/* 433: str */	name_of_kDC7,
+	/* 434: str */	name_of_kDN,
+	/* 435: str */	name_of_kDN3,
+	/* 436: str */	name_of_kDN4,
+	/* 437: str */	name_of_kDN5,
+	/* 438: str */	name_of_kDN6,
+	/* 439: str */	name_of_kDN7,
+	/* 440: str */	name_of_kEND3,
+	/* 441: str */	name_of_kEND4,
+	/* 442: str */	name_of_kEND5,
+	/* 443: str */	name_of_kEND6,
+	/* 444: str */	name_of_kEND7,
+	/* 445: str */	name_of_kHOM3,
+	/* 446: str */	name_of_kHOM4,
+	/* 447: str */	name_of_kHOM5,
+	/* 448: str */	name_of_kHOM6,
+	/* 449: str */	name_of_kHOM7,
+	/* 450: str */	name_of_kIC3,
+	/* 451: str */	name_of_kIC4,
+	/* 452: str */	name_of_kIC5,
+	/* 453: str */	name_of_kIC6,
+	/* 454: str */	name_of_kIC7,
+	/* 455: str */	name_of_kLFT3,
+	/* 456: str */	name_of_kLFT4,
+	/* 457: str */	name_of_kLFT5,
+	/* 458: str */	name_of_kLFT6,
+	/* 459: str */	name_of_kLFT7,
+	/* 460: str */	name_of_kNXT3,
+	/* 461: str */	name_of_kNXT4,
+	/* 462: str */	name_of_kNXT5,
+	/* 463: str */	name_of_kNXT6,
+	/* 464: str */	name_of_kNXT7,
+	/* 465: str */	name_of_kPRV3,
+	/* 466: str */	name_of_kPRV4,
+	/* 467: str */	name_of_kPRV5,
+	/* 468: str */	name_of_kPRV6,
+	/* 469: str */	name_of_kPRV7,
+	/* 470: str */	name_of_kPause,
+	/* 471: str */	name_of_kPrint,
+	/* 472: str */	name_of_kPrint2,
+	/* 473: str */	name_of_kPrint3,
+	/* 474: str */	name_of_kPrint4,
+	/* 475: str */	name_of_kPrint5,
+	/* 476: str */	name_of_kPrint6,
+	/* 477: str */	name_of_kPrint7,
+	/* 478: str */	name_of_kRIT3,
+	/* 479: str */	name_of_kRIT4,
+	/* 480: str */	name_of_kRIT5,
+	/* 481: str */	name_of_kRIT6,
+	/* 482: str */	name_of_kRIT7,
+	/* 483: str */	name_of_kScroll,
+	/* 484: str */	name_of_kUP,
+	/* 485: str */	name_of_kUP3,
+	/* 486: str */	name_of_kUP4,
+	/* 487: str */	name_of_kUP5,
+	/* 488: str */	name_of_kUP6,
+	/* 489: str */	name_of_kUP7,
+	/* 490: str */	name_of_ka2,
+	/* 491: str */	name_of_kb1,
+	/* 492: str */	name_of_kb3,
+	/* 493: str */	name_of_kc2,
+	/* 494: str */	name_of_kp5,
+	/* 495: str */	name_of_kpADD,
+	/* 496: str */	name_of_kpCMA,
+	/* 497: str */	name_of_kpDIV,
+	/* 498: str */	name_of_kpDOT,
+	/* 499: str */	name_of_kpMUL,
+	/* 500: str */	name_of_kpSUB,
+	/* 501: str */	name_of_kpZRO,
+	/* 502: str */	name_of_kxIN,
+	/* 503: str */	name_of_kxOUT,
+	/* 504: str */	name_of_rmxx,
+	/* 505: str */	name_of_rv,
+	/* 506: str */	name_of_smxx,
+	/* 507: str */	name_of_xm,
+	/* 508: str */	name_of_xr,
 };
 /* xterm-256color */
 
@@ -2577,6 +3604,7 @@ static char xterm_256color_s_rmso[] = "\033[27m";
 static char xterm_256color_s_rmul[] = "\033[24m";
 static char xterm_256color_s_flash[] = "\033[?5h$<100/>\033[?5l";
 static char xterm_256color_s_is2[] = "\033[!p\033[?3;4l\033[4l\033>";
+static char xterm_256color_s_ich1[] = "\033[@";
 static char xterm_256color_s_il1[] = "\033[L";
 static char xterm_256color_s_kbs[] = "\010";
 static char xterm_256color_s_kdch1[] = "\033[3~";
@@ -2604,6 +3632,7 @@ static char xterm_256color_s_rmkx[] = "\033[?1l\033>";
 static char xterm_256color_s_smkx[] = "\033[?1h\033=";
 static char xterm_256color_s_rmm[] = "\033[?1034l";
 static char xterm_256color_s_smm[] = "\033[?1034h";
+static char xterm_256color_s_nel[] = "\033E";
 static char xterm_256color_s_dch[] = "\033[%p1%dP";
 static char xterm_256color_s_dl [] = "\033[%p1%dM";
 static char xterm_256color_s_cud[] = "\033[%p1%dB";
@@ -2618,7 +3647,7 @@ static char xterm_256color_s_mc0[] = "\033[i";
 static char xterm_256color_s_mc4[] = "\033[4i";
 static char xterm_256color_s_mc5[] = "\033[5i";
 static char xterm_256color_s_rep[] = "%p1%c\033[%p2%{1}%-%db";
-static char xterm_256color_s_rs1[] = "\033c\033]104\007";
+static char xterm_256color_s_rs1[] = "\033c\033]104\033\134";
 static char xterm_256color_s_rs2[] = "\033[!p\033[?3;4l\033[4l\033>";
 static char xterm_256color_s_rc [] = "\0338";
 static char xterm_256color_s_vpa[] = "\033[%i%p1%dd";
@@ -2628,11 +3657,16 @@ static char xterm_256color_s_ri [] = "\033M";
 static char xterm_256color_s_sgr[] = "%?%p9%t\033(0%e\033(B%;\033[0%?%p6%t;1%;%?%p5%t;2%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p7%t;8%;m";
 static char xterm_256color_s_hts[] = "\033H";
 static char xterm_256color_s_ht [] = "\011";
-static char xterm_256color_s_kb2[] = "\033OE";
+static char xterm_256color_s_ka1[] = "\033Ow";
+static char xterm_256color_s_ka3[] = "\033Oy";
+static char xterm_256color_s_kb2[] = "\033Ou";
+static char xterm_256color_s_kc1[] = "\033Oq";
+static char xterm_256color_s_kc3[] = "\033Os";
 static char xterm_256color_s_acsc[] = "``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~";
 static char xterm_256color_s_kcbt[] = "\033[Z";
 static char xterm_256color_s_smam[] = "\033[?7h";
 static char xterm_256color_s_rmam[] = "\033[?7l";
+static char xterm_256color_s_kbeg[] = "\033OE";
 static char xterm_256color_s_kend[] = "\033OF";
 static char xterm_256color_s_kent[] = "\033OM";
 static char xterm_256color_s_kDC[] = "\033[3;2~";
@@ -2697,20 +3731,119 @@ static char xterm_256color_s_kf61[] = "\033[1;4P";
 static char xterm_256color_s_kf62[] = "\033[1;4Q";
 static char xterm_256color_s_kf63[] = "\033[1;4R";
 static char xterm_256color_s_el1[] = "\033[1K";
+static char xterm_256color_s_mgc[] = "\033[?69l";
 static char xterm_256color_s_u6 [] = "\033[%i%d;%dR";
 static char xterm_256color_s_u7 [] = "\033[6n";
 static char xterm_256color_s_u8 [] = "\033[?%[;0123456789]c";
 static char xterm_256color_s_u9 [] = "\033[c";
 static char xterm_256color_s_op [] = "\033[39;49m";
-static char xterm_256color_s_oc [] = "\033]104\007";
-static char xterm_256color_s_initc[] = "\033]4;%p1%d;rgb:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\033\134";
+static char xterm_256color_s_oc [] = "\033]104\033\134";
+static char xterm_256color_s_initc[] = "\033]4;%p1%d;rgb:%p2%'\377'%*%{1000}%/%2.2X/%p3%'\377'%*%{1000}%/%2.2X/%p4%'\377'%*%{1000}%/%2.2X\033\134";
 static char xterm_256color_s_sitm[] = "\033[3m";
 static char xterm_256color_s_ritm[] = "\033[23m";
+static char xterm_256color_s_smglp[] = "\033[?69h\033[%i%p1%ds";
+static char xterm_256color_s_smgrp[] = "\033[?69h\033[%i;%p1%ds";
 static char xterm_256color_s_kmous[] = "\033[<";
-static char xterm_256color_s_setaf[] = "\033[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m";
-static char xterm_256color_s_setab[] = "\033[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m";
+static char xterm_256color_s_setaf[] = "\033[%?%p1%'\010'%<%t3%p1%d%e%p1%'\020'%<%t9%p1%'\010'%-%d%e38;5;%p1%d%;m";
+static char xterm_256color_s_setab[] = "\033[%?%p1%'\010'%<%t4%p1%d%e%p1%'\020'%<%t10%p1%'\010'%-%d%e48;5;%p1%d%;m";
+static char xterm_256color_s_smglr[] = "\033[?69h\033[%i%p1%d;%p2%ds";
 static char xterm_256color_s_meml[] = "\033l";
 static char xterm_256color_s_memu[] = "\033m";
+static char xterm_256color_s_BD [] = "\033[?2004l";
+static char xterm_256color_s_BE [] = "\033[?2004h";
+static char xterm_256color_s_Cr [] = "\033]112\033\134";
+static char xterm_256color_s_Cs [] = "\033]12;%p1%s\033\134";
+static char xterm_256color_s_E3 [] = "\033[3J";
+static char xterm_256color_s_Ms [] = "\033]52;%p1%s;%p2%s\033\134";
+static char xterm_256color_s_PE [] = "\033[201~";
+static char xterm_256color_s_PS [] = "\033[200~";
+static char xterm_256color_s_RV [] = "\033[>c";
+static char xterm_256color_s_Se [] = "\033[ q";
+static char xterm_256color_s_Ss [] = "\033[%p1%d q";
+static char xterm_256color_s_XM [] = "\033[?1006;1000%?%p1%{1}%=%th%el%;";
+static char xterm_256color_s_XR [] = "\033[>0q";
+static char xterm_256color_s_fd [] = "\033[?1004l";
+static char xterm_256color_s_fe [] = "\033[?1004h";
+static char xterm_256color_s_kDC3[] = "\033[3;3~";
+static char xterm_256color_s_kDC4[] = "\033[3;4~";
+static char xterm_256color_s_kDC5[] = "\033[3;5~";
+static char xterm_256color_s_kDC6[] = "\033[3;6~";
+static char xterm_256color_s_kDC7[] = "\033[3;7~";
+static char xterm_256color_s_kDN[] = "\033[1;2B";
+static char xterm_256color_s_kDN3[] = "\033[1;3B";
+static char xterm_256color_s_kDN4[] = "\033[1;4B";
+static char xterm_256color_s_kDN5[] = "\033[1;5B";
+static char xterm_256color_s_kDN6[] = "\033[1;6B";
+static char xterm_256color_s_kDN7[] = "\033[1;7B";
+static char xterm_256color_s_kEND3[] = "\033[1;3F";
+static char xterm_256color_s_kEND4[] = "\033[1;4F";
+static char xterm_256color_s_kEND5[] = "\033[1;5F";
+static char xterm_256color_s_kEND6[] = "\033[1;6F";
+static char xterm_256color_s_kEND7[] = "\033[1;7F";
+static char xterm_256color_s_kHOM3[] = "\033[1;3H";
+static char xterm_256color_s_kHOM4[] = "\033[1;4H";
+static char xterm_256color_s_kHOM5[] = "\033[1;5H";
+static char xterm_256color_s_kHOM6[] = "\033[1;6H";
+static char xterm_256color_s_kHOM7[] = "\033[1;7H";
+static char xterm_256color_s_kIC3[] = "\033[2;3~";
+static char xterm_256color_s_kIC4[] = "\033[2;4~";
+static char xterm_256color_s_kIC5[] = "\033[2;5~";
+static char xterm_256color_s_kIC6[] = "\033[2;6~";
+static char xterm_256color_s_kIC7[] = "\033[2;7~";
+static char xterm_256color_s_kLFT3[] = "\033[1;3D";
+static char xterm_256color_s_kLFT4[] = "\033[1;4D";
+static char xterm_256color_s_kLFT5[] = "\033[1;5D";
+static char xterm_256color_s_kLFT6[] = "\033[1;6D";
+static char xterm_256color_s_kLFT7[] = "\033[1;7D";
+static char xterm_256color_s_kNXT3[] = "\033[6;3~";
+static char xterm_256color_s_kNXT4[] = "\033[6;4~";
+static char xterm_256color_s_kNXT5[] = "\033[6;5~";
+static char xterm_256color_s_kNXT6[] = "\033[6;6~";
+static char xterm_256color_s_kNXT7[] = "\033[6;7~";
+static char xterm_256color_s_kPRV3[] = "\033[5;3~";
+static char xterm_256color_s_kPRV4[] = "\033[5;4~";
+static char xterm_256color_s_kPRV5[] = "\033[5;5~";
+static char xterm_256color_s_kPRV6[] = "\033[5;6~";
+static char xterm_256color_s_kPRV7[] = "\033[5;7~";
+static char xterm_256color_s_kPause[] = "\033[26;2~";
+static char xterm_256color_s_kPrint[] = "\033[25~";
+static char xterm_256color_s_kPrint2[] = "\033[25;2~";
+static char xterm_256color_s_kPrint3[] = "\033[25;3~";
+static char xterm_256color_s_kPrint4[] = "\033[25;4~";
+static char xterm_256color_s_kPrint5[] = "\033[25;5~";
+static char xterm_256color_s_kPrint6[] = "\033[25;6~";
+static char xterm_256color_s_kPrint7[] = "\033[25;7~";
+static char xterm_256color_s_kRIT3[] = "\033[1;3C";
+static char xterm_256color_s_kRIT4[] = "\033[1;4C";
+static char xterm_256color_s_kRIT5[] = "\033[1;5C";
+static char xterm_256color_s_kRIT6[] = "\033[1;6C";
+static char xterm_256color_s_kRIT7[] = "\033[1;7C";
+static char xterm_256color_s_kScroll[] = "\033[28;2~";
+static char xterm_256color_s_kUP[] = "\033[1;2A";
+static char xterm_256color_s_kUP3[] = "\033[1;3A";
+static char xterm_256color_s_kUP4[] = "\033[1;4A";
+static char xterm_256color_s_kUP5[] = "\033[1;5A";
+static char xterm_256color_s_kUP6[] = "\033[1;6A";
+static char xterm_256color_s_kUP7[] = "\033[1;7A";
+static char xterm_256color_s_ka2[] = "\033Ox";
+static char xterm_256color_s_kb1[] = "\033Ot";
+static char xterm_256color_s_kb3[] = "\033Ov";
+static char xterm_256color_s_kc2[] = "\033Or";
+static char xterm_256color_s_kp5[] = "\033OE";
+static char xterm_256color_s_kpADD[] = "\033Ok";
+static char xterm_256color_s_kpCMA[] = "\033Ol";
+static char xterm_256color_s_kpDIV[] = "\033Oo";
+static char xterm_256color_s_kpDOT[] = "\033On";
+static char xterm_256color_s_kpMUL[] = "\033Oj";
+static char xterm_256color_s_kpSUB[] = "\033Om";
+static char xterm_256color_s_kpZRO[] = "\033Op";
+static char xterm_256color_s_kxIN[] = "\033[I";
+static char xterm_256color_s_kxOUT[] = "\033[O";
+static char xterm_256color_s_rmxx[] = "\033[29m";
+static char xterm_256color_s_rv [] = "\033\134[>41;[1-6][0-9][0-9];0c";
+static char xterm_256color_s_smxx[] = "\033[9m";
+static char xterm_256color_s_xm [] = "\033[<%i%p3%d;%p1%d;%p2%d;%?%p4%tM%em%;";
+static char xterm_256color_s_xr [] = "\033P>\134|XTerm\134(([1-9][0-9]+)\134)\033\134\134";
 
 static char xterm_256color_bool_data[] = {
 	/*   0: bw       */	FALSE,
@@ -2757,6 +3890,9 @@ static char xterm_256color_bool_data[] = {
 	/*  41: OTNL     */	FALSE,
 	/*  42: OTpt     */	FALSE,
 	/*  43: OTxr     */	FALSE,
+	/*  44: AX       */	TRUE,
+	/*  45: XF       */	TRUE,
+	/*  46: XT       */	TRUE,
 };
 static NCURSES_INT2 xterm_256color_number_data[] = {
 	/*   0: cols     */	80,
@@ -2852,7 +3988,7 @@ static char * xterm_256color_string_data[] = {
 	/*  49: is2      */	xterm_256color_s_is2,
 	/*  50: is3      */	ABSENT_STRING,
 	/*  51: if       */	ABSENT_STRING,
-	/*  52: ich1     */	ABSENT_STRING,
+	/*  52: ich1     */	xterm_256color_s_ich1,
 	/*  53: il1      */	xterm_256color_s_il1,
 	/*  54: ip       */	ABSENT_STRING,
 	/*  55: kbs      */	xterm_256color_s_kbs,
@@ -2903,7 +4039,7 @@ static char * xterm_256color_string_data[] = {
 	/* 100: lf9      */	ABSENT_STRING,
 	/* 101: rmm      */	xterm_256color_s_rmm,
 	/* 102: smm      */	xterm_256color_s_smm,
-	/* 103: nel      */	ABSENT_STRING,
+	/* 103: nel      */	xterm_256color_s_nel,
 	/* 104: pad      */	ABSENT_STRING,
 	/* 105: dch      */	xterm_256color_s_dch,
 	/* 106: dl       */	xterm_256color_s_dl,
@@ -2939,11 +4075,11 @@ static char * xterm_256color_string_data[] = {
 	/* 136: uc       */	ABSENT_STRING,
 	/* 137: hu       */	ABSENT_STRING,
 	/* 138: iprog    */	ABSENT_STRING,
-	/* 139: ka1      */	ABSENT_STRING,
-	/* 140: ka3      */	ABSENT_STRING,
+	/* 139: ka1      */	xterm_256color_s_ka1,
+	/* 140: ka3      */	xterm_256color_s_ka3,
 	/* 141: kb2      */	xterm_256color_s_kb2,
-	/* 142: kc1      */	ABSENT_STRING,
-	/* 143: kc3      */	ABSENT_STRING,
+	/* 142: kc1      */	xterm_256color_s_kc1,
+	/* 143: kc3      */	xterm_256color_s_kc3,
 	/* 144: mc5p     */	ABSENT_STRING,
 	/* 145: rmp      */	ABSENT_STRING,
 	/* 146: acsc     */	xterm_256color_s_acsc,
@@ -2958,7 +4094,7 @@ static char * xterm_256color_string_data[] = {
 	/* 155: enacs    */	ABSENT_STRING,
 	/* 156: smln     */	ABSENT_STRING,
 	/* 157: rmln     */	ABSENT_STRING,
-	/* 158: kbeg     */	ABSENT_STRING,
+	/* 158: kbeg     */	xterm_256color_s_kbeg,
 	/* 159: kcan     */	ABSENT_STRING,
 	/* 160: kclo     */	ABSENT_STRING,
 	/* 161: kcmd     */	ABSENT_STRING,
@@ -3070,7 +4206,7 @@ static char * xterm_256color_string_data[] = {
 	/* 267: kf62     */	xterm_256color_s_kf62,
 	/* 268: kf63     */	xterm_256color_s_kf63,
 	/* 269: el1      */	xterm_256color_s_el1,
-	/* 270: mgc      */	ABSENT_STRING,
+	/* 270: mgc      */	xterm_256color_s_mgc,
 	/* 271: smgl     */	ABSENT_STRING,
 	/* 272: smgr     */	ABSENT_STRING,
 	/* 273: fln      */	ABSENT_STRING,
@@ -3142,8 +4278,8 @@ static char * xterm_256color_string_data[] = {
 	/* 339: scs      */	ABSENT_STRING,
 	/* 340: smgb     */	ABSENT_STRING,
 	/* 341: smgbp    */	ABSENT_STRING,
-	/* 342: smglp    */	ABSENT_STRING,
-	/* 343: smgrp    */	ABSENT_STRING,
+	/* 342: smglp    */	xterm_256color_s_smglp,
+	/* 343: smgrp    */	xterm_256color_s_smgrp,
 	/* 344: smgt     */	ABSENT_STRING,
 	/* 345: smgtp    */	ABSENT_STRING,
 	/* 346: sbim     */	ABSENT_STRING,
@@ -3168,7 +4304,7 @@ static char * xterm_256color_string_data[] = {
 	/* 365: s1ds     */	ABSENT_STRING,
 	/* 366: s2ds     */	ABSENT_STRING,
 	/* 367: s3ds     */	ABSENT_STRING,
-	/* 368: smglr    */	ABSENT_STRING,
+	/* 368: smglr    */	xterm_256color_s_smglr,
 	/* 369: smgtb    */	ABSENT_STRING,
 	/* 370: birep    */	ABSENT_STRING,
 	/* 371: binel    */	ABSENT_STRING,
@@ -3214,6 +4350,692 @@ static char * xterm_256color_string_data[] = {
 	/* 411: meml     */	xterm_256color_s_meml,
 	/* 412: memu     */	xterm_256color_s_memu,
 	/* 413: box1     */	ABSENT_STRING,
+	/* 414: BD       */	xterm_256color_s_BD,
+	/* 415: BE       */	xterm_256color_s_BE,
+	/* 416: Cr       */	xterm_256color_s_Cr,
+	/* 417: Cs       */	xterm_256color_s_Cs,
+	/* 418: E3       */	xterm_256color_s_E3,
+	/* 419: Ms       */	xterm_256color_s_Ms,
+	/* 420: PE       */	xterm_256color_s_PE,
+	/* 421: PS       */	xterm_256color_s_PS,
+	/* 422: RV       */	xterm_256color_s_RV,
+	/* 423: Se       */	xterm_256color_s_Se,
+	/* 424: Ss       */	xterm_256color_s_Ss,
+	/* 425: XM       */	xterm_256color_s_XM,
+	/* 426: XR       */	xterm_256color_s_XR,
+	/* 427: fd       */	xterm_256color_s_fd,
+	/* 428: fe       */	xterm_256color_s_fe,
+	/* 429: kDC3     */	xterm_256color_s_kDC3,
+	/* 430: kDC4     */	xterm_256color_s_kDC4,
+	/* 431: kDC5     */	xterm_256color_s_kDC5,
+	/* 432: kDC6     */	xterm_256color_s_kDC6,
+	/* 433: kDC7     */	xterm_256color_s_kDC7,
+	/* 434: kDN      */	xterm_256color_s_kDN,
+	/* 435: kDN3     */	xterm_256color_s_kDN3,
+	/* 436: kDN4     */	xterm_256color_s_kDN4,
+	/* 437: kDN5     */	xterm_256color_s_kDN5,
+	/* 438: kDN6     */	xterm_256color_s_kDN6,
+	/* 439: kDN7     */	xterm_256color_s_kDN7,
+	/* 440: kEND3    */	xterm_256color_s_kEND3,
+	/* 441: kEND4    */	xterm_256color_s_kEND4,
+	/* 442: kEND5    */	xterm_256color_s_kEND5,
+	/* 443: kEND6    */	xterm_256color_s_kEND6,
+	/* 444: kEND7    */	xterm_256color_s_kEND7,
+	/* 445: kHOM3    */	xterm_256color_s_kHOM3,
+	/* 446: kHOM4    */	xterm_256color_s_kHOM4,
+	/* 447: kHOM5    */	xterm_256color_s_kHOM5,
+	/* 448: kHOM6    */	xterm_256color_s_kHOM6,
+	/* 449: kHOM7    */	xterm_256color_s_kHOM7,
+	/* 450: kIC3     */	xterm_256color_s_kIC3,
+	/* 451: kIC4     */	xterm_256color_s_kIC4,
+	/* 452: kIC5     */	xterm_256color_s_kIC5,
+	/* 453: kIC6     */	xterm_256color_s_kIC6,
+	/* 454: kIC7     */	xterm_256color_s_kIC7,
+	/* 455: kLFT3    */	xterm_256color_s_kLFT3,
+	/* 456: kLFT4    */	xterm_256color_s_kLFT4,
+	/* 457: kLFT5    */	xterm_256color_s_kLFT5,
+	/* 458: kLFT6    */	xterm_256color_s_kLFT6,
+	/* 459: kLFT7    */	xterm_256color_s_kLFT7,
+	/* 460: kNXT3    */	xterm_256color_s_kNXT3,
+	/* 461: kNXT4    */	xterm_256color_s_kNXT4,
+	/* 462: kNXT5    */	xterm_256color_s_kNXT5,
+	/* 463: kNXT6    */	xterm_256color_s_kNXT6,
+	/* 464: kNXT7    */	xterm_256color_s_kNXT7,
+	/* 465: kPRV3    */	xterm_256color_s_kPRV3,
+	/* 466: kPRV4    */	xterm_256color_s_kPRV4,
+	/* 467: kPRV5    */	xterm_256color_s_kPRV5,
+	/* 468: kPRV6    */	xterm_256color_s_kPRV6,
+	/* 469: kPRV7    */	xterm_256color_s_kPRV7,
+	/* 470: kPause   */	xterm_256color_s_kPause,
+	/* 471: kPrint   */	xterm_256color_s_kPrint,
+	/* 472: kPrint2  */	xterm_256color_s_kPrint2,
+	/* 473: kPrint3  */	xterm_256color_s_kPrint3,
+	/* 474: kPrint4  */	xterm_256color_s_kPrint4,
+	/* 475: kPrint5  */	xterm_256color_s_kPrint5,
+	/* 476: kPrint6  */	xterm_256color_s_kPrint6,
+	/* 477: kPrint7  */	xterm_256color_s_kPrint7,
+	/* 478: kRIT3    */	xterm_256color_s_kRIT3,
+	/* 479: kRIT4    */	xterm_256color_s_kRIT4,
+	/* 480: kRIT5    */	xterm_256color_s_kRIT5,
+	/* 481: kRIT6    */	xterm_256color_s_kRIT6,
+	/* 482: kRIT7    */	xterm_256color_s_kRIT7,
+	/* 483: kScroll  */	xterm_256color_s_kScroll,
+	/* 484: kUP      */	xterm_256color_s_kUP,
+	/* 485: kUP3     */	xterm_256color_s_kUP3,
+	/* 486: kUP4     */	xterm_256color_s_kUP4,
+	/* 487: kUP5     */	xterm_256color_s_kUP5,
+	/* 488: kUP6     */	xterm_256color_s_kUP6,
+	/* 489: kUP7     */	xterm_256color_s_kUP7,
+	/* 490: ka2      */	xterm_256color_s_ka2,
+	/* 491: kb1      */	xterm_256color_s_kb1,
+	/* 492: kb3      */	xterm_256color_s_kb3,
+	/* 493: kc2      */	xterm_256color_s_kc2,
+	/* 494: kp5      */	xterm_256color_s_kp5,
+	/* 495: kpADD    */	xterm_256color_s_kpADD,
+	/* 496: kpCMA    */	xterm_256color_s_kpCMA,
+	/* 497: kpDIV    */	xterm_256color_s_kpDIV,
+	/* 498: kpDOT    */	xterm_256color_s_kpDOT,
+	/* 499: kpMUL    */	xterm_256color_s_kpMUL,
+	/* 500: kpSUB    */	xterm_256color_s_kpSUB,
+	/* 501: kpZRO    */	xterm_256color_s_kpZRO,
+	/* 502: kxIN     */	xterm_256color_s_kxIN,
+	/* 503: kxOUT    */	xterm_256color_s_kxOUT,
+	/* 504: rmxx     */	xterm_256color_s_rmxx,
+	/* 505: rv       */	xterm_256color_s_rv,
+	/* 506: smxx     */	xterm_256color_s_smxx,
+	/* 507: xm       */	xterm_256color_s_xm,
+	/* 508: xr       */	xterm_256color_s_xr,
+};
+
+#ifndef extension_AX
+static char name_of_AX[] = "AX";
+#define extension_AX 1
+#endif
+
+#ifndef extension_XF
+static char name_of_XF[] = "XF";
+#define extension_XF 1
+#endif
+
+#ifndef extension_XT
+static char name_of_XT[] = "XT";
+#define extension_XT 1
+#endif
+
+#ifndef extension_BD
+static char name_of_BD[] = "BD";
+#define extension_BD 1
+#endif
+
+#ifndef extension_BE
+static char name_of_BE[] = "BE";
+#define extension_BE 1
+#endif
+
+#ifndef extension_Cr
+static char name_of_Cr[] = "Cr";
+#define extension_Cr 1
+#endif
+
+#ifndef extension_Cs
+static char name_of_Cs[] = "Cs";
+#define extension_Cs 1
+#endif
+
+#ifndef extension_E3
+static char name_of_E3[] = "E3";
+#define extension_E3 1
+#endif
+
+#ifndef extension_Ms
+static char name_of_Ms[] = "Ms";
+#define extension_Ms 1
+#endif
+
+#ifndef extension_PE
+static char name_of_PE[] = "PE";
+#define extension_PE 1
+#endif
+
+#ifndef extension_PS
+static char name_of_PS[] = "PS";
+#define extension_PS 1
+#endif
+
+#ifndef extension_RV
+static char name_of_RV[] = "RV";
+#define extension_RV 1
+#endif
+
+#ifndef extension_Se
+static char name_of_Se[] = "Se";
+#define extension_Se 1
+#endif
+
+#ifndef extension_Ss
+static char name_of_Ss[] = "Ss";
+#define extension_Ss 1
+#endif
+
+#ifndef extension_XM
+static char name_of_XM[] = "XM";
+#define extension_XM 1
+#endif
+
+#ifndef extension_XR
+static char name_of_XR[] = "XR";
+#define extension_XR 1
+#endif
+
+#ifndef extension_fd
+static char name_of_fd[] = "fd";
+#define extension_fd 1
+#endif
+
+#ifndef extension_fe
+static char name_of_fe[] = "fe";
+#define extension_fe 1
+#endif
+
+#ifndef extension_kDC3
+static char name_of_kDC3[] = "kDC3";
+#define extension_kDC3 1
+#endif
+
+#ifndef extension_kDC4
+static char name_of_kDC4[] = "kDC4";
+#define extension_kDC4 1
+#endif
+
+#ifndef extension_kDC5
+static char name_of_kDC5[] = "kDC5";
+#define extension_kDC5 1
+#endif
+
+#ifndef extension_kDC6
+static char name_of_kDC6[] = "kDC6";
+#define extension_kDC6 1
+#endif
+
+#ifndef extension_kDC7
+static char name_of_kDC7[] = "kDC7";
+#define extension_kDC7 1
+#endif
+
+#ifndef extension_kDN
+static char name_of_kDN[] = "kDN";
+#define extension_kDN 1
+#endif
+
+#ifndef extension_kDN3
+static char name_of_kDN3[] = "kDN3";
+#define extension_kDN3 1
+#endif
+
+#ifndef extension_kDN4
+static char name_of_kDN4[] = "kDN4";
+#define extension_kDN4 1
+#endif
+
+#ifndef extension_kDN5
+static char name_of_kDN5[] = "kDN5";
+#define extension_kDN5 1
+#endif
+
+#ifndef extension_kDN6
+static char name_of_kDN6[] = "kDN6";
+#define extension_kDN6 1
+#endif
+
+#ifndef extension_kDN7
+static char name_of_kDN7[] = "kDN7";
+#define extension_kDN7 1
+#endif
+
+#ifndef extension_kEND3
+static char name_of_kEND3[] = "kEND3";
+#define extension_kEND3 1
+#endif
+
+#ifndef extension_kEND4
+static char name_of_kEND4[] = "kEND4";
+#define extension_kEND4 1
+#endif
+
+#ifndef extension_kEND5
+static char name_of_kEND5[] = "kEND5";
+#define extension_kEND5 1
+#endif
+
+#ifndef extension_kEND6
+static char name_of_kEND6[] = "kEND6";
+#define extension_kEND6 1
+#endif
+
+#ifndef extension_kEND7
+static char name_of_kEND7[] = "kEND7";
+#define extension_kEND7 1
+#endif
+
+#ifndef extension_kHOM3
+static char name_of_kHOM3[] = "kHOM3";
+#define extension_kHOM3 1
+#endif
+
+#ifndef extension_kHOM4
+static char name_of_kHOM4[] = "kHOM4";
+#define extension_kHOM4 1
+#endif
+
+#ifndef extension_kHOM5
+static char name_of_kHOM5[] = "kHOM5";
+#define extension_kHOM5 1
+#endif
+
+#ifndef extension_kHOM6
+static char name_of_kHOM6[] = "kHOM6";
+#define extension_kHOM6 1
+#endif
+
+#ifndef extension_kHOM7
+static char name_of_kHOM7[] = "kHOM7";
+#define extension_kHOM7 1
+#endif
+
+#ifndef extension_kIC3
+static char name_of_kIC3[] = "kIC3";
+#define extension_kIC3 1
+#endif
+
+#ifndef extension_kIC4
+static char name_of_kIC4[] = "kIC4";
+#define extension_kIC4 1
+#endif
+
+#ifndef extension_kIC5
+static char name_of_kIC5[] = "kIC5";
+#define extension_kIC5 1
+#endif
+
+#ifndef extension_kIC6
+static char name_of_kIC6[] = "kIC6";
+#define extension_kIC6 1
+#endif
+
+#ifndef extension_kIC7
+static char name_of_kIC7[] = "kIC7";
+#define extension_kIC7 1
+#endif
+
+#ifndef extension_kLFT3
+static char name_of_kLFT3[] = "kLFT3";
+#define extension_kLFT3 1
+#endif
+
+#ifndef extension_kLFT4
+static char name_of_kLFT4[] = "kLFT4";
+#define extension_kLFT4 1
+#endif
+
+#ifndef extension_kLFT5
+static char name_of_kLFT5[] = "kLFT5";
+#define extension_kLFT5 1
+#endif
+
+#ifndef extension_kLFT6
+static char name_of_kLFT6[] = "kLFT6";
+#define extension_kLFT6 1
+#endif
+
+#ifndef extension_kLFT7
+static char name_of_kLFT7[] = "kLFT7";
+#define extension_kLFT7 1
+#endif
+
+#ifndef extension_kNXT3
+static char name_of_kNXT3[] = "kNXT3";
+#define extension_kNXT3 1
+#endif
+
+#ifndef extension_kNXT4
+static char name_of_kNXT4[] = "kNXT4";
+#define extension_kNXT4 1
+#endif
+
+#ifndef extension_kNXT5
+static char name_of_kNXT5[] = "kNXT5";
+#define extension_kNXT5 1
+#endif
+
+#ifndef extension_kNXT6
+static char name_of_kNXT6[] = "kNXT6";
+#define extension_kNXT6 1
+#endif
+
+#ifndef extension_kNXT7
+static char name_of_kNXT7[] = "kNXT7";
+#define extension_kNXT7 1
+#endif
+
+#ifndef extension_kPRV3
+static char name_of_kPRV3[] = "kPRV3";
+#define extension_kPRV3 1
+#endif
+
+#ifndef extension_kPRV4
+static char name_of_kPRV4[] = "kPRV4";
+#define extension_kPRV4 1
+#endif
+
+#ifndef extension_kPRV5
+static char name_of_kPRV5[] = "kPRV5";
+#define extension_kPRV5 1
+#endif
+
+#ifndef extension_kPRV6
+static char name_of_kPRV6[] = "kPRV6";
+#define extension_kPRV6 1
+#endif
+
+#ifndef extension_kPRV7
+static char name_of_kPRV7[] = "kPRV7";
+#define extension_kPRV7 1
+#endif
+
+#ifndef extension_kPause
+static char name_of_kPause[] = "kPause";
+#define extension_kPause 1
+#endif
+
+#ifndef extension_kPrint
+static char name_of_kPrint[] = "kPrint";
+#define extension_kPrint 1
+#endif
+
+#ifndef extension_kPrint2
+static char name_of_kPrint2[] = "kPrint2";
+#define extension_kPrint2 1
+#endif
+
+#ifndef extension_kPrint3
+static char name_of_kPrint3[] = "kPrint3";
+#define extension_kPrint3 1
+#endif
+
+#ifndef extension_kPrint4
+static char name_of_kPrint4[] = "kPrint4";
+#define extension_kPrint4 1
+#endif
+
+#ifndef extension_kPrint5
+static char name_of_kPrint5[] = "kPrint5";
+#define extension_kPrint5 1
+#endif
+
+#ifndef extension_kPrint6
+static char name_of_kPrint6[] = "kPrint6";
+#define extension_kPrint6 1
+#endif
+
+#ifndef extension_kPrint7
+static char name_of_kPrint7[] = "kPrint7";
+#define extension_kPrint7 1
+#endif
+
+#ifndef extension_kRIT3
+static char name_of_kRIT3[] = "kRIT3";
+#define extension_kRIT3 1
+#endif
+
+#ifndef extension_kRIT4
+static char name_of_kRIT4[] = "kRIT4";
+#define extension_kRIT4 1
+#endif
+
+#ifndef extension_kRIT5
+static char name_of_kRIT5[] = "kRIT5";
+#define extension_kRIT5 1
+#endif
+
+#ifndef extension_kRIT6
+static char name_of_kRIT6[] = "kRIT6";
+#define extension_kRIT6 1
+#endif
+
+#ifndef extension_kRIT7
+static char name_of_kRIT7[] = "kRIT7";
+#define extension_kRIT7 1
+#endif
+
+#ifndef extension_kScroll
+static char name_of_kScroll[] = "kScroll";
+#define extension_kScroll 1
+#endif
+
+#ifndef extension_kUP
+static char name_of_kUP[] = "kUP";
+#define extension_kUP 1
+#endif
+
+#ifndef extension_kUP3
+static char name_of_kUP3[] = "kUP3";
+#define extension_kUP3 1
+#endif
+
+#ifndef extension_kUP4
+static char name_of_kUP4[] = "kUP4";
+#define extension_kUP4 1
+#endif
+
+#ifndef extension_kUP5
+static char name_of_kUP5[] = "kUP5";
+#define extension_kUP5 1
+#endif
+
+#ifndef extension_kUP6
+static char name_of_kUP6[] = "kUP6";
+#define extension_kUP6 1
+#endif
+
+#ifndef extension_kUP7
+static char name_of_kUP7[] = "kUP7";
+#define extension_kUP7 1
+#endif
+
+#ifndef extension_ka2
+static char name_of_ka2[] = "ka2";
+#define extension_ka2 1
+#endif
+
+#ifndef extension_kb1
+static char name_of_kb1[] = "kb1";
+#define extension_kb1 1
+#endif
+
+#ifndef extension_kb3
+static char name_of_kb3[] = "kb3";
+#define extension_kb3 1
+#endif
+
+#ifndef extension_kc2
+static char name_of_kc2[] = "kc2";
+#define extension_kc2 1
+#endif
+
+#ifndef extension_kp5
+static char name_of_kp5[] = "kp5";
+#define extension_kp5 1
+#endif
+
+#ifndef extension_kpADD
+static char name_of_kpADD[] = "kpADD";
+#define extension_kpADD 1
+#endif
+
+#ifndef extension_kpCMA
+static char name_of_kpCMA[] = "kpCMA";
+#define extension_kpCMA 1
+#endif
+
+#ifndef extension_kpDIV
+static char name_of_kpDIV[] = "kpDIV";
+#define extension_kpDIV 1
+#endif
+
+#ifndef extension_kpDOT
+static char name_of_kpDOT[] = "kpDOT";
+#define extension_kpDOT 1
+#endif
+
+#ifndef extension_kpMUL
+static char name_of_kpMUL[] = "kpMUL";
+#define extension_kpMUL 1
+#endif
+
+#ifndef extension_kpSUB
+static char name_of_kpSUB[] = "kpSUB";
+#define extension_kpSUB 1
+#endif
+
+#ifndef extension_kpZRO
+static char name_of_kpZRO[] = "kpZRO";
+#define extension_kpZRO 1
+#endif
+
+#ifndef extension_kxIN
+static char name_of_kxIN[] = "kxIN";
+#define extension_kxIN 1
+#endif
+
+#ifndef extension_kxOUT
+static char name_of_kxOUT[] = "kxOUT";
+#define extension_kxOUT 1
+#endif
+
+#ifndef extension_rmxx
+static char name_of_rmxx[] = "rmxx";
+#define extension_rmxx 1
+#endif
+
+#ifndef extension_rv
+static char name_of_rv[] = "rv";
+#define extension_rv 1
+#endif
+
+#ifndef extension_smxx
+static char name_of_smxx[] = "smxx";
+#define extension_smxx 1
+#endif
+
+#ifndef extension_xm
+static char name_of_xm[] = "xm";
+#define extension_xm 1
+#endif
+
+#ifndef extension_xr
+static char name_of_xr[] = "xr";
+#define extension_xr 1
+#endif
+
+static char * xterm_256color_string_ext_data[] = {
+	/*  44: bool */	name_of_AX,
+	/*  45: bool */	name_of_XF,
+	/*  46: bool */	name_of_XT,
+	/* 414: str */	name_of_BD,
+	/* 415: str */	name_of_BE,
+	/* 416: str */	name_of_Cr,
+	/* 417: str */	name_of_Cs,
+	/* 418: str */	name_of_E3,
+	/* 419: str */	name_of_Ms,
+	/* 420: str */	name_of_PE,
+	/* 421: str */	name_of_PS,
+	/* 422: str */	name_of_RV,
+	/* 423: str */	name_of_Se,
+	/* 424: str */	name_of_Ss,
+	/* 425: str */	name_of_XM,
+	/* 426: str */	name_of_XR,
+	/* 427: str */	name_of_fd,
+	/* 428: str */	name_of_fe,
+	/* 429: str */	name_of_kDC3,
+	/* 430: str */	name_of_kDC4,
+	/* 431: str */	name_of_kDC5,
+	/* 432: str */	name_of_kDC6,
+	/* 433: str */	name_of_kDC7,
+	/* 434: str */	name_of_kDN,
+	/* 435: str */	name_of_kDN3,
+	/* 436: str */	name_of_kDN4,
+	/* 437: str */	name_of_kDN5,
+	/* 438: str */	name_of_kDN6,
+	/* 439: str */	name_of_kDN7,
+	/* 440: str */	name_of_kEND3,
+	/* 441: str */	name_of_kEND4,
+	/* 442: str */	name_of_kEND5,
+	/* 443: str */	name_of_kEND6,
+	/* 444: str */	name_of_kEND7,
+	/* 445: str */	name_of_kHOM3,
+	/* 446: str */	name_of_kHOM4,
+	/* 447: str */	name_of_kHOM5,
+	/* 448: str */	name_of_kHOM6,
+	/* 449: str */	name_of_kHOM7,
+	/* 450: str */	name_of_kIC3,
+	/* 451: str */	name_of_kIC4,
+	/* 452: str */	name_of_kIC5,
+	/* 453: str */	name_of_kIC6,
+	/* 454: str */	name_of_kIC7,
+	/* 455: str */	name_of_kLFT3,
+	/* 456: str */	name_of_kLFT4,
+	/* 457: str */	name_of_kLFT5,
+	/* 458: str */	name_of_kLFT6,
+	/* 459: str */	name_of_kLFT7,
+	/* 460: str */	name_of_kNXT3,
+	/* 461: str */	name_of_kNXT4,
+	/* 462: str */	name_of_kNXT5,
+	/* 463: str */	name_of_kNXT6,
+	/* 464: str */	name_of_kNXT7,
+	/* 465: str */	name_of_kPRV3,
+	/* 466: str */	name_of_kPRV4,
+	/* 467: str */	name_of_kPRV5,
+	/* 468: str */	name_of_kPRV6,
+	/* 469: str */	name_of_kPRV7,
+	/* 470: str */	name_of_kPause,
+	/* 471: str */	name_of_kPrint,
+	/* 472: str */	name_of_kPrint2,
+	/* 473: str */	name_of_kPrint3,
+	/* 474: str */	name_of_kPrint4,
+	/* 475: str */	name_of_kPrint5,
+	/* 476: str */	name_of_kPrint6,
+	/* 477: str */	name_of_kPrint7,
+	/* 478: str */	name_of_kRIT3,
+	/* 479: str */	name_of_kRIT4,
+	/* 480: str */	name_of_kRIT5,
+	/* 481: str */	name_of_kRIT6,
+	/* 482: str */	name_of_kRIT7,
+	/* 483: str */	name_of_kScroll,
+	/* 484: str */	name_of_kUP,
+	/* 485: str */	name_of_kUP3,
+	/* 486: str */	name_of_kUP4,
+	/* 487: str */	name_of_kUP5,
+	/* 488: str */	name_of_kUP6,
+	/* 489: str */	name_of_kUP7,
+	/* 490: str */	name_of_ka2,
+	/* 491: str */	name_of_kb1,
+	/* 492: str */	name_of_kb3,
+	/* 493: str */	name_of_kc2,
+	/* 494: str */	name_of_kp5,
+	/* 495: str */	name_of_kpADD,
+	/* 496: str */	name_of_kpCMA,
+	/* 497: str */	name_of_kpDIV,
+	/* 498: str */	name_of_kpDOT,
+	/* 499: str */	name_of_kpMUL,
+	/* 500: str */	name_of_kpSUB,
+	/* 501: str */	name_of_kpZRO,
+	/* 502: str */	name_of_kxIN,
+	/* 503: str */	name_of_kxOUT,
+	/* 504: str */	name_of_rmxx,
+	/* 505: str */	name_of_rv,
+	/* 506: str */	name_of_smxx,
+	/* 507: str */	name_of_xm,
+	/* 508: str */	name_of_xr,
 };
 /* screen */
 
@@ -3235,7 +5057,7 @@ static char screen_s_civis      [] = "\033[?25l";
 static char screen_s_cub1       [] = "\010";
 static char screen_s_cnorm      [] = "\033[34h\033[?25h";
 static char screen_s_cuf1       [] = "\033[C";
-static char screen_s_cuu1       [] = "\033M";
+static char screen_s_cuu1       [] = "\033[A";
 static char screen_s_cvvis      [] = "\033[34l";
 static char screen_s_dch1       [] = "\033[P";
 static char screen_s_dl1        [] = "\033[M";
@@ -3248,6 +5070,7 @@ static char screen_s_smir       [] = "\033[4h";
 static char screen_s_rev        [] = "\033[7m";
 static char screen_s_smso       [] = "\033[3m";
 static char screen_s_smul       [] = "\033[4m";
+static char screen_s_ech        [] = "\033[%p1%dX";
 static char screen_s_rmacs      [] = "\017";
 static char screen_s_sgr0       [] = "\033[m\017";
 static char screen_s_rmcup      [] = "\033[?1049l";
@@ -3256,8 +5079,9 @@ static char screen_s_rmso       [] = "\033[23m";
 static char screen_s_rmul       [] = "\033[24m";
 static char screen_s_flash      [] = "\033g";
 static char screen_s_is2        [] = "\033)0";
+static char screen_s_ich1       [] = "\033[@";
 static char screen_s_il1        [] = "\033[L";
-static char screen_s_kbs        [] = "\010";
+static char screen_s_kbs        [] = "\177";
 static char screen_s_kdch1      [] = "\033[3~";
 static char screen_s_kcud1      [] = "\033OB";
 static char screen_s_kf1        [] = "\033OP";
@@ -3288,6 +5112,7 @@ static char screen_s_indn       [] = "\033[%p1%dS";
 static char screen_s_il         [] = "\033[%p1%dL";
 static char screen_s_cub        [] = "\033[%p1%dD";
 static char screen_s_cuf        [] = "\033[%p1%dC";
+static char screen_s_rin        [] = "\033[%p1%dT";
 static char screen_s_cuu        [] = "\033[%p1%dA";
 static char screen_s_rs2        [] = "\033c\033[?1000l\033[?25h";
 static char screen_s_rc         [] = "\0338";
@@ -3305,10 +5130,20 @@ static char screen_s_kend       [] = "\033[4~";
 static char screen_s_kf11       [] = "\033[23~";
 static char screen_s_kf12       [] = "\033[24~";
 static char screen_s_el1        [] = "\033[1K";
+static char screen_s_u6         [] = "\033[%i%d;%dR";
+static char screen_s_u7         [] = "\033[6n";
+static char screen_s_u8         [] = "\033[?1;2c";
+static char screen_s_u9         [] = "\033[c";
 static char screen_s_op         [] = "\033[39;49m";
 static char screen_s_kmous      [] = "\033[M";
 static char screen_s_setaf      [] = "\033[3%p1%dm";
 static char screen_s_setab      [] = "\033[4%p1%dm";
+static char screen_s_BD         [] = "\033[?2004l";
+static char screen_s_BE         [] = "\033[?2004h";
+static char screen_s_E0         [] = "\033(B";
+static char screen_s_PE         [] = "\033[201~";
+static char screen_s_PS         [] = "\033[200~";
+static char screen_s_S0         [] = "\033(%p1%c";
 
 static char screen_bool_data[] = {
 	/*   0: bw       */	FALSE,
@@ -3355,6 +5190,8 @@ static char screen_bool_data[] = {
 	/*  41: OTNL     */	FALSE,
 	/*  42: OTpt     */	TRUE,
 	/*  43: OTxr     */	FALSE,
+	/*  44: AX       */	TRUE,
+	/*  45: G0       */	TRUE,
 };
 static NCURSES_INT2 screen_number_data[] = {
 	/*   0: cols     */	80,
@@ -3372,7 +5209,7 @@ static NCURSES_INT2 screen_number_data[] = {
 	/*  12: wnum     */	ABSENT_NUMERIC,
 	/*  13: colors   */	8,
 	/*  14: pairs    */	64,
-	/*  15: ncv      */	CANCELLED_NUMERIC,
+	/*  15: ncv      */	ABSENT_NUMERIC,
 	/*  16: bufsz    */	ABSENT_NUMERIC,
 	/*  17: spinv    */	ABSENT_NUMERIC,
 	/*  18: spinh    */	ABSENT_NUMERIC,
@@ -3396,6 +5233,7 @@ static NCURSES_INT2 screen_number_data[] = {
 	/*  36: OTdB     */	ABSENT_NUMERIC,
 	/*  37: OTdT     */	ABSENT_NUMERIC,
 	/*  38: OTkn     */	ABSENT_NUMERIC,
+	/*  39: U8       */	1,
 };
 static char * screen_string_data[] = {
 	/*   0: cbt      */	screen_s_cbt,
@@ -3435,7 +5273,7 @@ static char * screen_string_data[] = {
 	/*  34: rev      */	screen_s_rev,
 	/*  35: smso     */	screen_s_smso,
 	/*  36: smul     */	screen_s_smul,
-	/*  37: ech      */	ABSENT_STRING,
+	/*  37: ech      */	screen_s_ech,
 	/*  38: rmacs    */	screen_s_rmacs,
 	/*  39: sgr0     */	screen_s_sgr0,
 	/*  40: rmcup    */	screen_s_rmcup,
@@ -3450,7 +5288,7 @@ static char * screen_string_data[] = {
 	/*  49: is2      */	screen_s_is2,
 	/*  50: is3      */	ABSENT_STRING,
 	/*  51: if       */	ABSENT_STRING,
-	/*  52: ich1     */	ABSENT_STRING,
+	/*  52: ich1     */	screen_s_ich1,
 	/*  53: il1      */	screen_s_il1,
 	/*  54: ip       */	ABSENT_STRING,
 	/*  55: kbs      */	screen_s_kbs,
@@ -3511,7 +5349,7 @@ static char * screen_string_data[] = {
 	/* 110: il       */	screen_s_il,
 	/* 111: cub      */	screen_s_cub,
 	/* 112: cuf      */	screen_s_cuf,
-	/* 113: rin      */	ABSENT_STRING,
+	/* 113: rin      */	screen_s_rin,
 	/* 114: cuu      */	screen_s_cuu,
 	/* 115: pfkey    */	ABSENT_STRING,
 	/* 116: pfloc    */	ABSENT_STRING,
@@ -3691,10 +5529,10 @@ static char * screen_string_data[] = {
 	/* 290: u3       */	ABSENT_STRING,
 	/* 291: u4       */	ABSENT_STRING,
 	/* 292: u5       */	ABSENT_STRING,
-	/* 293: u6       */	ABSENT_STRING,
-	/* 294: u7       */	ABSENT_STRING,
-	/* 295: u8       */	ABSENT_STRING,
-	/* 296: u9       */	ABSENT_STRING,
+	/* 293: u6       */	screen_s_u6,
+	/* 294: u7       */	screen_s_u7,
+	/* 295: u8       */	screen_s_u8,
+	/* 296: u9       */	screen_s_u9,
 	/* 297: op       */	screen_s_op,
 	/* 298: oc       */	ABSENT_STRING,
 	/* 299: initc    */	ABSENT_STRING,
@@ -3812,10 +5650,73 @@ static char * screen_string_data[] = {
 	/* 411: meml     */	ABSENT_STRING,
 	/* 412: memu     */	ABSENT_STRING,
 	/* 413: box1     */	ABSENT_STRING,
+	/* 414: BD       */	screen_s_BD,
+	/* 415: BE       */	screen_s_BE,
+	/* 416: E0       */	screen_s_E0,
+	/* 417: PE       */	screen_s_PE,
+	/* 418: PS       */	screen_s_PS,
+	/* 419: S0       */	screen_s_S0,
+};
+
+#ifndef extension_AX
+static char name_of_AX[] = "AX";
+#define extension_AX 1
+#endif
+
+#ifndef extension_G0
+static char name_of_G0[] = "G0";
+#define extension_G0 1
+#endif
+
+#ifndef extension_U8
+static char name_of_U8[] = "U8";
+#define extension_U8 1
+#endif
+
+#ifndef extension_BD
+static char name_of_BD[] = "BD";
+#define extension_BD 1
+#endif
+
+#ifndef extension_BE
+static char name_of_BE[] = "BE";
+#define extension_BE 1
+#endif
+
+#ifndef extension_E0
+static char name_of_E0[] = "E0";
+#define extension_E0 1
+#endif
+
+#ifndef extension_PE
+static char name_of_PE[] = "PE";
+#define extension_PE 1
+#endif
+
+#ifndef extension_PS
+static char name_of_PS[] = "PS";
+#define extension_PS 1
+#endif
+
+#ifndef extension_S0
+static char name_of_S0[] = "S0";
+#define extension_S0 1
+#endif
+
+static char * screen_string_ext_data[] = {
+	/*  44: bool */	name_of_AX,
+	/*  45: bool */	name_of_G0,
+	/*  39: num */	name_of_U8,
+	/* 414: str */	name_of_BD,
+	/* 415: str */	name_of_BE,
+	/* 416: str */	name_of_E0,
+	/* 417: str */	name_of_PE,
+	/* 418: str */	name_of_PS,
+	/* 419: str */	name_of_S0,
 };
 /* screen.linux */
 
-static char screen_linux_alias_data[] = "screen.linux|screen in linux console";
+static char screen_linux_alias_data[] = "screen.linux|screen.linux-s|screen in Linux console";
 
 static char screen_linux_s_cbt  [] = "\033[Z";
 static char screen_linux_s_bel  [] = "\007";
@@ -3833,7 +5734,7 @@ static char screen_linux_s_civis[] = "\033[?25l";
 static char screen_linux_s_cub1 [] = "\010";
 static char screen_linux_s_cnorm[] = "\033[34h\033[?25h";
 static char screen_linux_s_cuf1 [] = "\033[C";
-static char screen_linux_s_cuu1 [] = "\033M";
+static char screen_linux_s_cuu1 [] = "\033[A";
 static char screen_linux_s_cvvis[] = "\033[34l";
 static char screen_linux_s_dch1 [] = "\033[P";
 static char screen_linux_s_dl1  [] = "\033[M";
@@ -3846,6 +5747,7 @@ static char screen_linux_s_smir [] = "\033[4h";
 static char screen_linux_s_rev  [] = "\033[7m";
 static char screen_linux_s_smso [] = "\033[3m";
 static char screen_linux_s_smul [] = "\033[4m";
+static char screen_linux_s_ech  [] = "\033[%p1%dX";
 static char screen_linux_s_rmacs[] = "\017";
 static char screen_linux_s_sgr0 [] = "\033[m\017";
 static char screen_linux_s_rmcup[] = "\033[?1049l";
@@ -3854,6 +5756,7 @@ static char screen_linux_s_rmso [] = "\033[23m";
 static char screen_linux_s_rmul [] = "\033[24m";
 static char screen_linux_s_flash[] = "\033g";
 static char screen_linux_s_is2  [] = "\033)0";
+static char screen_linux_s_ich1 [] = "\033[@";
 static char screen_linux_s_il1  [] = "\033[L";
 static char screen_linux_s_kbs  [] = "\177";
 static char screen_linux_s_kdch1[] = "\033[3~";
@@ -3886,6 +5789,7 @@ static char screen_linux_s_indn [] = "\033[%p1%dS";
 static char screen_linux_s_il   [] = "\033[%p1%dL";
 static char screen_linux_s_cub  [] = "\033[%p1%dD";
 static char screen_linux_s_cuf  [] = "\033[%p1%dC";
+static char screen_linux_s_rin  [] = "\033[%p1%dT";
 static char screen_linux_s_cuu  [] = "\033[%p1%dA";
 static char screen_linux_s_rs2  [] = "\033c\033[?1000l\033[?25h";
 static char screen_linux_s_rc   [] = "\0338";
@@ -3901,11 +5805,33 @@ static char screen_linux_s_enacs[] = "\033(B\033)0";
 static char screen_linux_s_kend [] = "\033[4~";
 static char screen_linux_s_kf11 [] = "\033[23~";
 static char screen_linux_s_kf12 [] = "\033[24~";
+static char screen_linux_s_kf13 [] = "\033[25~";
+static char screen_linux_s_kf14 [] = "\033[26~";
+static char screen_linux_s_kf15 [] = "\033[28~";
+static char screen_linux_s_kf16 [] = "\033[29~";
+static char screen_linux_s_kf17 [] = "\033[31~";
+static char screen_linux_s_kf18 [] = "\033[32~";
+static char screen_linux_s_kf19 [] = "\033[33~";
+static char screen_linux_s_kf20 [] = "\033[34~";
 static char screen_linux_s_el1  [] = "\033[1K";
+static char screen_linux_s_u6   [] = "\033[%i%d;%dR";
+static char screen_linux_s_u7   [] = "\033[6n";
+static char screen_linux_s_u8   [] = "\033[?1;2c";
+static char screen_linux_s_u9   [] = "\033[c";
 static char screen_linux_s_op   [] = "\033[39;49m";
 static char screen_linux_s_kmous[] = "\033[M";
 static char screen_linux_s_setaf[] = "\033[3%p1%dm";
 static char screen_linux_s_setab[] = "\033[4%p1%dm";
+static char screen_linux_s_BD   [] = "\033[?2004l";
+static char screen_linux_s_BE   [] = "\033[?2004h";
+static char screen_linux_s_E0   [] = "\033(B";
+static char screen_linux_s_PE   [] = "\033[201~";
+static char screen_linux_s_PS   [] = "\033[200~";
+static char screen_linux_s_RV   [] = "\033[>c";
+static char screen_linux_s_S0   [] = "\033(%p1%c";
+static char screen_linux_s_XM   [] = "\033[?1000%?%p1%{1}%=%th%el%;";
+static char screen_linux_s_rv   [] = "\033\134[>83;4[0-9][0-9][0-9];0c";
+static char screen_linux_s_xm   [] = "\033[M%?%p4%t%p3%e%{3}%;%' '%+%c%p2%'!'%+%c%p1%'!'%+%c";
 
 static char screen_linux_bool_data[] = {
 	/*   0: bw       */	TRUE,
@@ -3952,6 +5878,8 @@ static char screen_linux_bool_data[] = {
 	/*  41: OTNL     */	FALSE,
 	/*  42: OTpt     */	TRUE,
 	/*  43: OTxr     */	FALSE,
+	/*  44: AX       */	TRUE,
+	/*  45: G0       */	TRUE,
 };
 static NCURSES_INT2 screen_linux_number_data[] = {
 	/*   0: cols     */	80,
@@ -3993,6 +5921,7 @@ static NCURSES_INT2 screen_linux_number_data[] = {
 	/*  36: OTdB     */	ABSENT_NUMERIC,
 	/*  37: OTdT     */	ABSENT_NUMERIC,
 	/*  38: OTkn     */	ABSENT_NUMERIC,
+	/*  39: U8       */	1,
 };
 static char * screen_linux_string_data[] = {
 	/*   0: cbt      */	screen_linux_s_cbt,
@@ -4032,7 +5961,7 @@ static char * screen_linux_string_data[] = {
 	/*  34: rev      */	screen_linux_s_rev,
 	/*  35: smso     */	screen_linux_s_smso,
 	/*  36: smul     */	screen_linux_s_smul,
-	/*  37: ech      */	ABSENT_STRING,
+	/*  37: ech      */	screen_linux_s_ech,
 	/*  38: rmacs    */	screen_linux_s_rmacs,
 	/*  39: sgr0     */	screen_linux_s_sgr0,
 	/*  40: rmcup    */	screen_linux_s_rmcup,
@@ -4047,7 +5976,7 @@ static char * screen_linux_string_data[] = {
 	/*  49: is2      */	screen_linux_s_is2,
 	/*  50: is3      */	ABSENT_STRING,
 	/*  51: if       */	ABSENT_STRING,
-	/*  52: ich1     */	ABSENT_STRING,
+	/*  52: ich1     */	screen_linux_s_ich1,
 	/*  53: il1      */	screen_linux_s_il1,
 	/*  54: ip       */	ABSENT_STRING,
 	/*  55: kbs      */	screen_linux_s_kbs,
@@ -4108,7 +6037,7 @@ static char * screen_linux_string_data[] = {
 	/* 110: il       */	screen_linux_s_il,
 	/* 111: cub      */	screen_linux_s_cub,
 	/* 112: cuf      */	screen_linux_s_cuf,
-	/* 113: rin      */	ABSENT_STRING,
+	/* 113: rin      */	screen_linux_s_rin,
 	/* 114: cuu      */	screen_linux_s_cuu,
 	/* 115: pfkey    */	ABSENT_STRING,
 	/* 116: pfloc    */	ABSENT_STRING,
@@ -4213,14 +6142,14 @@ static char * screen_linux_string_data[] = {
 	/* 215: rfi      */	ABSENT_STRING,
 	/* 216: kf11     */	screen_linux_s_kf11,
 	/* 217: kf12     */	screen_linux_s_kf12,
-	/* 218: kf13     */	ABSENT_STRING,
-	/* 219: kf14     */	ABSENT_STRING,
-	/* 220: kf15     */	ABSENT_STRING,
-	/* 221: kf16     */	ABSENT_STRING,
-	/* 222: kf17     */	ABSENT_STRING,
-	/* 223: kf18     */	ABSENT_STRING,
-	/* 224: kf19     */	ABSENT_STRING,
-	/* 225: kf20     */	ABSENT_STRING,
+	/* 218: kf13     */	screen_linux_s_kf13,
+	/* 219: kf14     */	screen_linux_s_kf14,
+	/* 220: kf15     */	screen_linux_s_kf15,
+	/* 221: kf16     */	screen_linux_s_kf16,
+	/* 222: kf17     */	screen_linux_s_kf17,
+	/* 223: kf18     */	screen_linux_s_kf18,
+	/* 224: kf19     */	screen_linux_s_kf19,
+	/* 225: kf20     */	screen_linux_s_kf20,
 	/* 226: kf21     */	ABSENT_STRING,
 	/* 227: kf22     */	ABSENT_STRING,
 	/* 228: kf23     */	ABSENT_STRING,
@@ -4288,10 +6217,10 @@ static char * screen_linux_string_data[] = {
 	/* 290: u3       */	ABSENT_STRING,
 	/* 291: u4       */	ABSENT_STRING,
 	/* 292: u5       */	ABSENT_STRING,
-	/* 293: u6       */	ABSENT_STRING,
-	/* 294: u7       */	ABSENT_STRING,
-	/* 295: u8       */	ABSENT_STRING,
-	/* 296: u9       */	ABSENT_STRING,
+	/* 293: u6       */	screen_linux_s_u6,
+	/* 294: u7       */	screen_linux_s_u7,
+	/* 295: u8       */	screen_linux_s_u8,
+	/* 296: u9       */	screen_linux_s_u9,
 	/* 297: op       */	screen_linux_s_op,
 	/* 298: oc       */	ABSENT_STRING,
 	/* 299: initc    */	ABSENT_STRING,
@@ -4409,6 +6338,97 @@ static char * screen_linux_string_data[] = {
 	/* 411: meml     */	ABSENT_STRING,
 	/* 412: memu     */	ABSENT_STRING,
 	/* 413: box1     */	ABSENT_STRING,
+	/* 414: BD       */	screen_linux_s_BD,
+	/* 415: BE       */	screen_linux_s_BE,
+	/* 416: E0       */	screen_linux_s_E0,
+	/* 417: PE       */	screen_linux_s_PE,
+	/* 418: PS       */	screen_linux_s_PS,
+	/* 419: RV       */	screen_linux_s_RV,
+	/* 420: S0       */	screen_linux_s_S0,
+	/* 421: XM       */	screen_linux_s_XM,
+	/* 422: rv       */	screen_linux_s_rv,
+	/* 423: xm       */	screen_linux_s_xm,
+};
+
+#ifndef extension_AX
+static char name_of_AX[] = "AX";
+#define extension_AX 1
+#endif
+
+#ifndef extension_G0
+static char name_of_G0[] = "G0";
+#define extension_G0 1
+#endif
+
+#ifndef extension_U8
+static char name_of_U8[] = "U8";
+#define extension_U8 1
+#endif
+
+#ifndef extension_BD
+static char name_of_BD[] = "BD";
+#define extension_BD 1
+#endif
+
+#ifndef extension_BE
+static char name_of_BE[] = "BE";
+#define extension_BE 1
+#endif
+
+#ifndef extension_E0
+static char name_of_E0[] = "E0";
+#define extension_E0 1
+#endif
+
+#ifndef extension_PE
+static char name_of_PE[] = "PE";
+#define extension_PE 1
+#endif
+
+#ifndef extension_PS
+static char name_of_PS[] = "PS";
+#define extension_PS 1
+#endif
+
+#ifndef extension_RV
+static char name_of_RV[] = "RV";
+#define extension_RV 1
+#endif
+
+#ifndef extension_S0
+static char name_of_S0[] = "S0";
+#define extension_S0 1
+#endif
+
+#ifndef extension_XM
+static char name_of_XM[] = "XM";
+#define extension_XM 1
+#endif
+
+#ifndef extension_rv
+static char name_of_rv[] = "rv";
+#define extension_rv 1
+#endif
+
+#ifndef extension_xm
+static char name_of_xm[] = "xm";
+#define extension_xm 1
+#endif
+
+static char * screen_linux_string_ext_data[] = {
+	/*  44: bool */	name_of_AX,
+	/*  45: bool */	name_of_G0,
+	/*  39: num */	name_of_U8,
+	/* 414: str */	name_of_BD,
+	/* 415: str */	name_of_BE,
+	/* 416: str */	name_of_E0,
+	/* 417: str */	name_of_PE,
+	/* 418: str */	name_of_PS,
+	/* 419: str */	name_of_RV,
+	/* 420: str */	name_of_S0,
+	/* 421: str */	name_of_XM,
+	/* 422: str */	name_of_rv,
+	/* 423: str */	name_of_xm,
 };
 /* screen.rxvt */
 
@@ -4430,7 +6450,7 @@ static char screen_rxvt_s_civis [] = "\033[?25l";
 static char screen_rxvt_s_cub1  [] = "\010";
 static char screen_rxvt_s_cnorm [] = "\033[34h\033[?25h";
 static char screen_rxvt_s_cuf1  [] = "\033[C";
-static char screen_rxvt_s_cuu1  [] = "\033M";
+static char screen_rxvt_s_cuu1  [] = "\033[A";
 static char screen_rxvt_s_dch1  [] = "\033[P";
 static char screen_rxvt_s_dl1   [] = "\033[M";
 static char screen_rxvt_s_smacs [] = "\016";
@@ -4442,6 +6462,7 @@ static char screen_rxvt_s_smir  [] = "\033[4h";
 static char screen_rxvt_s_rev   [] = "\033[7m";
 static char screen_rxvt_s_smso  [] = "\033[3m";
 static char screen_rxvt_s_smul  [] = "\033[4m";
+static char screen_rxvt_s_ech   [] = "\033[%p1%dX";
 static char screen_rxvt_s_rmacs [] = "\017";
 static char screen_rxvt_s_sgr0  [] = "\033[m\017";
 static char screen_rxvt_s_rmcup [] = "\033[?1049l";
@@ -4449,8 +6470,9 @@ static char screen_rxvt_s_rmir  [] = "\033[4l";
 static char screen_rxvt_s_rmso  [] = "\033[23m";
 static char screen_rxvt_s_rmul  [] = "\033[24m";
 static char screen_rxvt_s_is2   [] = "\033)0";
+static char screen_rxvt_s_ich1  [] = "\033[@";
 static char screen_rxvt_s_il1   [] = "\033[L";
-static char screen_rxvt_s_kbs   [] = "\010";
+static char screen_rxvt_s_kbs   [] = "\177";
 static char screen_rxvt_s_kdch1 [] = "\033[3~";
 static char screen_rxvt_s_kcud1 [] = "\033OB";
 static char screen_rxvt_s_kel   [] = "\033[8^";
@@ -4484,6 +6506,7 @@ static char screen_rxvt_s_indn  [] = "\033[%p1%dS";
 static char screen_rxvt_s_il    [] = "\033[%p1%dL";
 static char screen_rxvt_s_cub   [] = "\033[%p1%dD";
 static char screen_rxvt_s_cuf   [] = "\033[%p1%dC";
+static char screen_rxvt_s_rin   [] = "\033[%p1%dT";
 static char screen_rxvt_s_cuu   [] = "\033[%p1%dA";
 static char screen_rxvt_s_rs2   [] = "\033c\033[?1000l\033[?25h";
 static char screen_rxvt_s_rc    [] = "\0338";
@@ -4555,6 +6578,36 @@ static char screen_rxvt_s_op    [] = "\033[39;49m";
 static char screen_rxvt_s_kmous [] = "\033[M";
 static char screen_rxvt_s_setaf [] = "\033[3%p1%dm";
 static char screen_rxvt_s_setab [] = "\033[4%p1%dm";
+static char screen_rxvt_s_BD    [] = "\033[?2004l";
+static char screen_rxvt_s_BE    [] = "\033[?2004h";
+static char screen_rxvt_s_E0    [] = "\033(B";
+static char screen_rxvt_s_PE    [] = "\033[201~";
+static char screen_rxvt_s_PS    [] = "\033[200~";
+static char screen_rxvt_s_S0    [] = "\033(%p1%c";
+static char screen_rxvt_s_XM    [] = "\033[?1000%?%p1%{1}%=%th%el%;";
+static char screen_rxvt_s_kDC5  [] = "\033[3^";
+static char screen_rxvt_s_kDC6  [] = "\033[3@";
+static char screen_rxvt_s_kDN   [] = "\033[b";
+static char screen_rxvt_s_kDN5  [] = "\033Ob";
+static char screen_rxvt_s_kEND5 [] = "\033[8^";
+static char screen_rxvt_s_kEND6 [] = "\033[8@";
+static char screen_rxvt_s_kHOM5 [] = "\033[7^";
+static char screen_rxvt_s_kHOM6 [] = "\033[7@";
+static char screen_rxvt_s_kIC5  [] = "\033[2^";
+static char screen_rxvt_s_kIC6  [] = "\033[2@";
+static char screen_rxvt_s_kLFT5 [] = "\033Od";
+static char screen_rxvt_s_kNXT5 [] = "\033[6^";
+static char screen_rxvt_s_kNXT6 [] = "\033[6@";
+static char screen_rxvt_s_kPRV5 [] = "\033[5^";
+static char screen_rxvt_s_kPRV6 [] = "\033[5@";
+static char screen_rxvt_s_kRIT5 [] = "\033Oc";
+static char screen_rxvt_s_kUP   [] = "\033[a";
+static char screen_rxvt_s_kUP5  [] = "\033Oa";
+static char screen_rxvt_s_ka2   [] = "\033Ox";
+static char screen_rxvt_s_kb1   [] = "\033Ot";
+static char screen_rxvt_s_kb3   [] = "\033Ov";
+static char screen_rxvt_s_kc2   [] = "\033Or";
+static char screen_rxvt_s_xm    [] = "\033[M%?%p4%t%p3%e%{3}%;%' '%+%c%p2%'!'%+%c%p1%'!'%+%c";
 
 static char screen_rxvt_bool_data[] = {
 	/*   0: bw       */	TRUE,
@@ -4601,6 +6654,9 @@ static char screen_rxvt_bool_data[] = {
 	/*  41: OTNL     */	FALSE,
 	/*  42: OTpt     */	TRUE,
 	/*  43: OTxr     */	FALSE,
+	/*  44: AX       */	TRUE,
+	/*  45: G0       */	TRUE,
+	/*  46: XT       */	TRUE,
 };
 static NCURSES_INT2 screen_rxvt_number_data[] = {
 	/*   0: cols     */	80,
@@ -4642,6 +6698,7 @@ static NCURSES_INT2 screen_rxvt_number_data[] = {
 	/*  36: OTdB     */	ABSENT_NUMERIC,
 	/*  37: OTdT     */	ABSENT_NUMERIC,
 	/*  38: OTkn     */	ABSENT_NUMERIC,
+	/*  39: U8       */	1,
 };
 static char * screen_rxvt_string_data[] = {
 	/*   0: cbt      */	screen_rxvt_s_cbt,
@@ -4681,7 +6738,7 @@ static char * screen_rxvt_string_data[] = {
 	/*  34: rev      */	screen_rxvt_s_rev,
 	/*  35: smso     */	screen_rxvt_s_smso,
 	/*  36: smul     */	screen_rxvt_s_smul,
-	/*  37: ech      */	ABSENT_STRING,
+	/*  37: ech      */	screen_rxvt_s_ech,
 	/*  38: rmacs    */	screen_rxvt_s_rmacs,
 	/*  39: sgr0     */	screen_rxvt_s_sgr0,
 	/*  40: rmcup    */	screen_rxvt_s_rmcup,
@@ -4696,7 +6753,7 @@ static char * screen_rxvt_string_data[] = {
 	/*  49: is2      */	screen_rxvt_s_is2,
 	/*  50: is3      */	ABSENT_STRING,
 	/*  51: if       */	ABSENT_STRING,
-	/*  52: ich1     */	ABSENT_STRING,
+	/*  52: ich1     */	screen_rxvt_s_ich1,
 	/*  53: il1      */	screen_rxvt_s_il1,
 	/*  54: ip       */	ABSENT_STRING,
 	/*  55: kbs      */	screen_rxvt_s_kbs,
@@ -4757,7 +6814,7 @@ static char * screen_rxvt_string_data[] = {
 	/* 110: il       */	screen_rxvt_s_il,
 	/* 111: cub      */	screen_rxvt_s_cub,
 	/* 112: cuf      */	screen_rxvt_s_cuf,
-	/* 113: rin      */	ABSENT_STRING,
+	/* 113: rin      */	screen_rxvt_s_rin,
 	/* 114: cuu      */	screen_rxvt_s_cuu,
 	/* 115: pfkey    */	ABSENT_STRING,
 	/* 116: pfloc    */	ABSENT_STRING,
@@ -5058,177 +7115,493 @@ static char * screen_rxvt_string_data[] = {
 	/* 411: meml     */	ABSENT_STRING,
 	/* 412: memu     */	ABSENT_STRING,
 	/* 413: box1     */	ABSENT_STRING,
+	/* 414: BD       */	screen_rxvt_s_BD,
+	/* 415: BE       */	screen_rxvt_s_BE,
+	/* 416: E0       */	screen_rxvt_s_E0,
+	/* 417: PE       */	screen_rxvt_s_PE,
+	/* 418: PS       */	screen_rxvt_s_PS,
+	/* 419: S0       */	screen_rxvt_s_S0,
+	/* 420: XM       */	screen_rxvt_s_XM,
+	/* 421: kDC5     */	screen_rxvt_s_kDC5,
+	/* 422: kDC6     */	screen_rxvt_s_kDC6,
+	/* 423: kDN      */	screen_rxvt_s_kDN,
+	/* 424: kDN5     */	screen_rxvt_s_kDN5,
+	/* 425: kEND5    */	screen_rxvt_s_kEND5,
+	/* 426: kEND6    */	screen_rxvt_s_kEND6,
+	/* 427: kHOM5    */	screen_rxvt_s_kHOM5,
+	/* 428: kHOM6    */	screen_rxvt_s_kHOM6,
+	/* 429: kIC5     */	screen_rxvt_s_kIC5,
+	/* 430: kIC6     */	screen_rxvt_s_kIC6,
+	/* 431: kLFT5    */	screen_rxvt_s_kLFT5,
+	/* 432: kNXT5    */	screen_rxvt_s_kNXT5,
+	/* 433: kNXT6    */	screen_rxvt_s_kNXT6,
+	/* 434: kPRV5    */	screen_rxvt_s_kPRV5,
+	/* 435: kPRV6    */	screen_rxvt_s_kPRV6,
+	/* 436: kRIT5    */	screen_rxvt_s_kRIT5,
+	/* 437: kUP      */	screen_rxvt_s_kUP,
+	/* 438: kUP5     */	screen_rxvt_s_kUP5,
+	/* 439: ka2      */	screen_rxvt_s_ka2,
+	/* 440: kb1      */	screen_rxvt_s_kb1,
+	/* 441: kb3      */	screen_rxvt_s_kb3,
+	/* 442: kc2      */	screen_rxvt_s_kc2,
+	/* 443: xm       */	screen_rxvt_s_xm,
+};
+
+#ifndef extension_AX
+static char name_of_AX[] = "AX";
+#define extension_AX 1
+#endif
+
+#ifndef extension_G0
+static char name_of_G0[] = "G0";
+#define extension_G0 1
+#endif
+
+#ifndef extension_XT
+static char name_of_XT[] = "XT";
+#define extension_XT 1
+#endif
+
+#ifndef extension_U8
+static char name_of_U8[] = "U8";
+#define extension_U8 1
+#endif
+
+#ifndef extension_BD
+static char name_of_BD[] = "BD";
+#define extension_BD 1
+#endif
+
+#ifndef extension_BE
+static char name_of_BE[] = "BE";
+#define extension_BE 1
+#endif
+
+#ifndef extension_E0
+static char name_of_E0[] = "E0";
+#define extension_E0 1
+#endif
+
+#ifndef extension_PE
+static char name_of_PE[] = "PE";
+#define extension_PE 1
+#endif
+
+#ifndef extension_PS
+static char name_of_PS[] = "PS";
+#define extension_PS 1
+#endif
+
+#ifndef extension_S0
+static char name_of_S0[] = "S0";
+#define extension_S0 1
+#endif
+
+#ifndef extension_XM
+static char name_of_XM[] = "XM";
+#define extension_XM 1
+#endif
+
+#ifndef extension_kDC5
+static char name_of_kDC5[] = "kDC5";
+#define extension_kDC5 1
+#endif
+
+#ifndef extension_kDC6
+static char name_of_kDC6[] = "kDC6";
+#define extension_kDC6 1
+#endif
+
+#ifndef extension_kDN
+static char name_of_kDN[] = "kDN";
+#define extension_kDN 1
+#endif
+
+#ifndef extension_kDN5
+static char name_of_kDN5[] = "kDN5";
+#define extension_kDN5 1
+#endif
+
+#ifndef extension_kEND5
+static char name_of_kEND5[] = "kEND5";
+#define extension_kEND5 1
+#endif
+
+#ifndef extension_kEND6
+static char name_of_kEND6[] = "kEND6";
+#define extension_kEND6 1
+#endif
+
+#ifndef extension_kHOM5
+static char name_of_kHOM5[] = "kHOM5";
+#define extension_kHOM5 1
+#endif
+
+#ifndef extension_kHOM6
+static char name_of_kHOM6[] = "kHOM6";
+#define extension_kHOM6 1
+#endif
+
+#ifndef extension_kIC5
+static char name_of_kIC5[] = "kIC5";
+#define extension_kIC5 1
+#endif
+
+#ifndef extension_kIC6
+static char name_of_kIC6[] = "kIC6";
+#define extension_kIC6 1
+#endif
+
+#ifndef extension_kLFT5
+static char name_of_kLFT5[] = "kLFT5";
+#define extension_kLFT5 1
+#endif
+
+#ifndef extension_kNXT5
+static char name_of_kNXT5[] = "kNXT5";
+#define extension_kNXT5 1
+#endif
+
+#ifndef extension_kNXT6
+static char name_of_kNXT6[] = "kNXT6";
+#define extension_kNXT6 1
+#endif
+
+#ifndef extension_kPRV5
+static char name_of_kPRV5[] = "kPRV5";
+#define extension_kPRV5 1
+#endif
+
+#ifndef extension_kPRV6
+static char name_of_kPRV6[] = "kPRV6";
+#define extension_kPRV6 1
+#endif
+
+#ifndef extension_kRIT5
+static char name_of_kRIT5[] = "kRIT5";
+#define extension_kRIT5 1
+#endif
+
+#ifndef extension_kUP
+static char name_of_kUP[] = "kUP";
+#define extension_kUP 1
+#endif
+
+#ifndef extension_kUP5
+static char name_of_kUP5[] = "kUP5";
+#define extension_kUP5 1
+#endif
+
+#ifndef extension_ka2
+static char name_of_ka2[] = "ka2";
+#define extension_ka2 1
+#endif
+
+#ifndef extension_kb1
+static char name_of_kb1[] = "kb1";
+#define extension_kb1 1
+#endif
+
+#ifndef extension_kb3
+static char name_of_kb3[] = "kb3";
+#define extension_kb3 1
+#endif
+
+#ifndef extension_kc2
+static char name_of_kc2[] = "kc2";
+#define extension_kc2 1
+#endif
+
+#ifndef extension_xm
+static char name_of_xm[] = "xm";
+#define extension_xm 1
+#endif
+
+static char * screen_rxvt_string_ext_data[] = {
+	/*  44: bool */	name_of_AX,
+	/*  45: bool */	name_of_G0,
+	/*  46: bool */	name_of_XT,
+	/*  39: num */	name_of_U8,
+	/* 414: str */	name_of_BD,
+	/* 415: str */	name_of_BE,
+	/* 416: str */	name_of_E0,
+	/* 417: str */	name_of_PE,
+	/* 418: str */	name_of_PS,
+	/* 419: str */	name_of_S0,
+	/* 420: str */	name_of_XM,
+	/* 421: str */	name_of_kDC5,
+	/* 422: str */	name_of_kDC6,
+	/* 423: str */	name_of_kDN,
+	/* 424: str */	name_of_kDN5,
+	/* 425: str */	name_of_kEND5,
+	/* 426: str */	name_of_kEND6,
+	/* 427: str */	name_of_kHOM5,
+	/* 428: str */	name_of_kHOM6,
+	/* 429: str */	name_of_kIC5,
+	/* 430: str */	name_of_kIC6,
+	/* 431: str */	name_of_kLFT5,
+	/* 432: str */	name_of_kNXT5,
+	/* 433: str */	name_of_kNXT6,
+	/* 434: str */	name_of_kPRV5,
+	/* 435: str */	name_of_kPRV6,
+	/* 436: str */	name_of_kRIT5,
+	/* 437: str */	name_of_kUP,
+	/* 438: str */	name_of_kUP5,
+	/* 439: str */	name_of_ka2,
+	/* 440: str */	name_of_kb1,
+	/* 441: str */	name_of_kb3,
+	/* 442: str */	name_of_kc2,
+	/* 443: str */	name_of_xm,
 };
 /* screen.xterm-new */
 
-static char screen_xterm_xfree86_alias_data[] = "screen.xterm-xfree86|screen.xterm-new|screen customized for modern xterm";
+static char screen_xterm_new_alias_data[] = "screen.xterm-new|screen customized for modern xterm";
 
-static char screen_xterm_xfree86_s_cbt[] = "\033[Z";
-static char screen_xterm_xfree86_s_bel[] = "\007";
-static char screen_xterm_xfree86_s_cr[] = "\015";
-static char screen_xterm_xfree86_s_csr[] = "\033[%i%p1%d;%p2%dr";
-static char screen_xterm_xfree86_s_tbc[] = "\033[3g";
-static char screen_xterm_xfree86_s_clear[] = "\033[H\033[2J";
-static char screen_xterm_xfree86_s_el[] = "\033[K";
-static char screen_xterm_xfree86_s_ed[] = "\033[J";
-static char screen_xterm_xfree86_s_hpa[] = "\033[%i%p1%dG";
-static char screen_xterm_xfree86_s_cup[] = "\033[%i%p1%d;%p2%dH";
-static char screen_xterm_xfree86_s_cud1[] = "\012";
-static char screen_xterm_xfree86_s_home[] = "\033[H";
-static char screen_xterm_xfree86_s_civis[] = "\033[?25l";
-static char screen_xterm_xfree86_s_cub1[] = "\010";
-static char screen_xterm_xfree86_s_cnorm[] = "\033[?12l\033[?25h";
-static char screen_xterm_xfree86_s_cuf1[] = "\033[C";
-static char screen_xterm_xfree86_s_cuu1[] = "\033[A";
-static char screen_xterm_xfree86_s_cvvis[] = "\033[?12;25h";
-static char screen_xterm_xfree86_s_dch1[] = "\033[P";
-static char screen_xterm_xfree86_s_dl1[] = "\033[M";
-static char screen_xterm_xfree86_s_smacs[] = "\033(0";
-static char screen_xterm_xfree86_s_blink[] = "\033[5m";
-static char screen_xterm_xfree86_s_bold[] = "\033[1m";
-static char screen_xterm_xfree86_s_smcup[] = "\033[?1049h\033[22;0;0t";
-static char screen_xterm_xfree86_s_dim[] = "\033[2m";
-static char screen_xterm_xfree86_s_smir[] = "\033[4h";
-static char screen_xterm_xfree86_s_rev[] = "\033[7m";
-static char screen_xterm_xfree86_s_smso[] = "\033[7m";
-static char screen_xterm_xfree86_s_smul[] = "\033[4m";
-static char screen_xterm_xfree86_s_ech[] = "\033[%p1%dX";
-static char screen_xterm_xfree86_s_rmacs[] = "\033(B";
-static char screen_xterm_xfree86_s_sgr0[] = "\033(B\033[m";
-static char screen_xterm_xfree86_s_rmcup[] = "\033[?1049l\033[23;0;0t";
-static char screen_xterm_xfree86_s_rmir[] = "\033[4l";
-static char screen_xterm_xfree86_s_rmso[] = "\033[27m";
-static char screen_xterm_xfree86_s_rmul[] = "\033[24m";
-static char screen_xterm_xfree86_s_flash[] = "\033[?5h$<100/>\033[?5l";
-static char screen_xterm_xfree86_s_is2[] = "\033[!p\033[?3;4l\033[4l\033>";
-static char screen_xterm_xfree86_s_il1[] = "\033[L";
-static char screen_xterm_xfree86_s_kbs[] = "\010";
-static char screen_xterm_xfree86_s_kdch1[] = "\033[3~";
-static char screen_xterm_xfree86_s_kcud1[] = "\033OB";
-static char screen_xterm_xfree86_s_kf1[] = "\033OP";
-static char screen_xterm_xfree86_s_kf10[] = "\033[21~";
-static char screen_xterm_xfree86_s_kf2[] = "\033OQ";
-static char screen_xterm_xfree86_s_kf3[] = "\033OR";
-static char screen_xterm_xfree86_s_kf4[] = "\033OS";
-static char screen_xterm_xfree86_s_kf5[] = "\033[15~";
-static char screen_xterm_xfree86_s_kf6[] = "\033[17~";
-static char screen_xterm_xfree86_s_kf7[] = "\033[18~";
-static char screen_xterm_xfree86_s_kf8[] = "\033[19~";
-static char screen_xterm_xfree86_s_kf9[] = "\033[20~";
-static char screen_xterm_xfree86_s_khome[] = "\033[1~";
-static char screen_xterm_xfree86_s_kich1[] = "\033[2~";
-static char screen_xterm_xfree86_s_kcub1[] = "\033OD";
-static char screen_xterm_xfree86_s_knp[] = "\033[6~";
-static char screen_xterm_xfree86_s_kpp[] = "\033[5~";
-static char screen_xterm_xfree86_s_kcuf1[] = "\033OC";
-static char screen_xterm_xfree86_s_kind[] = "\033[1;2B";
-static char screen_xterm_xfree86_s_kri[] = "\033[1;2A";
-static char screen_xterm_xfree86_s_kcuu1[] = "\033OA";
-static char screen_xterm_xfree86_s_rmkx[] = "\033[?1l\033>";
-static char screen_xterm_xfree86_s_smkx[] = "\033[?1h\033=";
-static char screen_xterm_xfree86_s_rmm[] = "\033[?1034l";
-static char screen_xterm_xfree86_s_smm[] = "\033[?1034h";
-static char screen_xterm_xfree86_s_dch[] = "\033[%p1%dP";
-static char screen_xterm_xfree86_s_dl[] = "\033[%p1%dM";
-static char screen_xterm_xfree86_s_cud[] = "\033[%p1%dB";
-static char screen_xterm_xfree86_s_ich[] = "\033[%p1%d@";
-static char screen_xterm_xfree86_s_indn[] = "\033[%p1%dS";
-static char screen_xterm_xfree86_s_il[] = "\033[%p1%dL";
-static char screen_xterm_xfree86_s_cub[] = "\033[%p1%dD";
-static char screen_xterm_xfree86_s_cuf[] = "\033[%p1%dC";
-static char screen_xterm_xfree86_s_rin[] = "\033[%p1%dT";
-static char screen_xterm_xfree86_s_cuu[] = "\033[%p1%dA";
-static char screen_xterm_xfree86_s_mc0[] = "\033[i";
-static char screen_xterm_xfree86_s_mc4[] = "\033[4i";
-static char screen_xterm_xfree86_s_mc5[] = "\033[5i";
-static char screen_xterm_xfree86_s_rs1[] = "\033c";
-static char screen_xterm_xfree86_s_rs2[] = "\033[!p\033[?3;4l\033[4l\033>";
-static char screen_xterm_xfree86_s_rc[] = "\0338";
-static char screen_xterm_xfree86_s_vpa[] = "\033[%i%p1%dd";
-static char screen_xterm_xfree86_s_sc[] = "\0337";
-static char screen_xterm_xfree86_s_ind[] = "\012";
-static char screen_xterm_xfree86_s_ri[] = "\033M";
-static char screen_xterm_xfree86_s_sgr[] = "%?%p9%t\033(0%e\033(B%;\033[0%?%p6%t;1%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p5%t;2%;m";
-static char screen_xterm_xfree86_s_hts[] = "\033H";
-static char screen_xterm_xfree86_s_ht[] = "\011";
-static char screen_xterm_xfree86_s_kb2[] = "\033OE";
-static char screen_xterm_xfree86_s_acsc[] = "``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~";
-static char screen_xterm_xfree86_s_kcbt[] = "\033[Z";
-static char screen_xterm_xfree86_s_smam[] = "\033[?7h";
-static char screen_xterm_xfree86_s_rmam[] = "\033[?7l";
-static char screen_xterm_xfree86_s_kend[] = "\033[4~";
-static char screen_xterm_xfree86_s_kent[] = "\033OM";
-static char screen_xterm_xfree86_s_kDC[] = "\033[3;2~";
-static char screen_xterm_xfree86_s_kEND[] = "\033[1;2F";
-static char screen_xterm_xfree86_s_kHOM[] = "\033[1;2H";
-static char screen_xterm_xfree86_s_kLFT[] = "\033[1;2D";
-static char screen_xterm_xfree86_s_kRIT[] = "\033[1;2C";
-static char screen_xterm_xfree86_s_kf11[] = "\033[23~";
-static char screen_xterm_xfree86_s_kf12[] = "\033[24~";
-static char screen_xterm_xfree86_s_kf13[] = "\033[1;2P";
-static char screen_xterm_xfree86_s_kf14[] = "\033[1;2Q";
-static char screen_xterm_xfree86_s_kf15[] = "\033[1;2R";
-static char screen_xterm_xfree86_s_kf16[] = "\033[1;2S";
-static char screen_xterm_xfree86_s_kf17[] = "\033[15;2~";
-static char screen_xterm_xfree86_s_kf18[] = "\033[17;2~";
-static char screen_xterm_xfree86_s_kf19[] = "\033[18;2~";
-static char screen_xterm_xfree86_s_kf20[] = "\033[19;2~";
-static char screen_xterm_xfree86_s_kf21[] = "\033[20;2~";
-static char screen_xterm_xfree86_s_kf22[] = "\033[21;2~";
-static char screen_xterm_xfree86_s_kf23[] = "\033[23;2~";
-static char screen_xterm_xfree86_s_kf24[] = "\033[24;2~";
-static char screen_xterm_xfree86_s_kf25[] = "\033[1;5P";
-static char screen_xterm_xfree86_s_kf26[] = "\033[1;5Q";
-static char screen_xterm_xfree86_s_kf27[] = "\033[1;5R";
-static char screen_xterm_xfree86_s_kf28[] = "\033[1;5S";
-static char screen_xterm_xfree86_s_kf29[] = "\033[15;5~";
-static char screen_xterm_xfree86_s_kf30[] = "\033[17;5~";
-static char screen_xterm_xfree86_s_kf31[] = "\033[18;5~";
-static char screen_xterm_xfree86_s_kf32[] = "\033[19;5~";
-static char screen_xterm_xfree86_s_kf33[] = "\033[20;5~";
-static char screen_xterm_xfree86_s_kf34[] = "\033[21;5~";
-static char screen_xterm_xfree86_s_kf35[] = "\033[23;5~";
-static char screen_xterm_xfree86_s_kf36[] = "\033[24;5~";
-static char screen_xterm_xfree86_s_kf37[] = "\033[1;6P";
-static char screen_xterm_xfree86_s_kf38[] = "\033[1;6Q";
-static char screen_xterm_xfree86_s_kf39[] = "\033[1;6R";
-static char screen_xterm_xfree86_s_kf40[] = "\033[1;6S";
-static char screen_xterm_xfree86_s_kf41[] = "\033[15;6~";
-static char screen_xterm_xfree86_s_kf42[] = "\033[17;6~";
-static char screen_xterm_xfree86_s_kf43[] = "\033[18;6~";
-static char screen_xterm_xfree86_s_kf44[] = "\033[19;6~";
-static char screen_xterm_xfree86_s_kf45[] = "\033[20;6~";
-static char screen_xterm_xfree86_s_kf46[] = "\033[21;6~";
-static char screen_xterm_xfree86_s_kf47[] = "\033[23;6~";
-static char screen_xterm_xfree86_s_kf48[] = "\033[24;6~";
-static char screen_xterm_xfree86_s_kf49[] = "\033[1;3P";
-static char screen_xterm_xfree86_s_kf50[] = "\033[1;3Q";
-static char screen_xterm_xfree86_s_kf51[] = "\033[1;3R";
-static char screen_xterm_xfree86_s_kf52[] = "\033[1;3S";
-static char screen_xterm_xfree86_s_kf53[] = "\033[15;3~";
-static char screen_xterm_xfree86_s_kf54[] = "\033[17;3~";
-static char screen_xterm_xfree86_s_kf55[] = "\033[18;3~";
-static char screen_xterm_xfree86_s_kf56[] = "\033[19;3~";
-static char screen_xterm_xfree86_s_kf57[] = "\033[20;3~";
-static char screen_xterm_xfree86_s_kf58[] = "\033[21;3~";
-static char screen_xterm_xfree86_s_kf59[] = "\033[23;3~";
-static char screen_xterm_xfree86_s_kf60[] = "\033[24;3~";
-static char screen_xterm_xfree86_s_kf61[] = "\033[1;4P";
-static char screen_xterm_xfree86_s_kf62[] = "\033[1;4Q";
-static char screen_xterm_xfree86_s_kf63[] = "\033[1;4R";
-static char screen_xterm_xfree86_s_el1[] = "\033[1K";
-static char screen_xterm_xfree86_s_u6[] = "\033[%i%d;%dR";
-static char screen_xterm_xfree86_s_u7[] = "\033[6n";
-static char screen_xterm_xfree86_s_u8[] = "\033[?%[;0123456789]c";
-static char screen_xterm_xfree86_s_u9[] = "\033[c";
-static char screen_xterm_xfree86_s_op[] = "\033[39;49m";
-static char screen_xterm_xfree86_s_setf[] = "\033[3%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m";
-static char screen_xterm_xfree86_s_setb[] = "\033[4%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m";
-static char screen_xterm_xfree86_s_kmous[] = "\033[M";
-static char screen_xterm_xfree86_s_setaf[] = "\033[3%p1%dm";
-static char screen_xterm_xfree86_s_setab[] = "\033[4%p1%dm";
+static char screen_xterm_new_s_cbt[] = "\033[Z";
+static char screen_xterm_new_s_bel[] = "\007";
+static char screen_xterm_new_s_cr[] = "\015";
+static char screen_xterm_new_s_csr[] = "\033[%i%p1%d;%p2%dr";
+static char screen_xterm_new_s_tbc[] = "\033[3g";
+static char screen_xterm_new_s_clear[] = "\033[H\033[2J";
+static char screen_xterm_new_s_el[] = "\033[K";
+static char screen_xterm_new_s_ed[] = "\033[J";
+static char screen_xterm_new_s_hpa[] = "\033[%i%p1%dG";
+static char screen_xterm_new_s_cup[] = "\033[%i%p1%d;%p2%dH";
+static char screen_xterm_new_s_cud1[] = "\012";
+static char screen_xterm_new_s_home[] = "\033[H";
+static char screen_xterm_new_s_civis[] = "\033[?25l";
+static char screen_xterm_new_s_cub1[] = "\010";
+static char screen_xterm_new_s_cnorm[] = "\033[?12l\033[?25h";
+static char screen_xterm_new_s_cuf1[] = "\033[C";
+static char screen_xterm_new_s_cuu1[] = "\033[A";
+static char screen_xterm_new_s_cvvis[] = "\033[?12;25h";
+static char screen_xterm_new_s_dch1[] = "\033[P";
+static char screen_xterm_new_s_dl1[] = "\033[M";
+static char screen_xterm_new_s_smacs[] = "\033(0";
+static char screen_xterm_new_s_blink[] = "\033[5m";
+static char screen_xterm_new_s_bold[] = "\033[1m";
+static char screen_xterm_new_s_smcup[] = "\033[?1049h\033[22;0;0t";
+static char screen_xterm_new_s_dim[] = "\033[2m";
+static char screen_xterm_new_s_smir[] = "\033[4h";
+static char screen_xterm_new_s_rev[] = "\033[7m";
+static char screen_xterm_new_s_smso[] = "\033[7m";
+static char screen_xterm_new_s_smul[] = "\033[4m";
+static char screen_xterm_new_s_ech[] = "\033[%p1%dX";
+static char screen_xterm_new_s_rmacs[] = "\033(B";
+static char screen_xterm_new_s_sgr0[] = "\033(B\033[m";
+static char screen_xterm_new_s_rmcup[] = "\033[?1049l\033[23;0;0t";
+static char screen_xterm_new_s_rmir[] = "\033[4l";
+static char screen_xterm_new_s_rmso[] = "\033[27m";
+static char screen_xterm_new_s_rmul[] = "\033[24m";
+static char screen_xterm_new_s_flash[] = "\033[?5h$<100/>\033[?5l";
+static char screen_xterm_new_s_is2[] = "\033[!p\033[?3;4l\033[4l\033>";
+static char screen_xterm_new_s_ich1[] = "\033[@";
+static char screen_xterm_new_s_il1[] = "\033[L";
+static char screen_xterm_new_s_kbs[] = "\010";
+static char screen_xterm_new_s_kdch1[] = "\033[3~";
+static char screen_xterm_new_s_kcud1[] = "\033OB";
+static char screen_xterm_new_s_kf1[] = "\033OP";
+static char screen_xterm_new_s_kf10[] = "\033[21~";
+static char screen_xterm_new_s_kf2[] = "\033OQ";
+static char screen_xterm_new_s_kf3[] = "\033OR";
+static char screen_xterm_new_s_kf4[] = "\033OS";
+static char screen_xterm_new_s_kf5[] = "\033[15~";
+static char screen_xterm_new_s_kf6[] = "\033[17~";
+static char screen_xterm_new_s_kf7[] = "\033[18~";
+static char screen_xterm_new_s_kf8[] = "\033[19~";
+static char screen_xterm_new_s_kf9[] = "\033[20~";
+static char screen_xterm_new_s_khome[] = "\033[1~";
+static char screen_xterm_new_s_kich1[] = "\033[2~";
+static char screen_xterm_new_s_kcub1[] = "\033OD";
+static char screen_xterm_new_s_knp[] = "\033[6~";
+static char screen_xterm_new_s_kpp[] = "\033[5~";
+static char screen_xterm_new_s_kcuf1[] = "\033OC";
+static char screen_xterm_new_s_kind[] = "\033[1;2B";
+static char screen_xterm_new_s_kri[] = "\033[1;2A";
+static char screen_xterm_new_s_kcuu1[] = "\033OA";
+static char screen_xterm_new_s_rmkx[] = "\033[?1l\033>";
+static char screen_xterm_new_s_smkx[] = "\033[?1h\033=";
+static char screen_xterm_new_s_rmm[] = "\033[?1034l";
+static char screen_xterm_new_s_smm[] = "\033[?1034h";
+static char screen_xterm_new_s_nel[] = "\033E";
+static char screen_xterm_new_s_dch[] = "\033[%p1%dP";
+static char screen_xterm_new_s_dl[] = "\033[%p1%dM";
+static char screen_xterm_new_s_cud[] = "\033[%p1%dB";
+static char screen_xterm_new_s_ich[] = "\033[%p1%d@";
+static char screen_xterm_new_s_indn[] = "\033[%p1%dS";
+static char screen_xterm_new_s_il[] = "\033[%p1%dL";
+static char screen_xterm_new_s_cub[] = "\033[%p1%dD";
+static char screen_xterm_new_s_cuf[] = "\033[%p1%dC";
+static char screen_xterm_new_s_rin[] = "\033[%p1%dT";
+static char screen_xterm_new_s_cuu[] = "\033[%p1%dA";
+static char screen_xterm_new_s_mc0[] = "\033[i";
+static char screen_xterm_new_s_mc4[] = "\033[4i";
+static char screen_xterm_new_s_mc5[] = "\033[5i";
+static char screen_xterm_new_s_rs1[] = "\033c";
+static char screen_xterm_new_s_rs2[] = "\033[!p\033[?3;4l\033[4l\033>";
+static char screen_xterm_new_s_rc[] = "\0338";
+static char screen_xterm_new_s_vpa[] = "\033[%i%p1%dd";
+static char screen_xterm_new_s_sc[] = "\0337";
+static char screen_xterm_new_s_ind[] = "\012";
+static char screen_xterm_new_s_ri[] = "\033M";
+static char screen_xterm_new_s_sgr[] = "%?%p9%t\033(0%e\033(B%;\033[0%?%p6%t;1%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p5%t;2%;m";
+static char screen_xterm_new_s_hts[] = "\033H";
+static char screen_xterm_new_s_ht[] = "\011";
+static char screen_xterm_new_s_ka1[] = "\033Ow";
+static char screen_xterm_new_s_ka3[] = "\033Oy";
+static char screen_xterm_new_s_kb2[] = "\033Ou";
+static char screen_xterm_new_s_kc1[] = "\033Oq";
+static char screen_xterm_new_s_kc3[] = "\033Os";
+static char screen_xterm_new_s_acsc[] = "``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~";
+static char screen_xterm_new_s_kcbt[] = "\033[Z";
+static char screen_xterm_new_s_smam[] = "\033[?7h";
+static char screen_xterm_new_s_rmam[] = "\033[?7l";
+static char screen_xterm_new_s_kbeg[] = "\033OE";
+static char screen_xterm_new_s_kend[] = "\033[4~";
+static char screen_xterm_new_s_kent[] = "\033OM";
+static char screen_xterm_new_s_kDC[] = "\033[3;2~";
+static char screen_xterm_new_s_kEND[] = "\033[1;2F";
+static char screen_xterm_new_s_kHOM[] = "\033[1;2H";
+static char screen_xterm_new_s_kLFT[] = "\033[1;2D";
+static char screen_xterm_new_s_kRIT[] = "\033[1;2C";
+static char screen_xterm_new_s_kf11[] = "\033[23~";
+static char screen_xterm_new_s_kf12[] = "\033[24~";
+static char screen_xterm_new_s_kf13[] = "\033[1;2P";
+static char screen_xterm_new_s_kf14[] = "\033[1;2Q";
+static char screen_xterm_new_s_kf15[] = "\033[1;2R";
+static char screen_xterm_new_s_kf16[] = "\033[1;2S";
+static char screen_xterm_new_s_kf17[] = "\033[15;2~";
+static char screen_xterm_new_s_kf18[] = "\033[17;2~";
+static char screen_xterm_new_s_kf19[] = "\033[18;2~";
+static char screen_xterm_new_s_kf20[] = "\033[19;2~";
+static char screen_xterm_new_s_kf21[] = "\033[20;2~";
+static char screen_xterm_new_s_kf22[] = "\033[21;2~";
+static char screen_xterm_new_s_kf23[] = "\033[23;2~";
+static char screen_xterm_new_s_kf24[] = "\033[24;2~";
+static char screen_xterm_new_s_kf25[] = "\033[1;5P";
+static char screen_xterm_new_s_kf26[] = "\033[1;5Q";
+static char screen_xterm_new_s_kf27[] = "\033[1;5R";
+static char screen_xterm_new_s_kf28[] = "\033[1;5S";
+static char screen_xterm_new_s_kf29[] = "\033[15;5~";
+static char screen_xterm_new_s_kf30[] = "\033[17;5~";
+static char screen_xterm_new_s_kf31[] = "\033[18;5~";
+static char screen_xterm_new_s_kf32[] = "\033[19;5~";
+static char screen_xterm_new_s_kf33[] = "\033[20;5~";
+static char screen_xterm_new_s_kf34[] = "\033[21;5~";
+static char screen_xterm_new_s_kf35[] = "\033[23;5~";
+static char screen_xterm_new_s_kf36[] = "\033[24;5~";
+static char screen_xterm_new_s_kf37[] = "\033[1;6P";
+static char screen_xterm_new_s_kf38[] = "\033[1;6Q";
+static char screen_xterm_new_s_kf39[] = "\033[1;6R";
+static char screen_xterm_new_s_kf40[] = "\033[1;6S";
+static char screen_xterm_new_s_kf41[] = "\033[15;6~";
+static char screen_xterm_new_s_kf42[] = "\033[17;6~";
+static char screen_xterm_new_s_kf43[] = "\033[18;6~";
+static char screen_xterm_new_s_kf44[] = "\033[19;6~";
+static char screen_xterm_new_s_kf45[] = "\033[20;6~";
+static char screen_xterm_new_s_kf46[] = "\033[21;6~";
+static char screen_xterm_new_s_kf47[] = "\033[23;6~";
+static char screen_xterm_new_s_kf48[] = "\033[24;6~";
+static char screen_xterm_new_s_kf49[] = "\033[1;3P";
+static char screen_xterm_new_s_kf50[] = "\033[1;3Q";
+static char screen_xterm_new_s_kf51[] = "\033[1;3R";
+static char screen_xterm_new_s_kf52[] = "\033[1;3S";
+static char screen_xterm_new_s_kf53[] = "\033[15;3~";
+static char screen_xterm_new_s_kf54[] = "\033[17;3~";
+static char screen_xterm_new_s_kf55[] = "\033[18;3~";
+static char screen_xterm_new_s_kf56[] = "\033[19;3~";
+static char screen_xterm_new_s_kf57[] = "\033[20;3~";
+static char screen_xterm_new_s_kf58[] = "\033[21;3~";
+static char screen_xterm_new_s_kf59[] = "\033[23;3~";
+static char screen_xterm_new_s_kf60[] = "\033[24;3~";
+static char screen_xterm_new_s_kf61[] = "\033[1;4P";
+static char screen_xterm_new_s_kf62[] = "\033[1;4Q";
+static char screen_xterm_new_s_kf63[] = "\033[1;4R";
+static char screen_xterm_new_s_el1[] = "\033[1K";
+static char screen_xterm_new_s_u6[] = "\033[%i%d;%dR";
+static char screen_xterm_new_s_u7[] = "\033[6n";
+static char screen_xterm_new_s_u8[] = "\033[?%[;0123456789]c";
+static char screen_xterm_new_s_u9[] = "\033[c";
+static char screen_xterm_new_s_op[] = "\033[39;49m";
+static char screen_xterm_new_s_setf[] = "\033[3%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m";
+static char screen_xterm_new_s_setb[] = "\033[4%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m";
+static char screen_xterm_new_s_kmous[] = "\033[M";
+static char screen_xterm_new_s_setaf[] = "\033[3%p1%dm";
+static char screen_xterm_new_s_setab[] = "\033[4%p1%dm";
+static char screen_xterm_new_s_RV[] = "\033[>c";
+static char screen_xterm_new_s_XM[] = "\033[?1000%?%p1%{1}%=%th%el%;";
+static char screen_xterm_new_s_fd[] = "\033[?1004l";
+static char screen_xterm_new_s_fe[] = "\033[?1004h";
+static char screen_xterm_new_s_kDC3[] = "\033[3;3~";
+static char screen_xterm_new_s_kDC4[] = "\033[3;4~";
+static char screen_xterm_new_s_kDC5[] = "\033[3;5~";
+static char screen_xterm_new_s_kDC6[] = "\033[3;6~";
+static char screen_xterm_new_s_kDC7[] = "\033[3;7~";
+static char screen_xterm_new_s_kDN[] = "\033[1;2B";
+static char screen_xterm_new_s_kDN3[] = "\033[1;3B";
+static char screen_xterm_new_s_kDN4[] = "\033[1;4B";
+static char screen_xterm_new_s_kDN5[] = "\033[1;5B";
+static char screen_xterm_new_s_kDN6[] = "\033[1;6B";
+static char screen_xterm_new_s_kDN7[] = "\033[1;7B";
+static char screen_xterm_new_s_kEND3[] = "\033[1;3F";
+static char screen_xterm_new_s_kEND4[] = "\033[1;4F";
+static char screen_xterm_new_s_kEND5[] = "\033[1;5F";
+static char screen_xterm_new_s_kEND6[] = "\033[1;6F";
+static char screen_xterm_new_s_kEND7[] = "\033[1;7F";
+static char screen_xterm_new_s_kHOM3[] = "\033[1;3H";
+static char screen_xterm_new_s_kHOM4[] = "\033[1;4H";
+static char screen_xterm_new_s_kHOM5[] = "\033[1;5H";
+static char screen_xterm_new_s_kHOM6[] = "\033[1;6H";
+static char screen_xterm_new_s_kHOM7[] = "\033[1;7H";
+static char screen_xterm_new_s_kIC3[] = "\033[2;3~";
+static char screen_xterm_new_s_kIC4[] = "\033[2;4~";
+static char screen_xterm_new_s_kIC5[] = "\033[2;5~";
+static char screen_xterm_new_s_kIC6[] = "\033[2;6~";
+static char screen_xterm_new_s_kIC7[] = "\033[2;7~";
+static char screen_xterm_new_s_kLFT3[] = "\033[1;3D";
+static char screen_xterm_new_s_kLFT4[] = "\033[1;4D";
+static char screen_xterm_new_s_kLFT5[] = "\033[1;5D";
+static char screen_xterm_new_s_kLFT6[] = "\033[1;6D";
+static char screen_xterm_new_s_kLFT7[] = "\033[1;7D";
+static char screen_xterm_new_s_kNXT3[] = "\033[6;3~";
+static char screen_xterm_new_s_kNXT4[] = "\033[6;4~";
+static char screen_xterm_new_s_kNXT5[] = "\033[6;5~";
+static char screen_xterm_new_s_kNXT6[] = "\033[6;6~";
+static char screen_xterm_new_s_kNXT7[] = "\033[6;7~";
+static char screen_xterm_new_s_kPRV3[] = "\033[5;3~";
+static char screen_xterm_new_s_kPRV4[] = "\033[5;4~";
+static char screen_xterm_new_s_kPRV5[] = "\033[5;5~";
+static char screen_xterm_new_s_kPRV6[] = "\033[5;6~";
+static char screen_xterm_new_s_kPRV7[] = "\033[5;7~";
+static char screen_xterm_new_s_kRIT3[] = "\033[1;3C";
+static char screen_xterm_new_s_kRIT4[] = "\033[1;4C";
+static char screen_xterm_new_s_kRIT5[] = "\033[1;5C";
+static char screen_xterm_new_s_kRIT6[] = "\033[1;6C";
+static char screen_xterm_new_s_kRIT7[] = "\033[1;7C";
+static char screen_xterm_new_s_kUP[] = "\033[1;2A";
+static char screen_xterm_new_s_kUP3[] = "\033[1;3A";
+static char screen_xterm_new_s_kUP4[] = "\033[1;4A";
+static char screen_xterm_new_s_kUP5[] = "\033[1;5A";
+static char screen_xterm_new_s_kUP6[] = "\033[1;6A";
+static char screen_xterm_new_s_kUP7[] = "\033[1;7A";
+static char screen_xterm_new_s_ka2[] = "\033Ox";
+static char screen_xterm_new_s_kb1[] = "\033Ot";
+static char screen_xterm_new_s_kb3[] = "\033Ov";
+static char screen_xterm_new_s_kc2[] = "\033Or";
+static char screen_xterm_new_s_kp5[] = "\033OE";
+static char screen_xterm_new_s_kpADD[] = "\033Ok";
+static char screen_xterm_new_s_kpCMA[] = "\033Ol";
+static char screen_xterm_new_s_kpDIV[] = "\033Oo";
+static char screen_xterm_new_s_kpDOT[] = "\033On";
+static char screen_xterm_new_s_kpMUL[] = "\033Oj";
+static char screen_xterm_new_s_kpSUB[] = "\033Om";
+static char screen_xterm_new_s_kpZRO[] = "\033Op";
+static char screen_xterm_new_s_kxIN[] = "\033[I";
+static char screen_xterm_new_s_kxOUT[] = "\033[O";
+static char screen_xterm_new_s_rv[] = "\033\134[>83;4[0-9][0-9][0-9][0-9];0c";
+static char screen_xterm_new_s_xm[] = "\033[M%?%p4%t%p3%e%{3}%;%' '%+%c%p2%'!'%+%c%p1%'!'%+%c";
 
-static char screen_xterm_xfree86_bool_data[] = {
+static char screen_xterm_new_bool_data[] = {
 	/*   0: bw       */	TRUE,
 	/*   1: am       */	TRUE,
 	/*   2: xsb      */	FALSE,
@@ -5237,7 +7610,7 @@ static char screen_xterm_xfree86_bool_data[] = {
 	/*   5: eo       */	FALSE,
 	/*   6: gn       */	FALSE,
 	/*   7: hc       */	FALSE,
-	/*   8: km       */	TRUE,
+	/*   8: km       */	FALSE,
 	/*   9: hs       */	FALSE,
 	/*  10: in       */	FALSE,
 	/*  11: da       */	FALSE,
@@ -5273,8 +7646,11 @@ static char screen_xterm_xfree86_bool_data[] = {
 	/*  41: OTNL     */	FALSE,
 	/*  42: OTpt     */	FALSE,
 	/*  43: OTxr     */	FALSE,
+	/*  44: AX       */	TRUE,
+	/*  45: XF       */	TRUE,
+	/*  46: XT       */	TRUE,
 };
-static NCURSES_INT2 screen_xterm_xfree86_number_data[] = {
+static NCURSES_INT2 screen_xterm_new_number_data[] = {
 	/*   0: cols     */	80,
 	/*   1: it       */	8,
 	/*   2: lines    */	24,
@@ -5314,98 +7690,99 @@ static NCURSES_INT2 screen_xterm_xfree86_number_data[] = {
 	/*  36: OTdB     */	ABSENT_NUMERIC,
 	/*  37: OTdT     */	ABSENT_NUMERIC,
 	/*  38: OTkn     */	ABSENT_NUMERIC,
+	/*  39: U8       */	1,
 };
-static char * screen_xterm_xfree86_string_data[] = {
-	/*   0: cbt      */	screen_xterm_xfree86_s_cbt,
-	/*   1: bel      */	screen_xterm_xfree86_s_bel,
-	/*   2: cr       */	screen_xterm_xfree86_s_cr,
-	/*   3: csr      */	screen_xterm_xfree86_s_csr,
-	/*   4: tbc      */	screen_xterm_xfree86_s_tbc,
-	/*   5: clear    */	screen_xterm_xfree86_s_clear,
-	/*   6: el       */	screen_xterm_xfree86_s_el,
-	/*   7: ed       */	screen_xterm_xfree86_s_ed,
-	/*   8: hpa      */	screen_xterm_xfree86_s_hpa,
+static char * screen_xterm_new_string_data[] = {
+	/*   0: cbt      */	screen_xterm_new_s_cbt,
+	/*   1: bel      */	screen_xterm_new_s_bel,
+	/*   2: cr       */	screen_xterm_new_s_cr,
+	/*   3: csr      */	screen_xterm_new_s_csr,
+	/*   4: tbc      */	screen_xterm_new_s_tbc,
+	/*   5: clear    */	screen_xterm_new_s_clear,
+	/*   6: el       */	screen_xterm_new_s_el,
+	/*   7: ed       */	screen_xterm_new_s_ed,
+	/*   8: hpa      */	screen_xterm_new_s_hpa,
 	/*   9: cmdch    */	ABSENT_STRING,
-	/*  10: cup      */	screen_xterm_xfree86_s_cup,
-	/*  11: cud1     */	screen_xterm_xfree86_s_cud1,
-	/*  12: home     */	screen_xterm_xfree86_s_home,
-	/*  13: civis    */	screen_xterm_xfree86_s_civis,
-	/*  14: cub1     */	screen_xterm_xfree86_s_cub1,
+	/*  10: cup      */	screen_xterm_new_s_cup,
+	/*  11: cud1     */	screen_xterm_new_s_cud1,
+	/*  12: home     */	screen_xterm_new_s_home,
+	/*  13: civis    */	screen_xterm_new_s_civis,
+	/*  14: cub1     */	screen_xterm_new_s_cub1,
 	/*  15: mrcup    */	ABSENT_STRING,
-	/*  16: cnorm    */	screen_xterm_xfree86_s_cnorm,
-	/*  17: cuf1     */	screen_xterm_xfree86_s_cuf1,
+	/*  16: cnorm    */	screen_xterm_new_s_cnorm,
+	/*  17: cuf1     */	screen_xterm_new_s_cuf1,
 	/*  18: ll       */	ABSENT_STRING,
-	/*  19: cuu1     */	screen_xterm_xfree86_s_cuu1,
-	/*  20: cvvis    */	screen_xterm_xfree86_s_cvvis,
-	/*  21: dch1     */	screen_xterm_xfree86_s_dch1,
-	/*  22: dl1      */	screen_xterm_xfree86_s_dl1,
+	/*  19: cuu1     */	screen_xterm_new_s_cuu1,
+	/*  20: cvvis    */	screen_xterm_new_s_cvvis,
+	/*  21: dch1     */	screen_xterm_new_s_dch1,
+	/*  22: dl1      */	screen_xterm_new_s_dl1,
 	/*  23: dsl      */	ABSENT_STRING,
 	/*  24: hd       */	ABSENT_STRING,
-	/*  25: smacs    */	screen_xterm_xfree86_s_smacs,
-	/*  26: blink    */	screen_xterm_xfree86_s_blink,
-	/*  27: bold     */	screen_xterm_xfree86_s_bold,
-	/*  28: smcup    */	screen_xterm_xfree86_s_smcup,
+	/*  25: smacs    */	screen_xterm_new_s_smacs,
+	/*  26: blink    */	screen_xterm_new_s_blink,
+	/*  27: bold     */	screen_xterm_new_s_bold,
+	/*  28: smcup    */	screen_xterm_new_s_smcup,
 	/*  29: smdc     */	ABSENT_STRING,
-	/*  30: dim      */	screen_xterm_xfree86_s_dim,
-	/*  31: smir     */	screen_xterm_xfree86_s_smir,
-	/*  32: invis    */	CANCELLED_STRING,
+	/*  30: dim      */	screen_xterm_new_s_dim,
+	/*  31: smir     */	screen_xterm_new_s_smir,
+	/*  32: invis    */	ABSENT_STRING,
 	/*  33: prot     */	ABSENT_STRING,
-	/*  34: rev      */	screen_xterm_xfree86_s_rev,
-	/*  35: smso     */	screen_xterm_xfree86_s_smso,
-	/*  36: smul     */	screen_xterm_xfree86_s_smul,
-	/*  37: ech      */	screen_xterm_xfree86_s_ech,
-	/*  38: rmacs    */	screen_xterm_xfree86_s_rmacs,
-	/*  39: sgr0     */	screen_xterm_xfree86_s_sgr0,
-	/*  40: rmcup    */	screen_xterm_xfree86_s_rmcup,
+	/*  34: rev      */	screen_xterm_new_s_rev,
+	/*  35: smso     */	screen_xterm_new_s_smso,
+	/*  36: smul     */	screen_xterm_new_s_smul,
+	/*  37: ech      */	screen_xterm_new_s_ech,
+	/*  38: rmacs    */	screen_xterm_new_s_rmacs,
+	/*  39: sgr0     */	screen_xterm_new_s_sgr0,
+	/*  40: rmcup    */	screen_xterm_new_s_rmcup,
 	/*  41: rmdc     */	ABSENT_STRING,
-	/*  42: rmir     */	screen_xterm_xfree86_s_rmir,
-	/*  43: rmso     */	screen_xterm_xfree86_s_rmso,
-	/*  44: rmul     */	screen_xterm_xfree86_s_rmul,
-	/*  45: flash    */	screen_xterm_xfree86_s_flash,
+	/*  42: rmir     */	screen_xterm_new_s_rmir,
+	/*  43: rmso     */	screen_xterm_new_s_rmso,
+	/*  44: rmul     */	screen_xterm_new_s_rmul,
+	/*  45: flash    */	screen_xterm_new_s_flash,
 	/*  46: ff       */	ABSENT_STRING,
 	/*  47: fsl      */	ABSENT_STRING,
 	/*  48: is1      */	ABSENT_STRING,
-	/*  49: is2      */	screen_xterm_xfree86_s_is2,
+	/*  49: is2      */	screen_xterm_new_s_is2,
 	/*  50: is3      */	ABSENT_STRING,
 	/*  51: if       */	ABSENT_STRING,
-	/*  52: ich1     */	ABSENT_STRING,
-	/*  53: il1      */	screen_xterm_xfree86_s_il1,
+	/*  52: ich1     */	screen_xterm_new_s_ich1,
+	/*  53: il1      */	screen_xterm_new_s_il1,
 	/*  54: ip       */	ABSENT_STRING,
-	/*  55: kbs      */	screen_xterm_xfree86_s_kbs,
+	/*  55: kbs      */	screen_xterm_new_s_kbs,
 	/*  56: ktbc     */	ABSENT_STRING,
 	/*  57: kclr     */	ABSENT_STRING,
 	/*  58: kctab    */	ABSENT_STRING,
-	/*  59: kdch1    */	screen_xterm_xfree86_s_kdch1,
+	/*  59: kdch1    */	screen_xterm_new_s_kdch1,
 	/*  60: kdl1     */	ABSENT_STRING,
-	/*  61: kcud1    */	screen_xterm_xfree86_s_kcud1,
+	/*  61: kcud1    */	screen_xterm_new_s_kcud1,
 	/*  62: krmir    */	ABSENT_STRING,
 	/*  63: kel      */	ABSENT_STRING,
 	/*  64: ked      */	ABSENT_STRING,
 	/*  65: kf0      */	ABSENT_STRING,
-	/*  66: kf1      */	screen_xterm_xfree86_s_kf1,
-	/*  67: kf10     */	screen_xterm_xfree86_s_kf10,
-	/*  68: kf2      */	screen_xterm_xfree86_s_kf2,
-	/*  69: kf3      */	screen_xterm_xfree86_s_kf3,
-	/*  70: kf4      */	screen_xterm_xfree86_s_kf4,
-	/*  71: kf5      */	screen_xterm_xfree86_s_kf5,
-	/*  72: kf6      */	screen_xterm_xfree86_s_kf6,
-	/*  73: kf7      */	screen_xterm_xfree86_s_kf7,
-	/*  74: kf8      */	screen_xterm_xfree86_s_kf8,
-	/*  75: kf9      */	screen_xterm_xfree86_s_kf9,
-	/*  76: khome    */	screen_xterm_xfree86_s_khome,
-	/*  77: kich1    */	screen_xterm_xfree86_s_kich1,
+	/*  66: kf1      */	screen_xterm_new_s_kf1,
+	/*  67: kf10     */	screen_xterm_new_s_kf10,
+	/*  68: kf2      */	screen_xterm_new_s_kf2,
+	/*  69: kf3      */	screen_xterm_new_s_kf3,
+	/*  70: kf4      */	screen_xterm_new_s_kf4,
+	/*  71: kf5      */	screen_xterm_new_s_kf5,
+	/*  72: kf6      */	screen_xterm_new_s_kf6,
+	/*  73: kf7      */	screen_xterm_new_s_kf7,
+	/*  74: kf8      */	screen_xterm_new_s_kf8,
+	/*  75: kf9      */	screen_xterm_new_s_kf9,
+	/*  76: khome    */	screen_xterm_new_s_khome,
+	/*  77: kich1    */	screen_xterm_new_s_kich1,
 	/*  78: kil1     */	ABSENT_STRING,
-	/*  79: kcub1    */	screen_xterm_xfree86_s_kcub1,
+	/*  79: kcub1    */	screen_xterm_new_s_kcub1,
 	/*  80: kll      */	ABSENT_STRING,
-	/*  81: knp      */	screen_xterm_xfree86_s_knp,
-	/*  82: kpp      */	screen_xterm_xfree86_s_kpp,
-	/*  83: kcuf1    */	screen_xterm_xfree86_s_kcuf1,
-	/*  84: kind     */	screen_xterm_xfree86_s_kind,
-	/*  85: kri      */	screen_xterm_xfree86_s_kri,
+	/*  81: knp      */	screen_xterm_new_s_knp,
+	/*  82: kpp      */	screen_xterm_new_s_kpp,
+	/*  83: kcuf1    */	screen_xterm_new_s_kcuf1,
+	/*  84: kind     */	screen_xterm_new_s_kind,
+	/*  85: kri      */	screen_xterm_new_s_kri,
 	/*  86: khts     */	ABSENT_STRING,
-	/*  87: kcuu1    */	screen_xterm_xfree86_s_kcuu1,
-	/*  88: rmkx     */	screen_xterm_xfree86_s_rmkx,
-	/*  89: smkx     */	screen_xterm_xfree86_s_smkx,
+	/*  87: kcuu1    */	screen_xterm_new_s_kcuu1,
+	/*  88: rmkx     */	screen_xterm_new_s_rmkx,
+	/*  89: smkx     */	screen_xterm_new_s_smkx,
 	/*  90: lf0      */	ABSENT_STRING,
 	/*  91: lf1      */	ABSENT_STRING,
 	/*  92: lf10     */	ABSENT_STRING,
@@ -5417,71 +7794,71 @@ static char * screen_xterm_xfree86_string_data[] = {
 	/*  98: lf7      */	ABSENT_STRING,
 	/*  99: lf8      */	ABSENT_STRING,
 	/* 100: lf9      */	ABSENT_STRING,
-	/* 101: rmm      */	screen_xterm_xfree86_s_rmm,
-	/* 102: smm      */	screen_xterm_xfree86_s_smm,
-	/* 103: nel      */	ABSENT_STRING,
+	/* 101: rmm      */	screen_xterm_new_s_rmm,
+	/* 102: smm      */	screen_xterm_new_s_smm,
+	/* 103: nel      */	screen_xterm_new_s_nel,
 	/* 104: pad      */	ABSENT_STRING,
-	/* 105: dch      */	screen_xterm_xfree86_s_dch,
-	/* 106: dl       */	screen_xterm_xfree86_s_dl,
-	/* 107: cud      */	screen_xterm_xfree86_s_cud,
-	/* 108: ich      */	screen_xterm_xfree86_s_ich,
-	/* 109: indn     */	screen_xterm_xfree86_s_indn,
-	/* 110: il       */	screen_xterm_xfree86_s_il,
-	/* 111: cub      */	screen_xterm_xfree86_s_cub,
-	/* 112: cuf      */	screen_xterm_xfree86_s_cuf,
-	/* 113: rin      */	screen_xterm_xfree86_s_rin,
-	/* 114: cuu      */	screen_xterm_xfree86_s_cuu,
+	/* 105: dch      */	screen_xterm_new_s_dch,
+	/* 106: dl       */	screen_xterm_new_s_dl,
+	/* 107: cud      */	screen_xterm_new_s_cud,
+	/* 108: ich      */	screen_xterm_new_s_ich,
+	/* 109: indn     */	screen_xterm_new_s_indn,
+	/* 110: il       */	screen_xterm_new_s_il,
+	/* 111: cub      */	screen_xterm_new_s_cub,
+	/* 112: cuf      */	screen_xterm_new_s_cuf,
+	/* 113: rin      */	screen_xterm_new_s_rin,
+	/* 114: cuu      */	screen_xterm_new_s_cuu,
 	/* 115: pfkey    */	ABSENT_STRING,
 	/* 116: pfloc    */	ABSENT_STRING,
 	/* 117: pfx      */	ABSENT_STRING,
-	/* 118: mc0      */	screen_xterm_xfree86_s_mc0,
-	/* 119: mc4      */	screen_xterm_xfree86_s_mc4,
-	/* 120: mc5      */	screen_xterm_xfree86_s_mc5,
-	/* 121: rep      */	CANCELLED_STRING,
-	/* 122: rs1      */	screen_xterm_xfree86_s_rs1,
-	/* 123: rs2      */	screen_xterm_xfree86_s_rs2,
+	/* 118: mc0      */	screen_xterm_new_s_mc0,
+	/* 119: mc4      */	screen_xterm_new_s_mc4,
+	/* 120: mc5      */	screen_xterm_new_s_mc5,
+	/* 121: rep      */	ABSENT_STRING,
+	/* 122: rs1      */	screen_xterm_new_s_rs1,
+	/* 123: rs2      */	screen_xterm_new_s_rs2,
 	/* 124: rs3      */	ABSENT_STRING,
 	/* 125: rf       */	ABSENT_STRING,
-	/* 126: rc       */	screen_xterm_xfree86_s_rc,
-	/* 127: vpa      */	screen_xterm_xfree86_s_vpa,
-	/* 128: sc       */	screen_xterm_xfree86_s_sc,
-	/* 129: ind      */	screen_xterm_xfree86_s_ind,
-	/* 130: ri       */	screen_xterm_xfree86_s_ri,
-	/* 131: sgr      */	screen_xterm_xfree86_s_sgr,
-	/* 132: hts      */	screen_xterm_xfree86_s_hts,
+	/* 126: rc       */	screen_xterm_new_s_rc,
+	/* 127: vpa      */	screen_xterm_new_s_vpa,
+	/* 128: sc       */	screen_xterm_new_s_sc,
+	/* 129: ind      */	screen_xterm_new_s_ind,
+	/* 130: ri       */	screen_xterm_new_s_ri,
+	/* 131: sgr      */	screen_xterm_new_s_sgr,
+	/* 132: hts      */	screen_xterm_new_s_hts,
 	/* 133: wind     */	ABSENT_STRING,
-	/* 134: ht       */	screen_xterm_xfree86_s_ht,
+	/* 134: ht       */	screen_xterm_new_s_ht,
 	/* 135: tsl      */	ABSENT_STRING,
 	/* 136: uc       */	ABSENT_STRING,
 	/* 137: hu       */	ABSENT_STRING,
 	/* 138: iprog    */	ABSENT_STRING,
-	/* 139: ka1      */	ABSENT_STRING,
-	/* 140: ka3      */	ABSENT_STRING,
-	/* 141: kb2      */	screen_xterm_xfree86_s_kb2,
-	/* 142: kc1      */	ABSENT_STRING,
-	/* 143: kc3      */	ABSENT_STRING,
+	/* 139: ka1      */	screen_xterm_new_s_ka1,
+	/* 140: ka3      */	screen_xterm_new_s_ka3,
+	/* 141: kb2      */	screen_xterm_new_s_kb2,
+	/* 142: kc1      */	screen_xterm_new_s_kc1,
+	/* 143: kc3      */	screen_xterm_new_s_kc3,
 	/* 144: mc5p     */	ABSENT_STRING,
 	/* 145: rmp      */	ABSENT_STRING,
-	/* 146: acsc     */	screen_xterm_xfree86_s_acsc,
+	/* 146: acsc     */	screen_xterm_new_s_acsc,
 	/* 147: pln      */	ABSENT_STRING,
-	/* 148: kcbt     */	screen_xterm_xfree86_s_kcbt,
+	/* 148: kcbt     */	screen_xterm_new_s_kcbt,
 	/* 149: smxon    */	ABSENT_STRING,
 	/* 150: rmxon    */	ABSENT_STRING,
-	/* 151: smam     */	screen_xterm_xfree86_s_smam,
-	/* 152: rmam     */	screen_xterm_xfree86_s_rmam,
+	/* 151: smam     */	screen_xterm_new_s_smam,
+	/* 152: rmam     */	screen_xterm_new_s_rmam,
 	/* 153: xonc     */	ABSENT_STRING,
 	/* 154: xoffc    */	ABSENT_STRING,
 	/* 155: enacs    */	ABSENT_STRING,
 	/* 156: smln     */	ABSENT_STRING,
 	/* 157: rmln     */	ABSENT_STRING,
-	/* 158: kbeg     */	ABSENT_STRING,
+	/* 158: kbeg     */	screen_xterm_new_s_kbeg,
 	/* 159: kcan     */	ABSENT_STRING,
 	/* 160: kclo     */	ABSENT_STRING,
 	/* 161: kcmd     */	ABSENT_STRING,
 	/* 162: kcpy     */	ABSENT_STRING,
 	/* 163: kcrt     */	ABSENT_STRING,
-	/* 164: kend     */	screen_xterm_xfree86_s_kend,
-	/* 165: kent     */	screen_xterm_xfree86_s_kent,
+	/* 164: kend     */	screen_xterm_new_s_kend,
+	/* 165: kent     */	screen_xterm_new_s_kent,
 	/* 166: kext     */	ABSENT_STRING,
 	/* 167: kfnd     */	ABSENT_STRING,
 	/* 168: khlp     */	ABSENT_STRING,
@@ -5507,85 +7884,85 @@ static char * screen_xterm_xfree86_string_data[] = {
 	/* 188: kCMD     */	ABSENT_STRING,
 	/* 189: kCPY     */	ABSENT_STRING,
 	/* 190: kCRT     */	ABSENT_STRING,
-	/* 191: kDC      */	screen_xterm_xfree86_s_kDC,
+	/* 191: kDC      */	screen_xterm_new_s_kDC,
 	/* 192: kDL      */	ABSENT_STRING,
 	/* 193: kslt     */	ABSENT_STRING,
-	/* 194: kEND     */	screen_xterm_xfree86_s_kEND,
+	/* 194: kEND     */	screen_xterm_new_s_kEND,
 	/* 195: kEOL     */	ABSENT_STRING,
 	/* 196: kEXT     */	ABSENT_STRING,
 	/* 197: kFND     */	ABSENT_STRING,
 	/* 198: kHLP     */	ABSENT_STRING,
-	/* 199: kHOM     */	screen_xterm_xfree86_s_kHOM,
-	/* 200: kIC      */	CANCELLED_STRING,
-	/* 201: kLFT     */	screen_xterm_xfree86_s_kLFT,
+	/* 199: kHOM     */	screen_xterm_new_s_kHOM,
+	/* 200: kIC      */	ABSENT_STRING,
+	/* 201: kLFT     */	screen_xterm_new_s_kLFT,
 	/* 202: kMSG     */	ABSENT_STRING,
 	/* 203: kMOV     */	ABSENT_STRING,
-	/* 204: kNXT     */	CANCELLED_STRING,
+	/* 204: kNXT     */	ABSENT_STRING,
 	/* 205: kOPT     */	ABSENT_STRING,
-	/* 206: kPRV     */	CANCELLED_STRING,
+	/* 206: kPRV     */	ABSENT_STRING,
 	/* 207: kPRT     */	ABSENT_STRING,
 	/* 208: kRDO     */	ABSENT_STRING,
 	/* 209: kRPL     */	ABSENT_STRING,
-	/* 210: kRIT     */	screen_xterm_xfree86_s_kRIT,
+	/* 210: kRIT     */	screen_xterm_new_s_kRIT,
 	/* 211: kRES     */	ABSENT_STRING,
 	/* 212: kSAV     */	ABSENT_STRING,
 	/* 213: kSPD     */	ABSENT_STRING,
 	/* 214: kUND     */	ABSENT_STRING,
 	/* 215: rfi      */	ABSENT_STRING,
-	/* 216: kf11     */	screen_xterm_xfree86_s_kf11,
-	/* 217: kf12     */	screen_xterm_xfree86_s_kf12,
-	/* 218: kf13     */	screen_xterm_xfree86_s_kf13,
-	/* 219: kf14     */	screen_xterm_xfree86_s_kf14,
-	/* 220: kf15     */	screen_xterm_xfree86_s_kf15,
-	/* 221: kf16     */	screen_xterm_xfree86_s_kf16,
-	/* 222: kf17     */	screen_xterm_xfree86_s_kf17,
-	/* 223: kf18     */	screen_xterm_xfree86_s_kf18,
-	/* 224: kf19     */	screen_xterm_xfree86_s_kf19,
-	/* 225: kf20     */	screen_xterm_xfree86_s_kf20,
-	/* 226: kf21     */	screen_xterm_xfree86_s_kf21,
-	/* 227: kf22     */	screen_xterm_xfree86_s_kf22,
-	/* 228: kf23     */	screen_xterm_xfree86_s_kf23,
-	/* 229: kf24     */	screen_xterm_xfree86_s_kf24,
-	/* 230: kf25     */	screen_xterm_xfree86_s_kf25,
-	/* 231: kf26     */	screen_xterm_xfree86_s_kf26,
-	/* 232: kf27     */	screen_xterm_xfree86_s_kf27,
-	/* 233: kf28     */	screen_xterm_xfree86_s_kf28,
-	/* 234: kf29     */	screen_xterm_xfree86_s_kf29,
-	/* 235: kf30     */	screen_xterm_xfree86_s_kf30,
-	/* 236: kf31     */	screen_xterm_xfree86_s_kf31,
-	/* 237: kf32     */	screen_xterm_xfree86_s_kf32,
-	/* 238: kf33     */	screen_xterm_xfree86_s_kf33,
-	/* 239: kf34     */	screen_xterm_xfree86_s_kf34,
-	/* 240: kf35     */	screen_xterm_xfree86_s_kf35,
-	/* 241: kf36     */	screen_xterm_xfree86_s_kf36,
-	/* 242: kf37     */	screen_xterm_xfree86_s_kf37,
-	/* 243: kf38     */	screen_xterm_xfree86_s_kf38,
-	/* 244: kf39     */	screen_xterm_xfree86_s_kf39,
-	/* 245: kf40     */	screen_xterm_xfree86_s_kf40,
-	/* 246: kf41     */	screen_xterm_xfree86_s_kf41,
-	/* 247: kf42     */	screen_xterm_xfree86_s_kf42,
-	/* 248: kf43     */	screen_xterm_xfree86_s_kf43,
-	/* 249: kf44     */	screen_xterm_xfree86_s_kf44,
-	/* 250: kf45     */	screen_xterm_xfree86_s_kf45,
-	/* 251: kf46     */	screen_xterm_xfree86_s_kf46,
-	/* 252: kf47     */	screen_xterm_xfree86_s_kf47,
-	/* 253: kf48     */	screen_xterm_xfree86_s_kf48,
-	/* 254: kf49     */	screen_xterm_xfree86_s_kf49,
-	/* 255: kf50     */	screen_xterm_xfree86_s_kf50,
-	/* 256: kf51     */	screen_xterm_xfree86_s_kf51,
-	/* 257: kf52     */	screen_xterm_xfree86_s_kf52,
-	/* 258: kf53     */	screen_xterm_xfree86_s_kf53,
-	/* 259: kf54     */	screen_xterm_xfree86_s_kf54,
-	/* 260: kf55     */	screen_xterm_xfree86_s_kf55,
-	/* 261: kf56     */	screen_xterm_xfree86_s_kf56,
-	/* 262: kf57     */	screen_xterm_xfree86_s_kf57,
-	/* 263: kf58     */	screen_xterm_xfree86_s_kf58,
-	/* 264: kf59     */	screen_xterm_xfree86_s_kf59,
-	/* 265: kf60     */	screen_xterm_xfree86_s_kf60,
-	/* 266: kf61     */	screen_xterm_xfree86_s_kf61,
-	/* 267: kf62     */	screen_xterm_xfree86_s_kf62,
-	/* 268: kf63     */	screen_xterm_xfree86_s_kf63,
-	/* 269: el1      */	screen_xterm_xfree86_s_el1,
+	/* 216: kf11     */	screen_xterm_new_s_kf11,
+	/* 217: kf12     */	screen_xterm_new_s_kf12,
+	/* 218: kf13     */	screen_xterm_new_s_kf13,
+	/* 219: kf14     */	screen_xterm_new_s_kf14,
+	/* 220: kf15     */	screen_xterm_new_s_kf15,
+	/* 221: kf16     */	screen_xterm_new_s_kf16,
+	/* 222: kf17     */	screen_xterm_new_s_kf17,
+	/* 223: kf18     */	screen_xterm_new_s_kf18,
+	/* 224: kf19     */	screen_xterm_new_s_kf19,
+	/* 225: kf20     */	screen_xterm_new_s_kf20,
+	/* 226: kf21     */	screen_xterm_new_s_kf21,
+	/* 227: kf22     */	screen_xterm_new_s_kf22,
+	/* 228: kf23     */	screen_xterm_new_s_kf23,
+	/* 229: kf24     */	screen_xterm_new_s_kf24,
+	/* 230: kf25     */	screen_xterm_new_s_kf25,
+	/* 231: kf26     */	screen_xterm_new_s_kf26,
+	/* 232: kf27     */	screen_xterm_new_s_kf27,
+	/* 233: kf28     */	screen_xterm_new_s_kf28,
+	/* 234: kf29     */	screen_xterm_new_s_kf29,
+	/* 235: kf30     */	screen_xterm_new_s_kf30,
+	/* 236: kf31     */	screen_xterm_new_s_kf31,
+	/* 237: kf32     */	screen_xterm_new_s_kf32,
+	/* 238: kf33     */	screen_xterm_new_s_kf33,
+	/* 239: kf34     */	screen_xterm_new_s_kf34,
+	/* 240: kf35     */	screen_xterm_new_s_kf35,
+	/* 241: kf36     */	screen_xterm_new_s_kf36,
+	/* 242: kf37     */	screen_xterm_new_s_kf37,
+	/* 243: kf38     */	screen_xterm_new_s_kf38,
+	/* 244: kf39     */	screen_xterm_new_s_kf39,
+	/* 245: kf40     */	screen_xterm_new_s_kf40,
+	/* 246: kf41     */	screen_xterm_new_s_kf41,
+	/* 247: kf42     */	screen_xterm_new_s_kf42,
+	/* 248: kf43     */	screen_xterm_new_s_kf43,
+	/* 249: kf44     */	screen_xterm_new_s_kf44,
+	/* 250: kf45     */	screen_xterm_new_s_kf45,
+	/* 251: kf46     */	screen_xterm_new_s_kf46,
+	/* 252: kf47     */	screen_xterm_new_s_kf47,
+	/* 253: kf48     */	screen_xterm_new_s_kf48,
+	/* 254: kf49     */	screen_xterm_new_s_kf49,
+	/* 255: kf50     */	screen_xterm_new_s_kf50,
+	/* 256: kf51     */	screen_xterm_new_s_kf51,
+	/* 257: kf52     */	screen_xterm_new_s_kf52,
+	/* 258: kf53     */	screen_xterm_new_s_kf53,
+	/* 259: kf54     */	screen_xterm_new_s_kf54,
+	/* 260: kf55     */	screen_xterm_new_s_kf55,
+	/* 261: kf56     */	screen_xterm_new_s_kf56,
+	/* 262: kf57     */	screen_xterm_new_s_kf57,
+	/* 263: kf58     */	screen_xterm_new_s_kf58,
+	/* 264: kf59     */	screen_xterm_new_s_kf59,
+	/* 265: kf60     */	screen_xterm_new_s_kf60,
+	/* 266: kf61     */	screen_xterm_new_s_kf61,
+	/* 267: kf62     */	screen_xterm_new_s_kf62,
+	/* 268: kf63     */	screen_xterm_new_s_kf63,
+	/* 269: el1      */	screen_xterm_new_s_el1,
 	/* 270: mgc      */	ABSENT_STRING,
 	/* 271: smgl     */	ABSENT_STRING,
 	/* 272: smgr     */	ABSENT_STRING,
@@ -5609,17 +7986,17 @@ static char * screen_xterm_xfree86_string_data[] = {
 	/* 290: u3       */	ABSENT_STRING,
 	/* 291: u4       */	ABSENT_STRING,
 	/* 292: u5       */	ABSENT_STRING,
-	/* 293: u6       */	screen_xterm_xfree86_s_u6,
-	/* 294: u7       */	screen_xterm_xfree86_s_u7,
-	/* 295: u8       */	screen_xterm_xfree86_s_u8,
-	/* 296: u9       */	screen_xterm_xfree86_s_u9,
-	/* 297: op       */	screen_xterm_xfree86_s_op,
+	/* 293: u6       */	screen_xterm_new_s_u6,
+	/* 294: u7       */	screen_xterm_new_s_u7,
+	/* 295: u8       */	screen_xterm_new_s_u8,
+	/* 296: u9       */	screen_xterm_new_s_u9,
+	/* 297: op       */	screen_xterm_new_s_op,
 	/* 298: oc       */	ABSENT_STRING,
 	/* 299: initc    */	ABSENT_STRING,
 	/* 300: initp    */	ABSENT_STRING,
 	/* 301: scp      */	ABSENT_STRING,
-	/* 302: setf     */	screen_xterm_xfree86_s_setf,
-	/* 303: setb     */	screen_xterm_xfree86_s_setb,
+	/* 302: setf     */	screen_xterm_new_s_setf,
+	/* 303: setb     */	screen_xterm_new_s_setb,
 	/* 304: cpi      */	ABSENT_STRING,
 	/* 305: lpi      */	ABSENT_STRING,
 	/* 306: chr      */	ABSENT_STRING,
@@ -5671,12 +8048,12 @@ static char * screen_xterm_xfree86_string_data[] = {
 	/* 352: docr     */	ABSENT_STRING,
 	/* 353: zerom    */	ABSENT_STRING,
 	/* 354: csnm     */	ABSENT_STRING,
-	/* 355: kmous    */	screen_xterm_xfree86_s_kmous,
+	/* 355: kmous    */	screen_xterm_new_s_kmous,
 	/* 356: minfo    */	ABSENT_STRING,
 	/* 357: reqmp    */	ABSENT_STRING,
 	/* 358: getm     */	ABSENT_STRING,
-	/* 359: setaf    */	screen_xterm_xfree86_s_setaf,
-	/* 360: setab    */	screen_xterm_xfree86_s_setab,
+	/* 359: setaf    */	screen_xterm_new_s_setaf,
+	/* 360: setab    */	screen_xterm_new_s_setab,
 	/* 361: pfxl     */	ABSENT_STRING,
 	/* 362: devt     */	ABSENT_STRING,
 	/* 363: csin     */	ABSENT_STRING,
@@ -5727,9 +8104,547 @@ static char * screen_xterm_xfree86_string_data[] = {
 	/* 408: OTGH     */	ABSENT_STRING,
 	/* 409: OTGV     */	ABSENT_STRING,
 	/* 410: OTGC     */	ABSENT_STRING,
-	/* 411: meml     */	CANCELLED_STRING,
-	/* 412: memu     */	CANCELLED_STRING,
+	/* 411: meml     */	ABSENT_STRING,
+	/* 412: memu     */	ABSENT_STRING,
 	/* 413: box1     */	ABSENT_STRING,
+	/* 414: E3       */	ABSENT_STRING,
+	/* 415: RV       */	screen_xterm_new_s_RV,
+	/* 416: XM       */	screen_xterm_new_s_XM,
+	/* 417: fd       */	screen_xterm_new_s_fd,
+	/* 418: fe       */	screen_xterm_new_s_fe,
+	/* 419: kDC3     */	screen_xterm_new_s_kDC3,
+	/* 420: kDC4     */	screen_xterm_new_s_kDC4,
+	/* 421: kDC5     */	screen_xterm_new_s_kDC5,
+	/* 422: kDC6     */	screen_xterm_new_s_kDC6,
+	/* 423: kDC7     */	screen_xterm_new_s_kDC7,
+	/* 424: kDN      */	screen_xterm_new_s_kDN,
+	/* 425: kDN3     */	screen_xterm_new_s_kDN3,
+	/* 426: kDN4     */	screen_xterm_new_s_kDN4,
+	/* 427: kDN5     */	screen_xterm_new_s_kDN5,
+	/* 428: kDN6     */	screen_xterm_new_s_kDN6,
+	/* 429: kDN7     */	screen_xterm_new_s_kDN7,
+	/* 430: kEND3    */	screen_xterm_new_s_kEND3,
+	/* 431: kEND4    */	screen_xterm_new_s_kEND4,
+	/* 432: kEND5    */	screen_xterm_new_s_kEND5,
+	/* 433: kEND6    */	screen_xterm_new_s_kEND6,
+	/* 434: kEND7    */	screen_xterm_new_s_kEND7,
+	/* 435: kHOM3    */	screen_xterm_new_s_kHOM3,
+	/* 436: kHOM4    */	screen_xterm_new_s_kHOM4,
+	/* 437: kHOM5    */	screen_xterm_new_s_kHOM5,
+	/* 438: kHOM6    */	screen_xterm_new_s_kHOM6,
+	/* 439: kHOM7    */	screen_xterm_new_s_kHOM7,
+	/* 440: kIC3     */	screen_xterm_new_s_kIC3,
+	/* 441: kIC4     */	screen_xterm_new_s_kIC4,
+	/* 442: kIC5     */	screen_xterm_new_s_kIC5,
+	/* 443: kIC6     */	screen_xterm_new_s_kIC6,
+	/* 444: kIC7     */	screen_xterm_new_s_kIC7,
+	/* 445: kLFT3    */	screen_xterm_new_s_kLFT3,
+	/* 446: kLFT4    */	screen_xterm_new_s_kLFT4,
+	/* 447: kLFT5    */	screen_xterm_new_s_kLFT5,
+	/* 448: kLFT6    */	screen_xterm_new_s_kLFT6,
+	/* 449: kLFT7    */	screen_xterm_new_s_kLFT7,
+	/* 450: kNXT3    */	screen_xterm_new_s_kNXT3,
+	/* 451: kNXT4    */	screen_xterm_new_s_kNXT4,
+	/* 452: kNXT5    */	screen_xterm_new_s_kNXT5,
+	/* 453: kNXT6    */	screen_xterm_new_s_kNXT6,
+	/* 454: kNXT7    */	screen_xterm_new_s_kNXT7,
+	/* 455: kPRV3    */	screen_xterm_new_s_kPRV3,
+	/* 456: kPRV4    */	screen_xterm_new_s_kPRV4,
+	/* 457: kPRV5    */	screen_xterm_new_s_kPRV5,
+	/* 458: kPRV6    */	screen_xterm_new_s_kPRV6,
+	/* 459: kPRV7    */	screen_xterm_new_s_kPRV7,
+	/* 460: kRIT3    */	screen_xterm_new_s_kRIT3,
+	/* 461: kRIT4    */	screen_xterm_new_s_kRIT4,
+	/* 462: kRIT5    */	screen_xterm_new_s_kRIT5,
+	/* 463: kRIT6    */	screen_xterm_new_s_kRIT6,
+	/* 464: kRIT7    */	screen_xterm_new_s_kRIT7,
+	/* 465: kUP      */	screen_xterm_new_s_kUP,
+	/* 466: kUP3     */	screen_xterm_new_s_kUP3,
+	/* 467: kUP4     */	screen_xterm_new_s_kUP4,
+	/* 468: kUP5     */	screen_xterm_new_s_kUP5,
+	/* 469: kUP6     */	screen_xterm_new_s_kUP6,
+	/* 470: kUP7     */	screen_xterm_new_s_kUP7,
+	/* 471: ka2      */	screen_xterm_new_s_ka2,
+	/* 472: kb1      */	screen_xterm_new_s_kb1,
+	/* 473: kb3      */	screen_xterm_new_s_kb3,
+	/* 474: kc2      */	screen_xterm_new_s_kc2,
+	/* 475: kp5      */	screen_xterm_new_s_kp5,
+	/* 476: kpADD    */	screen_xterm_new_s_kpADD,
+	/* 477: kpCMA    */	screen_xterm_new_s_kpCMA,
+	/* 478: kpDIV    */	screen_xterm_new_s_kpDIV,
+	/* 479: kpDOT    */	screen_xterm_new_s_kpDOT,
+	/* 480: kpMUL    */	screen_xterm_new_s_kpMUL,
+	/* 481: kpSUB    */	screen_xterm_new_s_kpSUB,
+	/* 482: kpZRO    */	screen_xterm_new_s_kpZRO,
+	/* 483: kxIN     */	screen_xterm_new_s_kxIN,
+	/* 484: kxOUT    */	screen_xterm_new_s_kxOUT,
+	/* 485: rv       */	screen_xterm_new_s_rv,
+	/* 486: xm       */	screen_xterm_new_s_xm,
+};
+
+#ifndef extension_AX
+static char name_of_AX[] = "AX";
+#define extension_AX 1
+#endif
+
+#ifndef extension_XF
+static char name_of_XF[] = "XF";
+#define extension_XF 1
+#endif
+
+#ifndef extension_XT
+static char name_of_XT[] = "XT";
+#define extension_XT 1
+#endif
+
+#ifndef extension_U8
+static char name_of_U8[] = "U8";
+#define extension_U8 1
+#endif
+
+#ifndef extension_E3
+static char name_of_E3[] = "E3";
+#define extension_E3 1
+#endif
+
+#ifndef extension_RV
+static char name_of_RV[] = "RV";
+#define extension_RV 1
+#endif
+
+#ifndef extension_XM
+static char name_of_XM[] = "XM";
+#define extension_XM 1
+#endif
+
+#ifndef extension_fd
+static char name_of_fd[] = "fd";
+#define extension_fd 1
+#endif
+
+#ifndef extension_fe
+static char name_of_fe[] = "fe";
+#define extension_fe 1
+#endif
+
+#ifndef extension_kDC3
+static char name_of_kDC3[] = "kDC3";
+#define extension_kDC3 1
+#endif
+
+#ifndef extension_kDC4
+static char name_of_kDC4[] = "kDC4";
+#define extension_kDC4 1
+#endif
+
+#ifndef extension_kDC5
+static char name_of_kDC5[] = "kDC5";
+#define extension_kDC5 1
+#endif
+
+#ifndef extension_kDC6
+static char name_of_kDC6[] = "kDC6";
+#define extension_kDC6 1
+#endif
+
+#ifndef extension_kDC7
+static char name_of_kDC7[] = "kDC7";
+#define extension_kDC7 1
+#endif
+
+#ifndef extension_kDN
+static char name_of_kDN[] = "kDN";
+#define extension_kDN 1
+#endif
+
+#ifndef extension_kDN3
+static char name_of_kDN3[] = "kDN3";
+#define extension_kDN3 1
+#endif
+
+#ifndef extension_kDN4
+static char name_of_kDN4[] = "kDN4";
+#define extension_kDN4 1
+#endif
+
+#ifndef extension_kDN5
+static char name_of_kDN5[] = "kDN5";
+#define extension_kDN5 1
+#endif
+
+#ifndef extension_kDN6
+static char name_of_kDN6[] = "kDN6";
+#define extension_kDN6 1
+#endif
+
+#ifndef extension_kDN7
+static char name_of_kDN7[] = "kDN7";
+#define extension_kDN7 1
+#endif
+
+#ifndef extension_kEND3
+static char name_of_kEND3[] = "kEND3";
+#define extension_kEND3 1
+#endif
+
+#ifndef extension_kEND4
+static char name_of_kEND4[] = "kEND4";
+#define extension_kEND4 1
+#endif
+
+#ifndef extension_kEND5
+static char name_of_kEND5[] = "kEND5";
+#define extension_kEND5 1
+#endif
+
+#ifndef extension_kEND6
+static char name_of_kEND6[] = "kEND6";
+#define extension_kEND6 1
+#endif
+
+#ifndef extension_kEND7
+static char name_of_kEND7[] = "kEND7";
+#define extension_kEND7 1
+#endif
+
+#ifndef extension_kHOM3
+static char name_of_kHOM3[] = "kHOM3";
+#define extension_kHOM3 1
+#endif
+
+#ifndef extension_kHOM4
+static char name_of_kHOM4[] = "kHOM4";
+#define extension_kHOM4 1
+#endif
+
+#ifndef extension_kHOM5
+static char name_of_kHOM5[] = "kHOM5";
+#define extension_kHOM5 1
+#endif
+
+#ifndef extension_kHOM6
+static char name_of_kHOM6[] = "kHOM6";
+#define extension_kHOM6 1
+#endif
+
+#ifndef extension_kHOM7
+static char name_of_kHOM7[] = "kHOM7";
+#define extension_kHOM7 1
+#endif
+
+#ifndef extension_kIC3
+static char name_of_kIC3[] = "kIC3";
+#define extension_kIC3 1
+#endif
+
+#ifndef extension_kIC4
+static char name_of_kIC4[] = "kIC4";
+#define extension_kIC4 1
+#endif
+
+#ifndef extension_kIC5
+static char name_of_kIC5[] = "kIC5";
+#define extension_kIC5 1
+#endif
+
+#ifndef extension_kIC6
+static char name_of_kIC6[] = "kIC6";
+#define extension_kIC6 1
+#endif
+
+#ifndef extension_kIC7
+static char name_of_kIC7[] = "kIC7";
+#define extension_kIC7 1
+#endif
+
+#ifndef extension_kLFT3
+static char name_of_kLFT3[] = "kLFT3";
+#define extension_kLFT3 1
+#endif
+
+#ifndef extension_kLFT4
+static char name_of_kLFT4[] = "kLFT4";
+#define extension_kLFT4 1
+#endif
+
+#ifndef extension_kLFT5
+static char name_of_kLFT5[] = "kLFT5";
+#define extension_kLFT5 1
+#endif
+
+#ifndef extension_kLFT6
+static char name_of_kLFT6[] = "kLFT6";
+#define extension_kLFT6 1
+#endif
+
+#ifndef extension_kLFT7
+static char name_of_kLFT7[] = "kLFT7";
+#define extension_kLFT7 1
+#endif
+
+#ifndef extension_kNXT3
+static char name_of_kNXT3[] = "kNXT3";
+#define extension_kNXT3 1
+#endif
+
+#ifndef extension_kNXT4
+static char name_of_kNXT4[] = "kNXT4";
+#define extension_kNXT4 1
+#endif
+
+#ifndef extension_kNXT5
+static char name_of_kNXT5[] = "kNXT5";
+#define extension_kNXT5 1
+#endif
+
+#ifndef extension_kNXT6
+static char name_of_kNXT6[] = "kNXT6";
+#define extension_kNXT6 1
+#endif
+
+#ifndef extension_kNXT7
+static char name_of_kNXT7[] = "kNXT7";
+#define extension_kNXT7 1
+#endif
+
+#ifndef extension_kPRV3
+static char name_of_kPRV3[] = "kPRV3";
+#define extension_kPRV3 1
+#endif
+
+#ifndef extension_kPRV4
+static char name_of_kPRV4[] = "kPRV4";
+#define extension_kPRV4 1
+#endif
+
+#ifndef extension_kPRV5
+static char name_of_kPRV5[] = "kPRV5";
+#define extension_kPRV5 1
+#endif
+
+#ifndef extension_kPRV6
+static char name_of_kPRV6[] = "kPRV6";
+#define extension_kPRV6 1
+#endif
+
+#ifndef extension_kPRV7
+static char name_of_kPRV7[] = "kPRV7";
+#define extension_kPRV7 1
+#endif
+
+#ifndef extension_kRIT3
+static char name_of_kRIT3[] = "kRIT3";
+#define extension_kRIT3 1
+#endif
+
+#ifndef extension_kRIT4
+static char name_of_kRIT4[] = "kRIT4";
+#define extension_kRIT4 1
+#endif
+
+#ifndef extension_kRIT5
+static char name_of_kRIT5[] = "kRIT5";
+#define extension_kRIT5 1
+#endif
+
+#ifndef extension_kRIT6
+static char name_of_kRIT6[] = "kRIT6";
+#define extension_kRIT6 1
+#endif
+
+#ifndef extension_kRIT7
+static char name_of_kRIT7[] = "kRIT7";
+#define extension_kRIT7 1
+#endif
+
+#ifndef extension_kUP
+static char name_of_kUP[] = "kUP";
+#define extension_kUP 1
+#endif
+
+#ifndef extension_kUP3
+static char name_of_kUP3[] = "kUP3";
+#define extension_kUP3 1
+#endif
+
+#ifndef extension_kUP4
+static char name_of_kUP4[] = "kUP4";
+#define extension_kUP4 1
+#endif
+
+#ifndef extension_kUP5
+static char name_of_kUP5[] = "kUP5";
+#define extension_kUP5 1
+#endif
+
+#ifndef extension_kUP6
+static char name_of_kUP6[] = "kUP6";
+#define extension_kUP6 1
+#endif
+
+#ifndef extension_kUP7
+static char name_of_kUP7[] = "kUP7";
+#define extension_kUP7 1
+#endif
+
+#ifndef extension_ka2
+static char name_of_ka2[] = "ka2";
+#define extension_ka2 1
+#endif
+
+#ifndef extension_kb1
+static char name_of_kb1[] = "kb1";
+#define extension_kb1 1
+#endif
+
+#ifndef extension_kb3
+static char name_of_kb3[] = "kb3";
+#define extension_kb3 1
+#endif
+
+#ifndef extension_kc2
+static char name_of_kc2[] = "kc2";
+#define extension_kc2 1
+#endif
+
+#ifndef extension_kp5
+static char name_of_kp5[] = "kp5";
+#define extension_kp5 1
+#endif
+
+#ifndef extension_kpADD
+static char name_of_kpADD[] = "kpADD";
+#define extension_kpADD 1
+#endif
+
+#ifndef extension_kpCMA
+static char name_of_kpCMA[] = "kpCMA";
+#define extension_kpCMA 1
+#endif
+
+#ifndef extension_kpDIV
+static char name_of_kpDIV[] = "kpDIV";
+#define extension_kpDIV 1
+#endif
+
+#ifndef extension_kpDOT
+static char name_of_kpDOT[] = "kpDOT";
+#define extension_kpDOT 1
+#endif
+
+#ifndef extension_kpMUL
+static char name_of_kpMUL[] = "kpMUL";
+#define extension_kpMUL 1
+#endif
+
+#ifndef extension_kpSUB
+static char name_of_kpSUB[] = "kpSUB";
+#define extension_kpSUB 1
+#endif
+
+#ifndef extension_kpZRO
+static char name_of_kpZRO[] = "kpZRO";
+#define extension_kpZRO 1
+#endif
+
+#ifndef extension_kxIN
+static char name_of_kxIN[] = "kxIN";
+#define extension_kxIN 1
+#endif
+
+#ifndef extension_kxOUT
+static char name_of_kxOUT[] = "kxOUT";
+#define extension_kxOUT 1
+#endif
+
+#ifndef extension_rv
+static char name_of_rv[] = "rv";
+#define extension_rv 1
+#endif
+
+#ifndef extension_xm
+static char name_of_xm[] = "xm";
+#define extension_xm 1
+#endif
+
+static char * screen_xterm_new_string_ext_data[] = {
+	/*  44: bool */	name_of_AX,
+	/*  45: bool */	name_of_XF,
+	/*  46: bool */	name_of_XT,
+	/*  39: num */	name_of_U8,
+	/* 414: str */	name_of_E3,
+	/* 415: str */	name_of_RV,
+	/* 416: str */	name_of_XM,
+	/* 417: str */	name_of_fd,
+	/* 418: str */	name_of_fe,
+	/* 419: str */	name_of_kDC3,
+	/* 420: str */	name_of_kDC4,
+	/* 421: str */	name_of_kDC5,
+	/* 422: str */	name_of_kDC6,
+	/* 423: str */	name_of_kDC7,
+	/* 424: str */	name_of_kDN,
+	/* 425: str */	name_of_kDN3,
+	/* 426: str */	name_of_kDN4,
+	/* 427: str */	name_of_kDN5,
+	/* 428: str */	name_of_kDN6,
+	/* 429: str */	name_of_kDN7,
+	/* 430: str */	name_of_kEND3,
+	/* 431: str */	name_of_kEND4,
+	/* 432: str */	name_of_kEND5,
+	/* 433: str */	name_of_kEND6,
+	/* 434: str */	name_of_kEND7,
+	/* 435: str */	name_of_kHOM3,
+	/* 436: str */	name_of_kHOM4,
+	/* 437: str */	name_of_kHOM5,
+	/* 438: str */	name_of_kHOM6,
+	/* 439: str */	name_of_kHOM7,
+	/* 440: str */	name_of_kIC3,
+	/* 441: str */	name_of_kIC4,
+	/* 442: str */	name_of_kIC5,
+	/* 443: str */	name_of_kIC6,
+	/* 444: str */	name_of_kIC7,
+	/* 445: str */	name_of_kLFT3,
+	/* 446: str */	name_of_kLFT4,
+	/* 447: str */	name_of_kLFT5,
+	/* 448: str */	name_of_kLFT6,
+	/* 449: str */	name_of_kLFT7,
+	/* 450: str */	name_of_kNXT3,
+	/* 451: str */	name_of_kNXT4,
+	/* 452: str */	name_of_kNXT5,
+	/* 453: str */	name_of_kNXT6,
+	/* 454: str */	name_of_kNXT7,
+	/* 455: str */	name_of_kPRV3,
+	/* 456: str */	name_of_kPRV4,
+	/* 457: str */	name_of_kPRV5,
+	/* 458: str */	name_of_kPRV6,
+	/* 459: str */	name_of_kPRV7,
+	/* 460: str */	name_of_kRIT3,
+	/* 461: str */	name_of_kRIT4,
+	/* 462: str */	name_of_kRIT5,
+	/* 463: str */	name_of_kRIT6,
+	/* 464: str */	name_of_kRIT7,
+	/* 465: str */	name_of_kUP,
+	/* 466: str */	name_of_kUP3,
+	/* 467: str */	name_of_kUP4,
+	/* 468: str */	name_of_kUP5,
+	/* 469: str */	name_of_kUP6,
+	/* 470: str */	name_of_kUP7,
+	/* 471: str */	name_of_ka2,
+	/* 472: str */	name_of_kb1,
+	/* 473: str */	name_of_kb3,
+	/* 474: str */	name_of_kc2,
+	/* 475: str */	name_of_kp5,
+	/* 476: str */	name_of_kpADD,
+	/* 477: str */	name_of_kpCMA,
+	/* 478: str */	name_of_kpDIV,
+	/* 479: str */	name_of_kpDOT,
+	/* 480: str */	name_of_kpMUL,
+	/* 481: str */	name_of_kpSUB,
+	/* 482: str */	name_of_kpZRO,
+	/* 483: str */	name_of_kxIN,
+	/* 484: str */	name_of_kxOUT,
+	/* 485: str */	name_of_rv,
+	/* 486: str */	name_of_xm,
 };
 /* screen.xterm-256color */
 
@@ -5773,6 +8688,7 @@ static char screen_xterm_256color_s_rmso[] = "\033[27m";
 static char screen_xterm_256color_s_rmul[] = "\033[24m";
 static char screen_xterm_256color_s_flash[] = "\033[?5h$<100/>\033[?5l";
 static char screen_xterm_256color_s_is2[] = "\033[!p\033[?3;4l\033[4l\033>";
+static char screen_xterm_256color_s_ich1[] = "\033[@";
 static char screen_xterm_256color_s_il1[] = "\033[L";
 static char screen_xterm_256color_s_kbs[] = "\010";
 static char screen_xterm_256color_s_kdch1[] = "\033[3~";
@@ -5800,6 +8716,7 @@ static char screen_xterm_256color_s_rmkx[] = "\033[?1l\033>";
 static char screen_xterm_256color_s_smkx[] = "\033[?1h\033=";
 static char screen_xterm_256color_s_rmm[] = "\033[?1034l";
 static char screen_xterm_256color_s_smm[] = "\033[?1034h";
+static char screen_xterm_256color_s_nel[] = "\033E";
 static char screen_xterm_256color_s_dch[] = "\033[%p1%dP";
 static char screen_xterm_256color_s_dl[] = "\033[%p1%dM";
 static char screen_xterm_256color_s_cud[] = "\033[%p1%dB";
@@ -5823,11 +8740,16 @@ static char screen_xterm_256color_s_ri[] = "\033M";
 static char screen_xterm_256color_s_sgr[] = "%?%p9%t\033(0%e\033(B%;\033[0%?%p6%t;1%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p5%t;2%;m";
 static char screen_xterm_256color_s_hts[] = "\033H";
 static char screen_xterm_256color_s_ht[] = "\011";
-static char screen_xterm_256color_s_kb2[] = "\033OE";
+static char screen_xterm_256color_s_ka1[] = "\033Ow";
+static char screen_xterm_256color_s_ka3[] = "\033Oy";
+static char screen_xterm_256color_s_kb2[] = "\033Ou";
+static char screen_xterm_256color_s_kc1[] = "\033Oq";
+static char screen_xterm_256color_s_kc3[] = "\033Os";
 static char screen_xterm_256color_s_acsc[] = "``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~";
 static char screen_xterm_256color_s_kcbt[] = "\033[Z";
 static char screen_xterm_256color_s_smam[] = "\033[?7h";
 static char screen_xterm_256color_s_rmam[] = "\033[?7l";
+static char screen_xterm_256color_s_kbeg[] = "\033OE";
 static char screen_xterm_256color_s_kend[] = "\033[4~";
 static char screen_xterm_256color_s_kent[] = "\033OM";
 static char screen_xterm_256color_s_kDC[] = "\033[3;2~";
@@ -5895,8 +8817,80 @@ static char screen_xterm_256color_s_u8[] = "\033[?%[;0123456789]c";
 static char screen_xterm_256color_s_u9[] = "\033[c";
 static char screen_xterm_256color_s_op[] = "\033[39;49m";
 static char screen_xterm_256color_s_kmous[] = "\033[M";
-static char screen_xterm_256color_s_setaf[] = "\033[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m";
-static char screen_xterm_256color_s_setab[] = "\033[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m";
+static char screen_xterm_256color_s_setaf[] = "\033[%?%p1%'\010'%<%t3%p1%d%e%p1%'\020'%<%t9%p1%'\010'%-%d%e38;5;%p1%d%;m";
+static char screen_xterm_256color_s_setab[] = "\033[%?%p1%'\010'%<%t4%p1%d%e%p1%'\020'%<%t10%p1%'\010'%-%d%e48;5;%p1%d%;m";
+static char screen_xterm_256color_s_RV[] = "\033[>c";
+static char screen_xterm_256color_s_XM[] = "\033[?1000%?%p1%{1}%=%th%el%;";
+static char screen_xterm_256color_s_fd[] = "\033[?1004l";
+static char screen_xterm_256color_s_fe[] = "\033[?1004h";
+static char screen_xterm_256color_s_kDC3[] = "\033[3;3~";
+static char screen_xterm_256color_s_kDC4[] = "\033[3;4~";
+static char screen_xterm_256color_s_kDC5[] = "\033[3;5~";
+static char screen_xterm_256color_s_kDC6[] = "\033[3;6~";
+static char screen_xterm_256color_s_kDC7[] = "\033[3;7~";
+static char screen_xterm_256color_s_kDN[] = "\033[1;2B";
+static char screen_xterm_256color_s_kDN3[] = "\033[1;3B";
+static char screen_xterm_256color_s_kDN4[] = "\033[1;4B";
+static char screen_xterm_256color_s_kDN5[] = "\033[1;5B";
+static char screen_xterm_256color_s_kDN6[] = "\033[1;6B";
+static char screen_xterm_256color_s_kDN7[] = "\033[1;7B";
+static char screen_xterm_256color_s_kEND3[] = "\033[1;3F";
+static char screen_xterm_256color_s_kEND4[] = "\033[1;4F";
+static char screen_xterm_256color_s_kEND5[] = "\033[1;5F";
+static char screen_xterm_256color_s_kEND6[] = "\033[1;6F";
+static char screen_xterm_256color_s_kEND7[] = "\033[1;7F";
+static char screen_xterm_256color_s_kHOM3[] = "\033[1;3H";
+static char screen_xterm_256color_s_kHOM4[] = "\033[1;4H";
+static char screen_xterm_256color_s_kHOM5[] = "\033[1;5H";
+static char screen_xterm_256color_s_kHOM6[] = "\033[1;6H";
+static char screen_xterm_256color_s_kHOM7[] = "\033[1;7H";
+static char screen_xterm_256color_s_kIC3[] = "\033[2;3~";
+static char screen_xterm_256color_s_kIC4[] = "\033[2;4~";
+static char screen_xterm_256color_s_kIC5[] = "\033[2;5~";
+static char screen_xterm_256color_s_kIC6[] = "\033[2;6~";
+static char screen_xterm_256color_s_kIC7[] = "\033[2;7~";
+static char screen_xterm_256color_s_kLFT3[] = "\033[1;3D";
+static char screen_xterm_256color_s_kLFT4[] = "\033[1;4D";
+static char screen_xterm_256color_s_kLFT5[] = "\033[1;5D";
+static char screen_xterm_256color_s_kLFT6[] = "\033[1;6D";
+static char screen_xterm_256color_s_kLFT7[] = "\033[1;7D";
+static char screen_xterm_256color_s_kNXT3[] = "\033[6;3~";
+static char screen_xterm_256color_s_kNXT4[] = "\033[6;4~";
+static char screen_xterm_256color_s_kNXT5[] = "\033[6;5~";
+static char screen_xterm_256color_s_kNXT6[] = "\033[6;6~";
+static char screen_xterm_256color_s_kNXT7[] = "\033[6;7~";
+static char screen_xterm_256color_s_kPRV3[] = "\033[5;3~";
+static char screen_xterm_256color_s_kPRV4[] = "\033[5;4~";
+static char screen_xterm_256color_s_kPRV5[] = "\033[5;5~";
+static char screen_xterm_256color_s_kPRV6[] = "\033[5;6~";
+static char screen_xterm_256color_s_kPRV7[] = "\033[5;7~";
+static char screen_xterm_256color_s_kRIT3[] = "\033[1;3C";
+static char screen_xterm_256color_s_kRIT4[] = "\033[1;4C";
+static char screen_xterm_256color_s_kRIT5[] = "\033[1;5C";
+static char screen_xterm_256color_s_kRIT6[] = "\033[1;6C";
+static char screen_xterm_256color_s_kRIT7[] = "\033[1;7C";
+static char screen_xterm_256color_s_kUP[] = "\033[1;2A";
+static char screen_xterm_256color_s_kUP3[] = "\033[1;3A";
+static char screen_xterm_256color_s_kUP4[] = "\033[1;4A";
+static char screen_xterm_256color_s_kUP5[] = "\033[1;5A";
+static char screen_xterm_256color_s_kUP6[] = "\033[1;6A";
+static char screen_xterm_256color_s_kUP7[] = "\033[1;7A";
+static char screen_xterm_256color_s_ka2[] = "\033Ox";
+static char screen_xterm_256color_s_kb1[] = "\033Ot";
+static char screen_xterm_256color_s_kb3[] = "\033Ov";
+static char screen_xterm_256color_s_kc2[] = "\033Or";
+static char screen_xterm_256color_s_kp5[] = "\033OE";
+static char screen_xterm_256color_s_kpADD[] = "\033Ok";
+static char screen_xterm_256color_s_kpCMA[] = "\033Ol";
+static char screen_xterm_256color_s_kpDIV[] = "\033Oo";
+static char screen_xterm_256color_s_kpDOT[] = "\033On";
+static char screen_xterm_256color_s_kpMUL[] = "\033Oj";
+static char screen_xterm_256color_s_kpSUB[] = "\033Om";
+static char screen_xterm_256color_s_kpZRO[] = "\033Op";
+static char screen_xterm_256color_s_kxIN[] = "\033[I";
+static char screen_xterm_256color_s_kxOUT[] = "\033[O";
+static char screen_xterm_256color_s_rv[] = "\033\134[>83;4[0-9][0-9][0-9][0-9];0c";
+static char screen_xterm_256color_s_xm[] = "\033[M%?%p4%t%p3%e%{3}%;%' '%+%c%p2%'!'%+%c%p1%'!'%+%c";
 
 static char screen_xterm_256color_bool_data[] = {
 	/*   0: bw       */	TRUE,
@@ -5907,7 +8901,7 @@ static char screen_xterm_256color_bool_data[] = {
 	/*   5: eo       */	FALSE,
 	/*   6: gn       */	FALSE,
 	/*   7: hc       */	FALSE,
-	/*   8: km       */	TRUE,
+	/*   8: km       */	FALSE,
 	/*   9: hs       */	FALSE,
 	/*  10: in       */	FALSE,
 	/*  11: da       */	FALSE,
@@ -5943,6 +8937,9 @@ static char screen_xterm_256color_bool_data[] = {
 	/*  41: OTNL     */	FALSE,
 	/*  42: OTpt     */	FALSE,
 	/*  43: OTxr     */	FALSE,
+	/*  44: AX       */	TRUE,
+	/*  45: XF       */	TRUE,
+	/*  46: XT       */	TRUE,
 };
 static NCURSES_INT2 screen_xterm_256color_number_data[] = {
 	/*   0: cols     */	80,
@@ -5984,6 +8981,7 @@ static NCURSES_INT2 screen_xterm_256color_number_data[] = {
 	/*  36: OTdB     */	ABSENT_NUMERIC,
 	/*  37: OTdT     */	ABSENT_NUMERIC,
 	/*  38: OTkn     */	ABSENT_NUMERIC,
+	/*  39: U8       */	1,
 };
 static char * screen_xterm_256color_string_data[] = {
 	/*   0: cbt      */	screen_xterm_256color_s_cbt,
@@ -6038,7 +9036,7 @@ static char * screen_xterm_256color_string_data[] = {
 	/*  49: is2      */	screen_xterm_256color_s_is2,
 	/*  50: is3      */	ABSENT_STRING,
 	/*  51: if       */	ABSENT_STRING,
-	/*  52: ich1     */	ABSENT_STRING,
+	/*  52: ich1     */	screen_xterm_256color_s_ich1,
 	/*  53: il1      */	screen_xterm_256color_s_il1,
 	/*  54: ip       */	ABSENT_STRING,
 	/*  55: kbs      */	screen_xterm_256color_s_kbs,
@@ -6089,7 +9087,7 @@ static char * screen_xterm_256color_string_data[] = {
 	/* 100: lf9      */	ABSENT_STRING,
 	/* 101: rmm      */	screen_xterm_256color_s_rmm,
 	/* 102: smm      */	screen_xterm_256color_s_smm,
-	/* 103: nel      */	ABSENT_STRING,
+	/* 103: nel      */	screen_xterm_256color_s_nel,
 	/* 104: pad      */	ABSENT_STRING,
 	/* 105: dch      */	screen_xterm_256color_s_dch,
 	/* 106: dl       */	screen_xterm_256color_s_dl,
@@ -6125,11 +9123,11 @@ static char * screen_xterm_256color_string_data[] = {
 	/* 136: uc       */	ABSENT_STRING,
 	/* 137: hu       */	ABSENT_STRING,
 	/* 138: iprog    */	ABSENT_STRING,
-	/* 139: ka1      */	ABSENT_STRING,
-	/* 140: ka3      */	ABSENT_STRING,
+	/* 139: ka1      */	screen_xterm_256color_s_ka1,
+	/* 140: ka3      */	screen_xterm_256color_s_ka3,
 	/* 141: kb2      */	screen_xterm_256color_s_kb2,
-	/* 142: kc1      */	ABSENT_STRING,
-	/* 143: kc3      */	ABSENT_STRING,
+	/* 142: kc1      */	screen_xterm_256color_s_kc1,
+	/* 143: kc3      */	screen_xterm_256color_s_kc3,
 	/* 144: mc5p     */	ABSENT_STRING,
 	/* 145: rmp      */	ABSENT_STRING,
 	/* 146: acsc     */	screen_xterm_256color_s_acsc,
@@ -6144,7 +9142,7 @@ static char * screen_xterm_256color_string_data[] = {
 	/* 155: enacs    */	ABSENT_STRING,
 	/* 156: smln     */	ABSENT_STRING,
 	/* 157: rmln     */	ABSENT_STRING,
-	/* 158: kbeg     */	ABSENT_STRING,
+	/* 158: kbeg     */	screen_xterm_256color_s_kbeg,
 	/* 159: kcan     */	ABSENT_STRING,
 	/* 160: kclo     */	ABSENT_STRING,
 	/* 161: kcmd     */	ABSENT_STRING,
@@ -6400,6 +9398,544 @@ static char * screen_xterm_256color_string_data[] = {
 	/* 411: meml     */	ABSENT_STRING,
 	/* 412: memu     */	ABSENT_STRING,
 	/* 413: box1     */	ABSENT_STRING,
+	/* 414: E3       */	ABSENT_STRING,
+	/* 415: RV       */	screen_xterm_256color_s_RV,
+	/* 416: XM       */	screen_xterm_256color_s_XM,
+	/* 417: fd       */	screen_xterm_256color_s_fd,
+	/* 418: fe       */	screen_xterm_256color_s_fe,
+	/* 419: kDC3     */	screen_xterm_256color_s_kDC3,
+	/* 420: kDC4     */	screen_xterm_256color_s_kDC4,
+	/* 421: kDC5     */	screen_xterm_256color_s_kDC5,
+	/* 422: kDC6     */	screen_xterm_256color_s_kDC6,
+	/* 423: kDC7     */	screen_xterm_256color_s_kDC7,
+	/* 424: kDN      */	screen_xterm_256color_s_kDN,
+	/* 425: kDN3     */	screen_xterm_256color_s_kDN3,
+	/* 426: kDN4     */	screen_xterm_256color_s_kDN4,
+	/* 427: kDN5     */	screen_xterm_256color_s_kDN5,
+	/* 428: kDN6     */	screen_xterm_256color_s_kDN6,
+	/* 429: kDN7     */	screen_xterm_256color_s_kDN7,
+	/* 430: kEND3    */	screen_xterm_256color_s_kEND3,
+	/* 431: kEND4    */	screen_xterm_256color_s_kEND4,
+	/* 432: kEND5    */	screen_xterm_256color_s_kEND5,
+	/* 433: kEND6    */	screen_xterm_256color_s_kEND6,
+	/* 434: kEND7    */	screen_xterm_256color_s_kEND7,
+	/* 435: kHOM3    */	screen_xterm_256color_s_kHOM3,
+	/* 436: kHOM4    */	screen_xterm_256color_s_kHOM4,
+	/* 437: kHOM5    */	screen_xterm_256color_s_kHOM5,
+	/* 438: kHOM6    */	screen_xterm_256color_s_kHOM6,
+	/* 439: kHOM7    */	screen_xterm_256color_s_kHOM7,
+	/* 440: kIC3     */	screen_xterm_256color_s_kIC3,
+	/* 441: kIC4     */	screen_xterm_256color_s_kIC4,
+	/* 442: kIC5     */	screen_xterm_256color_s_kIC5,
+	/* 443: kIC6     */	screen_xterm_256color_s_kIC6,
+	/* 444: kIC7     */	screen_xterm_256color_s_kIC7,
+	/* 445: kLFT3    */	screen_xterm_256color_s_kLFT3,
+	/* 446: kLFT4    */	screen_xterm_256color_s_kLFT4,
+	/* 447: kLFT5    */	screen_xterm_256color_s_kLFT5,
+	/* 448: kLFT6    */	screen_xterm_256color_s_kLFT6,
+	/* 449: kLFT7    */	screen_xterm_256color_s_kLFT7,
+	/* 450: kNXT3    */	screen_xterm_256color_s_kNXT3,
+	/* 451: kNXT4    */	screen_xterm_256color_s_kNXT4,
+	/* 452: kNXT5    */	screen_xterm_256color_s_kNXT5,
+	/* 453: kNXT6    */	screen_xterm_256color_s_kNXT6,
+	/* 454: kNXT7    */	screen_xterm_256color_s_kNXT7,
+	/* 455: kPRV3    */	screen_xterm_256color_s_kPRV3,
+	/* 456: kPRV4    */	screen_xterm_256color_s_kPRV4,
+	/* 457: kPRV5    */	screen_xterm_256color_s_kPRV5,
+	/* 458: kPRV6    */	screen_xterm_256color_s_kPRV6,
+	/* 459: kPRV7    */	screen_xterm_256color_s_kPRV7,
+	/* 460: kRIT3    */	screen_xterm_256color_s_kRIT3,
+	/* 461: kRIT4    */	screen_xterm_256color_s_kRIT4,
+	/* 462: kRIT5    */	screen_xterm_256color_s_kRIT5,
+	/* 463: kRIT6    */	screen_xterm_256color_s_kRIT6,
+	/* 464: kRIT7    */	screen_xterm_256color_s_kRIT7,
+	/* 465: kUP      */	screen_xterm_256color_s_kUP,
+	/* 466: kUP3     */	screen_xterm_256color_s_kUP3,
+	/* 467: kUP4     */	screen_xterm_256color_s_kUP4,
+	/* 468: kUP5     */	screen_xterm_256color_s_kUP5,
+	/* 469: kUP6     */	screen_xterm_256color_s_kUP6,
+	/* 470: kUP7     */	screen_xterm_256color_s_kUP7,
+	/* 471: ka2      */	screen_xterm_256color_s_ka2,
+	/* 472: kb1      */	screen_xterm_256color_s_kb1,
+	/* 473: kb3      */	screen_xterm_256color_s_kb3,
+	/* 474: kc2      */	screen_xterm_256color_s_kc2,
+	/* 475: kp5      */	screen_xterm_256color_s_kp5,
+	/* 476: kpADD    */	screen_xterm_256color_s_kpADD,
+	/* 477: kpCMA    */	screen_xterm_256color_s_kpCMA,
+	/* 478: kpDIV    */	screen_xterm_256color_s_kpDIV,
+	/* 479: kpDOT    */	screen_xterm_256color_s_kpDOT,
+	/* 480: kpMUL    */	screen_xterm_256color_s_kpMUL,
+	/* 481: kpSUB    */	screen_xterm_256color_s_kpSUB,
+	/* 482: kpZRO    */	screen_xterm_256color_s_kpZRO,
+	/* 483: kxIN     */	screen_xterm_256color_s_kxIN,
+	/* 484: kxOUT    */	screen_xterm_256color_s_kxOUT,
+	/* 485: rv       */	screen_xterm_256color_s_rv,
+	/* 486: xm       */	screen_xterm_256color_s_xm,
+};
+
+#ifndef extension_AX
+static char name_of_AX[] = "AX";
+#define extension_AX 1
+#endif
+
+#ifndef extension_XF
+static char name_of_XF[] = "XF";
+#define extension_XF 1
+#endif
+
+#ifndef extension_XT
+static char name_of_XT[] = "XT";
+#define extension_XT 1
+#endif
+
+#ifndef extension_U8
+static char name_of_U8[] = "U8";
+#define extension_U8 1
+#endif
+
+#ifndef extension_E3
+static char name_of_E3[] = "E3";
+#define extension_E3 1
+#endif
+
+#ifndef extension_RV
+static char name_of_RV[] = "RV";
+#define extension_RV 1
+#endif
+
+#ifndef extension_XM
+static char name_of_XM[] = "XM";
+#define extension_XM 1
+#endif
+
+#ifndef extension_fd
+static char name_of_fd[] = "fd";
+#define extension_fd 1
+#endif
+
+#ifndef extension_fe
+static char name_of_fe[] = "fe";
+#define extension_fe 1
+#endif
+
+#ifndef extension_kDC3
+static char name_of_kDC3[] = "kDC3";
+#define extension_kDC3 1
+#endif
+
+#ifndef extension_kDC4
+static char name_of_kDC4[] = "kDC4";
+#define extension_kDC4 1
+#endif
+
+#ifndef extension_kDC5
+static char name_of_kDC5[] = "kDC5";
+#define extension_kDC5 1
+#endif
+
+#ifndef extension_kDC6
+static char name_of_kDC6[] = "kDC6";
+#define extension_kDC6 1
+#endif
+
+#ifndef extension_kDC7
+static char name_of_kDC7[] = "kDC7";
+#define extension_kDC7 1
+#endif
+
+#ifndef extension_kDN
+static char name_of_kDN[] = "kDN";
+#define extension_kDN 1
+#endif
+
+#ifndef extension_kDN3
+static char name_of_kDN3[] = "kDN3";
+#define extension_kDN3 1
+#endif
+
+#ifndef extension_kDN4
+static char name_of_kDN4[] = "kDN4";
+#define extension_kDN4 1
+#endif
+
+#ifndef extension_kDN5
+static char name_of_kDN5[] = "kDN5";
+#define extension_kDN5 1
+#endif
+
+#ifndef extension_kDN6
+static char name_of_kDN6[] = "kDN6";
+#define extension_kDN6 1
+#endif
+
+#ifndef extension_kDN7
+static char name_of_kDN7[] = "kDN7";
+#define extension_kDN7 1
+#endif
+
+#ifndef extension_kEND3
+static char name_of_kEND3[] = "kEND3";
+#define extension_kEND3 1
+#endif
+
+#ifndef extension_kEND4
+static char name_of_kEND4[] = "kEND4";
+#define extension_kEND4 1
+#endif
+
+#ifndef extension_kEND5
+static char name_of_kEND5[] = "kEND5";
+#define extension_kEND5 1
+#endif
+
+#ifndef extension_kEND6
+static char name_of_kEND6[] = "kEND6";
+#define extension_kEND6 1
+#endif
+
+#ifndef extension_kEND7
+static char name_of_kEND7[] = "kEND7";
+#define extension_kEND7 1
+#endif
+
+#ifndef extension_kHOM3
+static char name_of_kHOM3[] = "kHOM3";
+#define extension_kHOM3 1
+#endif
+
+#ifndef extension_kHOM4
+static char name_of_kHOM4[] = "kHOM4";
+#define extension_kHOM4 1
+#endif
+
+#ifndef extension_kHOM5
+static char name_of_kHOM5[] = "kHOM5";
+#define extension_kHOM5 1
+#endif
+
+#ifndef extension_kHOM6
+static char name_of_kHOM6[] = "kHOM6";
+#define extension_kHOM6 1
+#endif
+
+#ifndef extension_kHOM7
+static char name_of_kHOM7[] = "kHOM7";
+#define extension_kHOM7 1
+#endif
+
+#ifndef extension_kIC3
+static char name_of_kIC3[] = "kIC3";
+#define extension_kIC3 1
+#endif
+
+#ifndef extension_kIC4
+static char name_of_kIC4[] = "kIC4";
+#define extension_kIC4 1
+#endif
+
+#ifndef extension_kIC5
+static char name_of_kIC5[] = "kIC5";
+#define extension_kIC5 1
+#endif
+
+#ifndef extension_kIC6
+static char name_of_kIC6[] = "kIC6";
+#define extension_kIC6 1
+#endif
+
+#ifndef extension_kIC7
+static char name_of_kIC7[] = "kIC7";
+#define extension_kIC7 1
+#endif
+
+#ifndef extension_kLFT3
+static char name_of_kLFT3[] = "kLFT3";
+#define extension_kLFT3 1
+#endif
+
+#ifndef extension_kLFT4
+static char name_of_kLFT4[] = "kLFT4";
+#define extension_kLFT4 1
+#endif
+
+#ifndef extension_kLFT5
+static char name_of_kLFT5[] = "kLFT5";
+#define extension_kLFT5 1
+#endif
+
+#ifndef extension_kLFT6
+static char name_of_kLFT6[] = "kLFT6";
+#define extension_kLFT6 1
+#endif
+
+#ifndef extension_kLFT7
+static char name_of_kLFT7[] = "kLFT7";
+#define extension_kLFT7 1
+#endif
+
+#ifndef extension_kNXT3
+static char name_of_kNXT3[] = "kNXT3";
+#define extension_kNXT3 1
+#endif
+
+#ifndef extension_kNXT4
+static char name_of_kNXT4[] = "kNXT4";
+#define extension_kNXT4 1
+#endif
+
+#ifndef extension_kNXT5
+static char name_of_kNXT5[] = "kNXT5";
+#define extension_kNXT5 1
+#endif
+
+#ifndef extension_kNXT6
+static char name_of_kNXT6[] = "kNXT6";
+#define extension_kNXT6 1
+#endif
+
+#ifndef extension_kNXT7
+static char name_of_kNXT7[] = "kNXT7";
+#define extension_kNXT7 1
+#endif
+
+#ifndef extension_kPRV3
+static char name_of_kPRV3[] = "kPRV3";
+#define extension_kPRV3 1
+#endif
+
+#ifndef extension_kPRV4
+static char name_of_kPRV4[] = "kPRV4";
+#define extension_kPRV4 1
+#endif
+
+#ifndef extension_kPRV5
+static char name_of_kPRV5[] = "kPRV5";
+#define extension_kPRV5 1
+#endif
+
+#ifndef extension_kPRV6
+static char name_of_kPRV6[] = "kPRV6";
+#define extension_kPRV6 1
+#endif
+
+#ifndef extension_kPRV7
+static char name_of_kPRV7[] = "kPRV7";
+#define extension_kPRV7 1
+#endif
+
+#ifndef extension_kRIT3
+static char name_of_kRIT3[] = "kRIT3";
+#define extension_kRIT3 1
+#endif
+
+#ifndef extension_kRIT4
+static char name_of_kRIT4[] = "kRIT4";
+#define extension_kRIT4 1
+#endif
+
+#ifndef extension_kRIT5
+static char name_of_kRIT5[] = "kRIT5";
+#define extension_kRIT5 1
+#endif
+
+#ifndef extension_kRIT6
+static char name_of_kRIT6[] = "kRIT6";
+#define extension_kRIT6 1
+#endif
+
+#ifndef extension_kRIT7
+static char name_of_kRIT7[] = "kRIT7";
+#define extension_kRIT7 1
+#endif
+
+#ifndef extension_kUP
+static char name_of_kUP[] = "kUP";
+#define extension_kUP 1
+#endif
+
+#ifndef extension_kUP3
+static char name_of_kUP3[] = "kUP3";
+#define extension_kUP3 1
+#endif
+
+#ifndef extension_kUP4
+static char name_of_kUP4[] = "kUP4";
+#define extension_kUP4 1
+#endif
+
+#ifndef extension_kUP5
+static char name_of_kUP5[] = "kUP5";
+#define extension_kUP5 1
+#endif
+
+#ifndef extension_kUP6
+static char name_of_kUP6[] = "kUP6";
+#define extension_kUP6 1
+#endif
+
+#ifndef extension_kUP7
+static char name_of_kUP7[] = "kUP7";
+#define extension_kUP7 1
+#endif
+
+#ifndef extension_ka2
+static char name_of_ka2[] = "ka2";
+#define extension_ka2 1
+#endif
+
+#ifndef extension_kb1
+static char name_of_kb1[] = "kb1";
+#define extension_kb1 1
+#endif
+
+#ifndef extension_kb3
+static char name_of_kb3[] = "kb3";
+#define extension_kb3 1
+#endif
+
+#ifndef extension_kc2
+static char name_of_kc2[] = "kc2";
+#define extension_kc2 1
+#endif
+
+#ifndef extension_kp5
+static char name_of_kp5[] = "kp5";
+#define extension_kp5 1
+#endif
+
+#ifndef extension_kpADD
+static char name_of_kpADD[] = "kpADD";
+#define extension_kpADD 1
+#endif
+
+#ifndef extension_kpCMA
+static char name_of_kpCMA[] = "kpCMA";
+#define extension_kpCMA 1
+#endif
+
+#ifndef extension_kpDIV
+static char name_of_kpDIV[] = "kpDIV";
+#define extension_kpDIV 1
+#endif
+
+#ifndef extension_kpDOT
+static char name_of_kpDOT[] = "kpDOT";
+#define extension_kpDOT 1
+#endif
+
+#ifndef extension_kpMUL
+static char name_of_kpMUL[] = "kpMUL";
+#define extension_kpMUL 1
+#endif
+
+#ifndef extension_kpSUB
+static char name_of_kpSUB[] = "kpSUB";
+#define extension_kpSUB 1
+#endif
+
+#ifndef extension_kpZRO
+static char name_of_kpZRO[] = "kpZRO";
+#define extension_kpZRO 1
+#endif
+
+#ifndef extension_kxIN
+static char name_of_kxIN[] = "kxIN";
+#define extension_kxIN 1
+#endif
+
+#ifndef extension_kxOUT
+static char name_of_kxOUT[] = "kxOUT";
+#define extension_kxOUT 1
+#endif
+
+#ifndef extension_rv
+static char name_of_rv[] = "rv";
+#define extension_rv 1
+#endif
+
+#ifndef extension_xm
+static char name_of_xm[] = "xm";
+#define extension_xm 1
+#endif
+
+static char * screen_xterm_256color_string_ext_data[] = {
+	/*  44: bool */	name_of_AX,
+	/*  45: bool */	name_of_XF,
+	/*  46: bool */	name_of_XT,
+	/*  39: num */	name_of_U8,
+	/* 414: str */	name_of_E3,
+	/* 415: str */	name_of_RV,
+	/* 416: str */	name_of_XM,
+	/* 417: str */	name_of_fd,
+	/* 418: str */	name_of_fe,
+	/* 419: str */	name_of_kDC3,
+	/* 420: str */	name_of_kDC4,
+	/* 421: str */	name_of_kDC5,
+	/* 422: str */	name_of_kDC6,
+	/* 423: str */	name_of_kDC7,
+	/* 424: str */	name_of_kDN,
+	/* 425: str */	name_of_kDN3,
+	/* 426: str */	name_of_kDN4,
+	/* 427: str */	name_of_kDN5,
+	/* 428: str */	name_of_kDN6,
+	/* 429: str */	name_of_kDN7,
+	/* 430: str */	name_of_kEND3,
+	/* 431: str */	name_of_kEND4,
+	/* 432: str */	name_of_kEND5,
+	/* 433: str */	name_of_kEND6,
+	/* 434: str */	name_of_kEND7,
+	/* 435: str */	name_of_kHOM3,
+	/* 436: str */	name_of_kHOM4,
+	/* 437: str */	name_of_kHOM5,
+	/* 438: str */	name_of_kHOM6,
+	/* 439: str */	name_of_kHOM7,
+	/* 440: str */	name_of_kIC3,
+	/* 441: str */	name_of_kIC4,
+	/* 442: str */	name_of_kIC5,
+	/* 443: str */	name_of_kIC6,
+	/* 444: str */	name_of_kIC7,
+	/* 445: str */	name_of_kLFT3,
+	/* 446: str */	name_of_kLFT4,
+	/* 447: str */	name_of_kLFT5,
+	/* 448: str */	name_of_kLFT6,
+	/* 449: str */	name_of_kLFT7,
+	/* 450: str */	name_of_kNXT3,
+	/* 451: str */	name_of_kNXT4,
+	/* 452: str */	name_of_kNXT5,
+	/* 453: str */	name_of_kNXT6,
+	/* 454: str */	name_of_kNXT7,
+	/* 455: str */	name_of_kPRV3,
+	/* 456: str */	name_of_kPRV4,
+	/* 457: str */	name_of_kPRV5,
+	/* 458: str */	name_of_kPRV6,
+	/* 459: str */	name_of_kPRV7,
+	/* 460: str */	name_of_kRIT3,
+	/* 461: str */	name_of_kRIT4,
+	/* 462: str */	name_of_kRIT5,
+	/* 463: str */	name_of_kRIT6,
+	/* 464: str */	name_of_kRIT7,
+	/* 465: str */	name_of_kUP,
+	/* 466: str */	name_of_kUP3,
+	/* 467: str */	name_of_kUP4,
+	/* 468: str */	name_of_kUP5,
+	/* 469: str */	name_of_kUP6,
+	/* 470: str */	name_of_kUP7,
+	/* 471: str */	name_of_ka2,
+	/* 472: str */	name_of_kb1,
+	/* 473: str */	name_of_kb3,
+	/* 474: str */	name_of_kc2,
+	/* 475: str */	name_of_kp5,
+	/* 476: str */	name_of_kpADD,
+	/* 477: str */	name_of_kpCMA,
+	/* 478: str */	name_of_kpDIV,
+	/* 479: str */	name_of_kpDOT,
+	/* 480: str */	name_of_kpMUL,
+	/* 481: str */	name_of_kpSUB,
+	/* 482: str */	name_of_kpZRO,
+	/* 483: str */	name_of_kxIN,
+	/* 484: str */	name_of_kxOUT,
+	/* 485: str */	name_of_rv,
+	/* 486: str */	name_of_xm,
 };
 static const TERMTYPE2 fallbacks[10] =
 {
@@ -6412,13 +9948,13 @@ static const TERMTYPE2 fallbacks[10] =
 		linux_string_data,
 #if NCURSES_XNAMES
 		(char *)0,	/* pointer to extended string table */
-		(char **)0,	/* ...corresponding names */
-		44,		/* count total Booleans */
-		39,		/* count total Numbers */
-		414,		/* count total Strings */
-		0,		/* count extensions to Booleans */
-		0,		/* count extensions to Numbers */
-		0,		/* count extensions to Strings */
+		linux_string_ext_data,	/* ...corresponding names */
+		45,		/* count total Booleans */
+		40,		/* count total Numbers */
+		416,		/* count total Strings */
+		1,		/* count extensions to Booleans */
+		1,		/* count extensions to Numbers */
+		2,		/* count extensions to Strings */
 #endif /* NCURSES_XNAMES */
 	}
 , /* rxvt */
@@ -6430,13 +9966,13 @@ static const TERMTYPE2 fallbacks[10] =
 		rxvt_string_data,
 #if NCURSES_XNAMES
 		(char *)0,	/* pointer to extended string table */
-		(char **)0,	/* ...corresponding names */
-		44,		/* count total Booleans */
+		rxvt_string_ext_data,	/* ...corresponding names */
+		46,		/* count total Booleans */
 		39,		/* count total Numbers */
-		414,		/* count total Strings */
-		0,		/* count extensions to Booleans */
+		436,		/* count total Strings */
+		2,		/* count extensions to Booleans */
 		0,		/* count extensions to Numbers */
-		0,		/* count extensions to Strings */
+		22,		/* count extensions to Strings */
 #endif /* NCURSES_XNAMES */
 	}
 , /* vt100 */
@@ -6466,13 +10002,13 @@ static const TERMTYPE2 fallbacks[10] =
 		xterm_string_data,
 #if NCURSES_XNAMES
 		(char *)0,	/* pointer to extended string table */
-		(char **)0,	/* ...corresponding names */
-		44,		/* count total Booleans */
+		xterm_string_ext_data,	/* ...corresponding names */
+		47,		/* count total Booleans */
 		39,		/* count total Numbers */
-		414,		/* count total Strings */
-		0,		/* count extensions to Booleans */
+		509,		/* count total Strings */
+		3,		/* count extensions to Booleans */
 		0,		/* count extensions to Numbers */
-		0,		/* count extensions to Strings */
+		95,		/* count extensions to Strings */
 #endif /* NCURSES_XNAMES */
 	}
 , /* xterm-256color */
@@ -6484,13 +10020,13 @@ static const TERMTYPE2 fallbacks[10] =
 		xterm_256color_string_data,
 #if NCURSES_XNAMES
 		(char *)0,	/* pointer to extended string table */
-		(char **)0,	/* ...corresponding names */
-		44,		/* count total Booleans */
+		xterm_256color_string_ext_data,	/* ...corresponding names */
+		47,		/* count total Booleans */
 		39,		/* count total Numbers */
-		414,		/* count total Strings */
-		0,		/* count extensions to Booleans */
+		509,		/* count total Strings */
+		3,		/* count extensions to Booleans */
 		0,		/* count extensions to Numbers */
-		0,		/* count extensions to Strings */
+		95,		/* count extensions to Strings */
 #endif /* NCURSES_XNAMES */
 	}
 , /* screen */
@@ -6502,13 +10038,13 @@ static const TERMTYPE2 fallbacks[10] =
 		screen_string_data,
 #if NCURSES_XNAMES
 		(char *)0,	/* pointer to extended string table */
-		(char **)0,	/* ...corresponding names */
-		44,		/* count total Booleans */
-		39,		/* count total Numbers */
-		414,		/* count total Strings */
-		0,		/* count extensions to Booleans */
-		0,		/* count extensions to Numbers */
-		0,		/* count extensions to Strings */
+		screen_string_ext_data,	/* ...corresponding names */
+		46,		/* count total Booleans */
+		40,		/* count total Numbers */
+		420,		/* count total Strings */
+		2,		/* count extensions to Booleans */
+		1,		/* count extensions to Numbers */
+		6,		/* count extensions to Strings */
 #endif /* NCURSES_XNAMES */
 	}
 , /* screen.linux */
@@ -6520,13 +10056,13 @@ static const TERMTYPE2 fallbacks[10] =
 		screen_linux_string_data,
 #if NCURSES_XNAMES
 		(char *)0,	/* pointer to extended string table */
-		(char **)0,	/* ...corresponding names */
-		44,		/* count total Booleans */
-		39,		/* count total Numbers */
-		414,		/* count total Strings */
-		0,		/* count extensions to Booleans */
-		0,		/* count extensions to Numbers */
-		0,		/* count extensions to Strings */
+		screen_linux_string_ext_data,	/* ...corresponding names */
+		46,		/* count total Booleans */
+		40,		/* count total Numbers */
+		424,		/* count total Strings */
+		2,		/* count extensions to Booleans */
+		1,		/* count extensions to Numbers */
+		10,		/* count extensions to Strings */
 #endif /* NCURSES_XNAMES */
 	}
 , /* screen.rxvt */
@@ -6538,31 +10074,31 @@ static const TERMTYPE2 fallbacks[10] =
 		screen_rxvt_string_data,
 #if NCURSES_XNAMES
 		(char *)0,	/* pointer to extended string table */
-		(char **)0,	/* ...corresponding names */
-		44,		/* count total Booleans */
-		39,		/* count total Numbers */
-		414,		/* count total Strings */
-		0,		/* count extensions to Booleans */
-		0,		/* count extensions to Numbers */
-		0,		/* count extensions to Strings */
+		screen_rxvt_string_ext_data,	/* ...corresponding names */
+		47,		/* count total Booleans */
+		40,		/* count total Numbers */
+		444,		/* count total Strings */
+		3,		/* count extensions to Booleans */
+		1,		/* count extensions to Numbers */
+		30,		/* count extensions to Strings */
 #endif /* NCURSES_XNAMES */
 	}
 , /* screen.xterm-new */
 	{
-		screen_xterm_xfree86_alias_data,
+		screen_xterm_new_alias_data,
 		(char *)0,	/* pointer to string table */
-		screen_xterm_xfree86_bool_data,
-		screen_xterm_xfree86_number_data,
-		screen_xterm_xfree86_string_data,
+		screen_xterm_new_bool_data,
+		screen_xterm_new_number_data,
+		screen_xterm_new_string_data,
 #if NCURSES_XNAMES
 		(char *)0,	/* pointer to extended string table */
-		(char **)0,	/* ...corresponding names */
-		44,		/* count total Booleans */
-		39,		/* count total Numbers */
-		414,		/* count total Strings */
-		0,		/* count extensions to Booleans */
-		0,		/* count extensions to Numbers */
-		0,		/* count extensions to Strings */
+		screen_xterm_new_string_ext_data,	/* ...corresponding names */
+		47,		/* count total Booleans */
+		40,		/* count total Numbers */
+		487,		/* count total Strings */
+		3,		/* count extensions to Booleans */
+		1,		/* count extensions to Numbers */
+		73,		/* count extensions to Strings */
 #endif /* NCURSES_XNAMES */
 	}
 , /* screen.xterm-256color */
@@ -6574,13 +10110,13 @@ static const TERMTYPE2 fallbacks[10] =
 		screen_xterm_256color_string_data,
 #if NCURSES_XNAMES
 		(char *)0,	/* pointer to extended string table */
-		(char **)0,	/* ...corresponding names */
-		44,		/* count total Booleans */
-		39,		/* count total Numbers */
-		414,		/* count total Strings */
-		0,		/* count extensions to Booleans */
-		0,		/* count extensions to Numbers */
-		0,		/* count extensions to Strings */
+		screen_xterm_256color_string_ext_data,	/* ...corresponding names */
+		47,		/* count total Booleans */
+		40,		/* count total Numbers */
+		487,		/* count total Strings */
+		3,		/* count extensions to Booleans */
+		1,		/* count extensions to Numbers */
+		73,		/* count extensions to Strings */
 #endif /* NCURSES_XNAMES */
 	}
 };
@@ -6603,15 +10139,12 @@ _nc_fallback2 (const char *name GCC_UNUSED)
 #if NCURSES_EXT_NUMBERS
 #undef _nc_fallback
 
-/*
- * This entrypoint is used by tack.
- */
 NCURSES_EXPORT(const TERMTYPE *)
 _nc_fallback (const char *name)
 {
     const TERMTYPE2 *tp = _nc_fallback2(name);
-    const TERMTYPE *result = 0;
-    if (tp != 0) {
+    const TERMTYPE *result = NULL;
+    if (tp != NULL) {
 	static TERMTYPE temp;
 	_nc_export_termtype2(&temp, tp);
 	result = &temp;

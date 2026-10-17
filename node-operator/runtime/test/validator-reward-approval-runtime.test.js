@@ -47,7 +47,7 @@ const FINALIZER =
   '0xF100000000000000000000000000000000000001';
 
 test(
-  'signs, persists, retries and delivers current Pi1 approval envelope',
+  'signs, persists, retries and delivers current approval envelope',
   async () => {
     const directory =
       await fs.mkdtemp(

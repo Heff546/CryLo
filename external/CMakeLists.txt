@@ -35,7 +35,11 @@
 # ...except for FreeBSD, because FreeBSD is a special case that doesn't play well with
 # others.
 
-find_package(Miniupnpc REQUIRED)
+# Depends builds use the bundled miniupnpc directly and must not require a
+# separate host installation merely to pass configuration.
+if(NOT DEPENDS)
+  find_package(Miniupnpc REQUIRED)
+endif()
 
 message(STATUS "Using in-tree miniupnpc")
 set(UPNPC_NO_INSTALL TRUE CACHE BOOL "Disable miniupnp installation" FORCE)

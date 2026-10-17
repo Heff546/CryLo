@@ -27,9 +27,36 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(daemon_tui_source ../tui/crylo_tui.cpp)
+set(daemon_curses_libraries ncursesw)
 
 if(WIN32)
   set(daemon_tui_source ../tui/crylo_tui_windows.cpp)
+  set(daemon_curses_libraries "")
+elseif(DEPENDS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Linux depends builds use the pinned non-wide ncurses ABI.
+  # Resolve both archives only inside the deterministic depends prefix so
+  # the linker cannot fall back to host ncurses/tinfo libraries.
+  list(GET CMAKE_FIND_ROOT_PATH 0 CRYLO_DEPENDS_PREFIX)
+
+  find_library(CRYLO_NCURSES_LIBRARY
+    NAMES ncurses
+    PATHS "${CRYLO_DEPENDS_PREFIX}/lib"
+    NO_DEFAULT_PATH)
+
+  find_library(CRYLO_TINFO_LIBRARY
+    NAMES tinfo
+    PATHS "${CRYLO_DEPENDS_PREFIX}/lib"
+    NO_DEFAULT_PATH)
+
+  if(NOT CRYLO_NCURSES_LIBRARY OR NOT CRYLO_TINFO_LIBRARY)
+    message(FATAL_ERROR
+      "Pinned depends ncurses/tinfo libraries were not found in "
+      "${CRYLO_DEPENDS_PREFIX}/lib")
+  endif()
+
+  set(daemon_curses_libraries
+    "${CRYLO_NCURSES_LIBRARY}"
+    "${CRYLO_TINFO_LIBRARY}")
 endif()
 
 set(daemon_sources
@@ -77,7 +104,7 @@ target_link_libraries(daemon
     ${GNU_READLINE_LIBRARY}
     ${EXTRA_LIBRARIES}
     ${Blocks}
-    $<$<NOT:$<BOOL:${WIN32}>>:ncursesw>)
+    ${daemon_curses_libraries})
 set_property(TARGET daemon
   PROPERTY
     OUTPUT_NAME "CryLo-daemon")

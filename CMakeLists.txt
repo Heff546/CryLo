@@ -607,12 +607,19 @@ message(STATUS "Using OpenSSL include dir at ${OPENSSL_INCLUDE_DIR}")
 include_directories(${OPENSSL_INCLUDE_DIR})
 if(STATIC AND NOT IOS)
   if(UNIX)
-    # Static OpenSSL builds require compression dependencies that are not
-    # propagated by FindOpenSSL on all Linux distributions.
-    find_library(ZLIB_LIBRARY z REQUIRED)
-    find_library(ZSTD_LIBRARY zstd REQUIRED)
-    set(OPENSSL_LIBRARIES
-      "${OPENSSL_LIBRARIES};${ZLIB_LIBRARY};${ZSTD_LIBRARY};${CMAKE_DL_LIBS};${CMAKE_THREAD_LIBS_INIT}")
+    if(DEPENDS)
+      # The pinned depends OpenSSL is configured without zlib/zstd.
+      # Keep only the platform libraries required by the static archive.
+      set(OPENSSL_LIBRARIES
+        "${OPENSSL_LIBRARIES};${CMAKE_DL_LIBS};${CMAKE_THREAD_LIBS_INIT}")
+    else()
+      # System static OpenSSL builds may require compression dependencies that
+      # are not propagated by FindOpenSSL on all Linux distributions.
+      find_library(ZLIB_LIBRARY z REQUIRED)
+      find_library(ZSTD_LIBRARY zstd REQUIRED)
+      set(OPENSSL_LIBRARIES
+        "${OPENSSL_LIBRARIES};${ZLIB_LIBRARY};${ZSTD_LIBRARY};${CMAKE_DL_LIBS};${CMAKE_THREAD_LIBS_INIT}")
+    endif()
   endif()
 endif()
 
@@ -981,6 +988,36 @@ int main(void) { return 0; }")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-strict-aliasing")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing")
 
+  # Deterministic Linux depends release artifacts must not retain a builder's
+  # runtime library search path or absolute checkout path. Pinned dependency
+  # archives are linked directly, so no runtime RPATH is required. Prefix-map
+  # flags make both Linux x64 and ARM64 output independent of checkout location
+  # while leaving Windows and other platform builds unchanged.
+  if(DEPENDS AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_SKIP_RPATH TRUE CACHE BOOL
+        "Do not embed build-machine runtime search paths in CryLo Linux release binaries" FORCE)
+
+    set(CRYLO_REPRODUCIBLE_PATH_FLAGS
+        "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=. -fdebug-prefix-map=${CMAKE_SOURCE_DIR}=. -fmacro-prefix-map=${CMAKE_SOURCE_DIR}=.")
+    set(CMAKE_C_FLAGS
+        "${CMAKE_C_FLAGS} ${CRYLO_REPRODUCIBLE_PATH_FLAGS}")
+    set(CMAKE_CXX_FLAGS
+        "${CMAKE_CXX_FLAGS} ${CRYLO_REPRODUCIBLE_PATH_FLAGS}")
+  endif()
+
+  # external/easylogging++ is configured before the global hardening flags
+  # above are assembled, so apply the finalized security flags explicitly to
+  # that already-created target. This keeps the fix target-local instead of
+  # reordering every external dependency.
+  if(TARGET easylogging)
+    set_property(TARGET easylogging APPEND_STRING PROPERTY COMPILE_FLAGS
+        " ${CXX_SECURITY_FLAGS}")
+    if(DEPENDS AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_BUILD_TYPE STREQUAL "Release")
+      set_property(TARGET easylogging APPEND_STRING PROPERTY COMPILE_FLAGS
+          " ${CRYLO_REPRODUCIBLE_PATH_FLAGS}")
+    endif()
+  endif()
+
   if(ARM)
     message(STATUS "Setting FPU Flags for ARM Processors")
 
@@ -1142,7 +1179,15 @@ if(STATIC)
   endif()
 
   set(Boost_USE_STATIC_LIBS ON)
-  set(Boost_USE_STATIC_RUNTIME ON)
+
+  # Depends Boost runtime linkage follows the variant produced by boost.mk.
+  # MinGW and Android use static runtime linkage; Linux and other Unix
+  # depends targets use shared runtime linkage with static Boost archives.
+  if(DEPENDS AND NOT MINGW AND NOT ANDROID)
+    set(Boost_USE_STATIC_RUNTIME OFF)
+  else()
+    set(Boost_USE_STATIC_RUNTIME ON)
+  endif()
 endif()
 
 # Find Boost headers
@@ -1266,14 +1311,20 @@ endif()
 
 find_path(ZMQ_INCLUDE_PATH zmq.h)
 find_library(ZMQ_LIB zmq)
-find_library(PGM_LIBRARY pgm)
-find_library(NORM_LIBRARY norm)
-find_library(GSSAPI_LIBRARY gssapi_krb5)
-find_library(PROTOLIB_LIBRARY protolib)
 find_library(SODIUM_LIBRARY sodium)
-find_library(BSD_LIBRARY bsd)
-find_library(MD_LIBRARY md)
-find_library(PROTOKIT_LIBRARY protokit)
+
+# Optional ZeroMQ transports are discovered only for system builds.
+# The deterministic depends libzmq recipe defines its feature set and must
+# not acquire unrelated libraries from the build host.
+if(NOT DEPENDS)
+  find_library(PGM_LIBRARY pgm)
+  find_library(NORM_LIBRARY norm)
+  find_library(GSSAPI_LIBRARY gssapi_krb5)
+  find_library(PROTOLIB_LIBRARY protolib)
+  find_library(BSD_LIBRARY bsd)
+  find_library(MD_LIBRARY md)
+  find_library(PROTOKIT_LIBRARY protokit)
+endif()
 
 if(NOT ZMQ_INCLUDE_PATH)
   message(FATAL_ERROR "Could not find required header zmq.h")

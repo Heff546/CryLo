@@ -46,7 +46,7 @@ const FINALIZER =
   '0xF100000000000000000000000000000000000001';
 
 test(
-  'converts Pi1 EIP-712 approval envelope into deployed finalizer structs',
+  'converts EIP-712 approval envelope into deployed finalizer structs',
   async () => {
     const validator =
       Wallet.createRandom();

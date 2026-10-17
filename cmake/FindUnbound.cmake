@@ -37,36 +37,41 @@ FIND_PATH(UNBOUND_INCLUDE_DIR
   /usr/
 )
 
-find_library(UNBOUND_LIBRARY unbound)
+# Depends supplies the exact static libunbound archive through the generated
+# toolchain. Preserve that value rather than rediscovering host libraries.
+if(DEPENDS AND UNBOUND_LIBRARIES)
+  set(UNBOUND_LIBRARY "${UNBOUND_LIBRARIES}")
+else()
+  find_library(UNBOUND_LIBRARY unbound)
+  set(UNBOUND_LIBRARIES ${UNBOUND_LIBRARY})
 
-set(UNBOUND_LIBRARIES ${UNBOUND_LIBRARY})
+  # System static libunbound builds may require transitive libraries that
+  # archive files do not propagate automatically.
+  if(UNBOUND_LIBRARY MATCHES "\\.a$")
+    find_library(UNBOUND_EVENT_LIBRARY event)
+    find_library(UNBOUND_HOGWEED_LIBRARY hogweed)
+    find_library(UNBOUND_NETTLE_LIBRARY nettle)
+    find_library(UNBOUND_GMP_LIBRARY gmp)
 
-# Static libunbound builds require their transitive dependencies to be
-# linked explicitly because archive files do not propagate them.
-if(UNBOUND_LIBRARY MATCHES "\\.a$")
-  find_library(UNBOUND_EVENT_LIBRARY event)
-  find_library(UNBOUND_HOGWEED_LIBRARY hogweed)
-  find_library(UNBOUND_NETTLE_LIBRARY nettle)
-  find_library(UNBOUND_GMP_LIBRARY gmp)
+    if(UNBOUND_EVENT_LIBRARY)
+      list(APPEND UNBOUND_LIBRARIES ${UNBOUND_EVENT_LIBRARY})
+      message(STATUS "Static libunbound requires libevent: ${UNBOUND_EVENT_LIBRARY}")
+    endif()
 
-  if(UNBOUND_EVENT_LIBRARY)
-    list(APPEND UNBOUND_LIBRARIES ${UNBOUND_EVENT_LIBRARY})
-    message(STATUS "Static libunbound requires libevent: ${UNBOUND_EVENT_LIBRARY}")
-  endif()
+    if(UNBOUND_HOGWEED_LIBRARY)
+      list(APPEND UNBOUND_LIBRARIES ${UNBOUND_HOGWEED_LIBRARY})
+      message(STATUS "Static libunbound requires hogweed: ${UNBOUND_HOGWEED_LIBRARY}")
+    endif()
 
-  if(UNBOUND_HOGWEED_LIBRARY)
-    list(APPEND UNBOUND_LIBRARIES ${UNBOUND_HOGWEED_LIBRARY})
-    message(STATUS "Static libunbound requires hogweed: ${UNBOUND_HOGWEED_LIBRARY}")
-  endif()
+    if(UNBOUND_NETTLE_LIBRARY)
+      list(APPEND UNBOUND_LIBRARIES ${UNBOUND_NETTLE_LIBRARY})
+      message(STATUS "Static libunbound requires nettle: ${UNBOUND_NETTLE_LIBRARY}")
+    endif()
 
-  if(UNBOUND_NETTLE_LIBRARY)
-    list(APPEND UNBOUND_LIBRARIES ${UNBOUND_NETTLE_LIBRARY})
-    message(STATUS "Static libunbound requires nettle: ${UNBOUND_NETTLE_LIBRARY}")
-  endif()
-
-  if(UNBOUND_GMP_LIBRARY)
-    list(APPEND UNBOUND_LIBRARIES ${UNBOUND_GMP_LIBRARY})
-    message(STATUS "Static libunbound requires GMP: ${UNBOUND_GMP_LIBRARY}")
+    if(UNBOUND_GMP_LIBRARY)
+      list(APPEND UNBOUND_LIBRARIES ${UNBOUND_GMP_LIBRARY})
+      message(STATUS "Static libunbound requires GMP: ${UNBOUND_GMP_LIBRARY}")
+    endif()
   endif()
 endif()
 

@@ -395,7 +395,6 @@ manifest.push(`Generated-UTC: ${new Date().toISOString()}`);
 manifest.push(`Platform: ${platform}`);
 manifest.push(`Architecture: ${requestedArch}`);
 manifest.push(`Network: ${network}`);
-manifest.push(`Source-Directory: ${sourceDirectory}`);
 manifest.push('');
 
 for (const name of packagedNativeFiles) {

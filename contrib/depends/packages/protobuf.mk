@@ -26,6 +26,10 @@ define $(package)_set_vars
   $(package)_config_opts+=-Dprotobuf_BUILD_LIBUPB=OFF
   $(package)_config_opts+=-Dprotobuf_INSTALL=ON
   $(package)_config_opts+=-DWITH_PROTOC=$(build_prefix)/bin/protoc
+  $(package)_cflags_linux+=-ffile-prefix-map=$($(package)_extract_dir)=. -fdebug-prefix-map=$($(package)_extract_dir)=. -fmacro-prefix-map=$($(package)_extract_dir)=.
+  $(package)_cflags_linux+=-ffile-prefix-map=$(host_prefix)=/usr -fdebug-prefix-map=$(host_prefix)=/usr -fmacro-prefix-map=$(host_prefix)=/usr
+  $(package)_cxxflags_linux+=-ffile-prefix-map=$($(package)_extract_dir)=. -fdebug-prefix-map=$($(package)_extract_dir)=. -fmacro-prefix-map=$($(package)_extract_dir)=.
+  $(package)_cxxflags_linux+=-ffile-prefix-map=$(host_prefix)=/usr -fdebug-prefix-map=$(host_prefix)=/usr -fmacro-prefix-map=$(host_prefix)=/usr
 endef
 
 define $(package)_config_cmds

@@ -11,7 +11,11 @@ define $(package)_set_vars
   $(package)_config_opts=--disable-shared --enable-static --without-pyunbound --prefix=$(host_prefix)
   $(package)_config_opts+=--with-libexpat=no --with-ssl=$(host_prefix) --with-libevent=no
   $(package)_config_opts+=--without-pythonmodule --disable-flto --with-pthreads --with-libunbound-only
-  $(package)_config_opts_linux=--with-pic
+  $(package)_config_opts_linux=--with-pic --sysconfdir=/etc --localstatedir=/var
+  $(package)_config_opts_linux+=--with-conf-file=/etc/unbound/unbound.conf --with-run-dir=/var/lib/unbound
+  $(package)_config_opts_linux+=--with-chroot-dir=/var/lib/unbound --with-pidfile=/run/unbound/unbound.pid
+  $(package)_cflags_linux+=-ffile-prefix-map=$($(package)_extract_dir)=. -fdebug-prefix-map=$($(package)_extract_dir)=. -fmacro-prefix-map=$($(package)_extract_dir)=.
+  $(package)_cflags_linux+=-ffile-prefix-map=$(host_prefix)=/usr -fdebug-prefix-map=$(host_prefix)=/usr -fmacro-prefix-map=$(host_prefix)=/usr
   $(package)_config_opts_w64=--enable-static-exe --sysconfdir=/etc --prefix=$(host_prefix) --target=$(host_prefix)
   $(package)_config_opts_x86_64_darwin=ac_cv_func_SHA384_Init=yes
   $(package)_build_opts_mingw32=LDFLAGS="$($(package)_ldflags) -lpthread"

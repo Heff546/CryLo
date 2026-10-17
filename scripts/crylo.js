@@ -3960,6 +3960,9 @@ function installedDebianPackage(packageName) {
 }
 
 function ensureLinuxNodeRuntime() {
+  const expectedNodeVersion = 'v24.21.0';
+  const expectedNpmVersion = '12.1.0';
+
   let node = probe('node', ['--version']);
   const nodeVersion =
     node.ok ? node.stdout : '';
@@ -3979,7 +3982,7 @@ function ensureLinuxNodeRuntime() {
    * runtime and preserves the signed-update environment.
    */
   if (
-    versionMajor(nodeVersion) < 24 ||
+    nodeVersion !== expectedNodeVersion ||
     !runtimeText
   ) {
     const resumed =
@@ -4005,7 +4008,7 @@ function ensureLinuxNodeRuntime() {
       !authorizedVersion
     ) {
       fail(
-        'CryLo requires its isolated Node.js 24 runtime on Linux. ' +
+        'CryLo requires its isolated Node.js 24.21.0 runtime on Linux. ' +
         'Run CryLo through the "crylo" launcher.'
       );
     }
@@ -4021,7 +4024,7 @@ function ensureLinuxNodeRuntime() {
 
     console.log();
     console.log(
-      'Switching authenticated CryLo update to the isolated Node.js 24 runtime...'
+      'Switching authenticated CryLo update to the isolated Node.js 24.21.0 runtime...'
     );
 
     const relaunched = spawnSync(
@@ -4125,16 +4128,16 @@ function ensureLinuxNodeRuntime() {
   let npmVersion =
     npm.ok ? npm.stdout : '';
 
-  if (versionMajor(npmVersion) < 12) {
+  if (npmVersion !== expectedNpmVersion) {
     if (!runtimeDirectory) {
       fail(
-        'npm 12+ is required. CryLo will not modify the system npm. ' +
+        'CryLo requires its isolated npm 12.1.0 runtime. ' +
         'Run CryLo through the Linux "crylo" launcher.'
       );
     }
 
     console.log(
-      'Installing npm 12.1.0 inside the isolated CryLo runtime...'
+      `Installing npm ${expectedNpmVersion} inside the isolated CryLo runtime...`
     );
 
     const npmExecutable =
@@ -4157,7 +4160,7 @@ function ensureLinuxNodeRuntime() {
       runtimeDirectory,
       '--no-audit',
       '--no-fund',
-      'npm@12.1.0'
+      `npm@${expectedNpmVersion}`
     ]);
 
     npm = probe('npm', ['--version']);
@@ -4165,18 +4168,18 @@ function ensureLinuxNodeRuntime() {
       npm.ok ? npm.stdout : '';
   }
 
-  if (versionMajor(npmVersion) < 12) {
+  if (npmVersion !== expectedNpmVersion) {
     fail(
-      'CryLo isolated npm 12+ preparation failed. ' +
+      `CryLo isolated npm ${expectedNpmVersion} preparation failed. ` +
       `Active npm is ${npmVersion || 'unavailable'}.`
     );
   }
 
   node = probe('node', ['--version']);
 
-  if (!node.ok || versionMajor(node.stdout) < 24) {
+  if (!node.ok || node.stdout !== expectedNodeVersion) {
     fail(
-      'CryLo isolated Node.js 24 runtime became unavailable.'
+      `CryLo isolated Node.js ${expectedNodeVersion.slice(1)} runtime became unavailable.`
     );
   }
 

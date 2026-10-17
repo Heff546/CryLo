@@ -617,6 +617,159 @@ function verifyManagedReleaseToolchain(target) {
   };
 }
 
+
+function linuxDependsContext(target) {
+  if (target.platform !== 'linux') {
+    fail('Linux depends context requested for a non-Linux target.');
+  }
+
+  const dependsDir = path.join(root, 'contrib', 'depends');
+  const configGuess = path.join(dependsDir, 'config.guess');
+
+  if (!fs.existsSync(configGuess)) {
+    fail(`CryLo depends config.guess is missing: ${configGuess}`);
+  }
+
+  const guess = spawnSync(
+    configGuess,
+    [],
+    {
+      cwd: dependsDir,
+      env: process.env,
+      encoding: 'utf8',
+      shell: false
+    }
+  );
+
+  if (guess.error || guess.status !== 0) {
+    fail('Unable to determine the CryLo Linux depends host triplet.');
+  }
+
+  const host = String(guess.stdout || '').trim();
+  const expectedHost =
+    target.arch === 'arm64' ? /^aarch64-/ : /^x86_64-/;
+
+  if (!expectedHost.test(host)) {
+    fail(
+      `CryLo depends host triplet does not match ${target.arch}: ${host}`
+    );
+  }
+
+  const prefix = path.join(dependsDir, host);
+
+  return {
+    dependsDir,
+    host,
+    prefix,
+    toolchain: path.join(prefix, 'share', 'toolchain.cmake'),
+    nativeProtoc: path.join(prefix, 'native', 'bin', 'protoc')
+  };
+}
+
+function buildLinuxDepends(target, jobs) {
+  const context = linuxDependsContext(target);
+
+  console.log();
+  console.log('===== BUILDING PINNED LINUX DEPENDS =====');
+  console.log(`Depends host: ${context.host}`);
+  console.log(`Depends prefix: ${context.prefix}`);
+  console.log(`Parallel jobs: ${jobs}`);
+
+  run(
+    'make',
+    [
+      '-C', context.dependsDir,
+      `HOST=${context.host}`,
+      '-j', String(jobs)
+    ]
+  );
+
+  const required = [
+    context.toolchain,
+    context.nativeProtoc,
+    path.join(context.prefix, 'lib', 'libboost_filesystem.a'),
+    path.join(context.prefix, 'lib', 'libcrypto.a'),
+    path.join(context.prefix, 'lib', 'libssl.a'),
+    path.join(context.prefix, 'lib', 'libzmq.a'),
+    path.join(context.prefix, 'lib', 'libiconv.a'),
+    path.join(context.prefix, 'lib', 'libunbound.a'),
+    path.join(context.prefix, 'lib', 'libncurses.a'),
+    path.join(context.prefix, 'lib', 'libtinfo.a'),
+    path.join(context.prefix, 'lib', 'libreadline.a'),
+    path.join(context.prefix, 'lib', 'libsodium.a'),
+    path.join(context.prefix, 'lib', 'libprotobuf.a'),
+    path.join(context.prefix, 'lib', 'libusb-1.0.a'),
+    path.join(context.prefix, 'lib', 'libhidapi-libusb.a'),
+    path.join(context.prefix, 'lib', 'libunwind.a')
+  ];
+
+  for (const file of required) {
+    if (!fs.existsSync(file)) {
+      fail(`Pinned CryLo Linux dependency is missing: ${file}`);
+    }
+  }
+
+  console.log('Pinned Linux depends stack... VERIFIED');
+  return context;
+}
+
+function verifyLinuxDependsConfigure(target, context, configureOutput) {
+  const prefix = context.prefix;
+  const cachePath = path.join(target.buildDir, 'CMakeCache.txt');
+
+  if (!fs.existsSync(cachePath)) {
+    fail(`Linux CMake cache was not produced: ${cachePath}`);
+  }
+
+  const cache = fs.readFileSync(cachePath, 'utf8');
+
+  const requiredOutput = [
+    `Found OpenSSL: ${path.join(prefix, 'lib', 'libcrypto.a')}`,
+    `Found libunbound include (unbound.h) in ${path.join(prefix, 'include')}`,
+    `Found Protobuf: ${context.nativeProtoc}`,
+    `ZMQ_LIB: ${path.join(prefix, 'lib', 'libzmq.a')};${path.join(prefix, 'lib', 'libsodium.a')}`
+  ];
+
+  for (const fragment of requiredOutput) {
+    if (!configureOutput.includes(fragment)) {
+      fail(
+        'Linux CMake configure did not confirm the pinned depends stack: ' +
+        fragment
+      );
+    }
+  }
+
+  const requiredCache = [
+    `CRYLO_NCURSES_LIBRARY:FILEPATH=${path.join(prefix, 'lib', 'libncurses.a')}`,
+    `CRYLO_TINFO_LIBRARY:FILEPATH=${path.join(prefix, 'lib', 'libtinfo.a')}`,
+    `UNBOUND_LIBRARIES:STRING=${path.join(prefix, 'lib', 'libunbound.a')}`
+  ];
+
+  for (const line of requiredCache) {
+    if (!cache.includes(line)) {
+      fail(`Linux CMake cache is not pinned as required: ${line}`);
+    }
+  }
+
+  const forbiddenHostLibrary = new RegExp(
+    '/usr/lib/[^\n; ]*(?:' +
+    'libevent|libhogweed|libnettle|libgmp|libpgm|libnorm|' +
+    'libgssapi|libminiupnpc|libz\\.a|libzstd\\.a|libncurses|libtinfo' +
+    ')'
+  );
+
+  const combined = configureOutput + '\n' + cache;
+
+  if (forbiddenHostLibrary.test(combined)) {
+    fail(
+      'Linux release configure attempted to use a forbidden host library ' +
+      'instead of the pinned CryLo depends stack.'
+    );
+  }
+
+  console.log('Linux pinned dependency configure... VERIFIED');
+}
+
 function verifyPrerequisites(target) {
   let nodeVersion = process.version;
   let npmVersion;
@@ -735,61 +888,23 @@ command -v protoc >/dev/null || {
       fail('python3 was not found. Trezor support requires Python 3.');
     }
 
-    if (!commandAvailable('protoc')) {
-      fail('protoc was not found. Trezor support requires protobuf-compiler.');
-    }
-
     if (!commandAvailable('pkg-config')) {
       fail('pkg-config was not found.');
     }
 
-    const protobufProbe = spawnSync(
-      'pkg-config',
-      ['--exists', 'protobuf'],
-      { shell: false }
-    );
-
-    if (
-      protobufProbe.error ||
-      protobufProbe.status !== 0
-    ) {
-      fail('protobuf development support was not detected.');
+    if (!commandAvailable('gcc') || !commandAvailable('g++')) {
+      fail('GCC/G++ were not found for the native Linux depends build.');
     }
 
-    const usbProbe = spawnSync(
-      'pkg-config',
-      ['--exists', 'libusb-1.0'],
-      { shell: false }
-    );
-
-    if (usbProbe.status !== 0) {
-      fail('LibUSB development support was not detected.');
-    }
-
-    const hidrawProbe = spawnSync(
-      'pkg-config',
-      ['--exists', 'hidapi-hidraw'],
-      { shell: false }
-    );
-
-    const hidusbProbe = spawnSync(
-      'pkg-config',
-      ['--exists', 'hidapi-libusb'],
-      { shell: false }
-    );
-
-    if (
-      hidrawProbe.status !== 0 &&
-      hidusbProbe.status !== 0
-    ) {
-      fail('HIDAPI development support was not detected.');
-    }
+    const depends = linuxDependsContext(target);
 
     console.log('Python: ready');
-    console.log(`protoc: ${capture('protoc', ['--version'])}`);
-    console.log('Protobuf: ready');
-    console.log('LibUSB: ready');
-    console.log('HIDAPI: ready');
+    console.log('pkg-config: ready');
+    console.log('GCC/G++: ready');
+    console.log(`Depends host: ${depends.host}`);
+    console.log(
+      'Protobuf/LibUSB/HIDAPI: pinned by contrib/depends'
+    );
   }
 
   if (target.platform === 'mac') {
@@ -889,6 +1004,17 @@ function buildUnix(target, jobs) {
   const trezorRequired =
     target.platform === 'linux' || target.platform === 'mac';
 
+  let linuxDepends = null;
+
+  if (target.platform === 'linux') {
+    linuxDepends = buildLinuxDepends(target, jobs);
+
+    fs.rmSync(
+      target.buildDir,
+      { recursive: true, force: true }
+    );
+  }
+
   const args = [
     '-S', root,
     '-B', target.buildDir,
@@ -915,6 +1041,13 @@ function buildUnix(target, jobs) {
     args.push('-D', 'ARCH=x86-64');
   }
 
+  if (linuxDepends) {
+    args.push(
+      '-D',
+      `CMAKE_TOOLCHAIN_FILE=${linuxDepends.toolchain}`
+    );
+  }
+
   if (trezorRequired) {
     const configureOutput = runCapture('cmake', args);
 
@@ -926,6 +1059,14 @@ function buildUnix(target, jobs) {
     }
 
     console.log('Trezor support.... ENABLED');
+
+    if (linuxDepends) {
+      verifyLinuxDependsConfigure(
+        target,
+        linuxDepends,
+        configureOutput
+      );
+    }
   } else {
     run('cmake', args);
   }

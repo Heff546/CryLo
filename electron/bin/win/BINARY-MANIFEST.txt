@@ -3,7 +3,6 @@ Generated-UTC: 2026-08-26T02:32:26.760Z
 Platform: win
 Architecture: x64
 Network: testnet
-Source-Directory: C:\Users\matth\CryLo\build\win-x64\bin
 
 File: CryLo-daemon.exe
 Size: 33515807

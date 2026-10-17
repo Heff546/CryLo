@@ -1,8 +1,8 @@
 package=ncurses
-$(package)_version=6.1
-$(package)_download_path=https://ftp.gnu.org/gnu/ncurses
-$(package)_file_name=$(package)-$($(package)_version).tar.gz
-$(package)_sha256_hash=aa057eeeb4a14d470101eff4597d5833dcef5965331be3528c08d99cebaa0d17
+$(package)_version=6.6-20261010
+$(package)_download_path=https://invisible-island.net/archives/ncurses/current
+$(package)_file_name=$(package)-$($(package)_version).tgz
+$(package)_sha256_hash=00a1d10c51c3aa1b4dae9ea4421aec2dd227fa4724e645850ed43fd6fc0a56ec
 $(package)_patches=fallback.c
 
 define $(package)_set_vars
@@ -25,23 +25,10 @@ define $(package)_set_vars
   $(package)_config_opts+=--disable-tic-depends
   $(package)_config_opts+=--disable-big-strings
   $(package)_config_opts+=--disable-ext-colors
+  $(package)_config_opts+=--disable-widec
   $(package)_config_opts+=--enable-pc-files
-  $(package)_config_opts+=--host=$(HOST)
-  $(pacakge)_config_opts+=--without-shared
-  $(pacakge)_config_opts+=--without-pthread
-  $(pacakge)_config_opts+=--disable-rpath
-  $(pacakge)_config_opts+=--disable-colorfgbg
-  $(pacakge)_config_opts+=--disable-ext-mouse
-  $(pacakge)_config_opts+=--disable-symlinks
-  $(pacakge)_config_opts+=--enable-warnings
-  $(pacakge)_config_opts+=--enable-assertions
   $(package)_config_opts+=--with-default-terminfo-dir=/etc/_terminfo_
   $(package)_config_opts+=--with-terminfo-dirs=/etc/_terminfo_
-  $(pacakge)_config_opts+=--enable-database
-  $(pacakge)_config_opts+=--enable-sp-funcs
-  $(pacakge)_config_opts+=--disable-term-driver
-  $(pacakge)_config_opts+=--enable-interop
-  $(pacakge)_config_opts+=--enable-widec
   $(package)_build_opts=CFLAGS="$($(package)_cflags) $($(package)_cppflags) -fPIC"
 endef
 
@@ -60,4 +47,3 @@ endef
 define $(package)_stage_cmds
   $(MAKE) install.libs DESTDIR=$($(package)_staging_dir)
 endef
-

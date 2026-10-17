@@ -27,13 +27,13 @@
     "release-mac-arm64": "node scripts/release-native.js mac arm64"
   },
   "devDependencies": {
-    "electron": "44.5.1",
+    "electron": "44.7.1",
     "electron-builder": "26.17.0"
   },
   "build": {
     "appId": "com.crylo.wallet",
     "productName": "CryLo Wallet",
-    "copyright": "Copyright \u00a9 2025 CryLo",
+    "copyright": "Copyright © 2025 CryLo",
     "directories": {
       "output": "dist"
     },
@@ -167,8 +167,8 @@
     "ethers": "^6.17.0"
   },
   "allowScripts": {
-    "electron@44.5.1": true,
-    "electron-winstaller": false
+    "electron-winstaller": false,
+    "electron@44.7.1": true
   },
   "desktopName": "com.crylo.wallet"
 }

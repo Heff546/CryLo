@@ -1,8 +1,8 @@
 package=abseil
-$(package)_version=20250512.1
+$(package)_version=20260526.0
 $(package)_download_path=https://github.com/abseil/abseil-cpp/releases/download/$($(package)_version)
 $(package)_file_name=abseil-cpp-$($(package)_version).tar.gz
-$(package)_sha256_hash=9b7a064305e9fd94d124ffa6cc358592eb42b5da588fb4e07d09254aa40086db
+$(package)_sha256_hash=6e1aee535473414164bf83e4ebc40240dec71a4701f8a642d906e95bea1aea0c
 $(package)_cxxflags=-std=c++17
 
 define $(package)_set_vars
@@ -15,6 +15,10 @@ define $(package)_set_vars
   $(package)_config_opts+=-DABSL_BUILD_TEST_HELPERS=OFF
   $(package)_config_opts+=-DABSL_ENABLE_INSTALL=ON
   $(package)_config_opts+=-DABSL_PROPAGATE_CXX_STD=ON
+  $(package)_cflags_linux+=-ffile-prefix-map=$($(package)_extract_dir)=. -fdebug-prefix-map=$($(package)_extract_dir)=. -fmacro-prefix-map=$($(package)_extract_dir)=.
+  $(package)_cflags_linux+=-ffile-prefix-map=$(host_prefix)=/usr -fdebug-prefix-map=$(host_prefix)=/usr -fmacro-prefix-map=$(host_prefix)=/usr
+  $(package)_cxxflags_linux+=-ffile-prefix-map=$($(package)_extract_dir)=. -fdebug-prefix-map=$($(package)_extract_dir)=. -fmacro-prefix-map=$($(package)_extract_dir)=.
+  $(package)_cxxflags_linux+=-ffile-prefix-map=$(host_prefix)=/usr -fdebug-prefix-map=$(host_prefix)=/usr -fmacro-prefix-map=$(host_prefix)=/usr
 endef
 
 define $(package)_config_cmds

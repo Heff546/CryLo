@@ -30,6 +30,7 @@ $(package)_config_opts+=no-zlib
 $(package)_config_opts+=no-zlib-dynamic
 $(package)_config_opts+=$($(package)_cflags) $($(package)_cppflags)
 $(package)_config_opts_linux=-fPIC -Wa,--noexecstack
+$(package)_build_opts_linux=OPENSSLDIR=/etc/ssl ENGINESDIR=/usr/lib/engines-3 MODULESDIR=/usr/lib/ossl-modules
 $(package)_config_opts_freebsd=-fPIC -Wa,--noexecstack
 $(package)_config_opts_x86_64_linux=linux-x86_64
 $(package)_config_opts_i686_linux=linux-generic32
@@ -50,7 +51,8 @@ endef
 
 define $(package)_preprocess_cmds
   patch -p1 < $($(package)_patch_dir)/openssl-3.5.9-build-cleanup.patch &&\
-  sed -i.old 's|crypto ssl apps util tools fuzz providers doc|crypto ssl util tools providers|' build.info
+  sed -i.old 's|crypto ssl apps util tools fuzz providers doc|crypto ssl util tools providers|' build.info &&\
+  if test "$(host_os)" = "linux"; then sed -i 's|^GENERATE\[buildinf\.h\]=.*|GENERATE[buildinf.h]=../util/mkbuildinf.pl "$$(CC)" "$$(PLATFORM)"|' crypto/build.info; fi
 endef
 
 define $(package)_config_cmds
@@ -58,7 +60,7 @@ define $(package)_config_cmds
 endef
 
 define $(package)_build_cmds
-  $(MAKE) build_libs
+  $(MAKE) $($(package)_build_opts) build_libs
 endef
 
 define $(package)_stage_cmds

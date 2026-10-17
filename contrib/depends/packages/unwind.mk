@@ -1,8 +1,8 @@
 package=unwind
-$(package)_version=1.5.0
-$(package)_download_path=https://download.savannah.nongnu.org/releases/libunwind
+$(package)_version=1.8.3
+$(package)_download_path=https://github.com/libunwind/libunwind/releases/download/v$($(package)_version)
 $(package)_file_name=lib$(package)-$($(package)_version).tar.gz
-$(package)_sha256_hash=90337653d92d4a13de590781371c604f9031cdb50520366aa1e3a91e1efb1017
+$(package)_sha256_hash=be30d910e67f58d82e753231f1357f326a1a088acf126b21ff77e60aab19b90b
 $(package)_patches=fix_obj_order.patch
 
 define $(package)_preprocess_cmds
