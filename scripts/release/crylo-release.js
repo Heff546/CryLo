@@ -10,6 +10,37 @@ const root = path.resolve(__dirname, '..', '..');
 const electronDir = path.join(root, 'electron');
 const managedNodeVersion = '24.21.0';
 const managedNpmVersion = '12.1.0';
+const windowsOpenSSLVersion = '3.5.9';
+const windowsOpenSSLSha256 =
+  '603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a';
+const windowsOpenSSLPatch = 'openssl-3.5.9-build-cleanup.patch';
+const windowsOpenSSLPatchSha256 =
+  '5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088';
+const windowsOpenSSLBuildStampBase = [
+  `version=${windowsOpenSSLVersion}`,
+  `source_sha256=${windowsOpenSSLSha256}`,
+  `patch_sha256=${windowsOpenSSLPatchSha256}`,
+  'target=mingw64',
+  'cflags=-pipe -O2',
+  'arflags=cr',
+  'tool_policy=target-prefixed-or-mingw64-binutils-v1'
+].join('\n') + '\n';
+
+const windowsSharedDependencyVersions = Object.freeze({
+  'mingw-w64-x86_64-boost': '1.92.0',
+  'mingw-w64-x86_64-protobuf': '36.2',
+  'mingw-w64-x86_64-abseil-cpp': '20260526.0',
+  'mingw-w64-x86_64-hidapi': '0.15.0',
+  'mingw-w64-x86_64-libusb': '1.0.30',
+  'mingw-w64-x86_64-zeromq': '4.3.5',
+  'mingw-w64-x86_64-libsodium': '1.0.22',
+  'mingw-w64-x86_64-unbound': '1.26.1',
+  'mingw-w64-x86_64-libiconv': '1.19'
+});
+
+const windowsPlatformDependencyVersions = Object.freeze({
+  'mingw-w64-x86_64-icu': '78.3'
+});
 
 const packageJson = JSON.parse(
   fs.readFileSync(
@@ -770,6 +801,516 @@ function verifyLinuxDependsConfigure(target, context, configureOutput) {
   console.log('Linux pinned dependency configure... VERIFIED');
 }
 
+function windowsOpenSSLContext() {
+  const prefix = path.join(
+    root,
+    'build',
+    'windows-deps',
+    `openssl-${windowsOpenSSLVersion}`
+  );
+
+  return {
+    prefix,
+    include: path.join(prefix, 'include'),
+    crypto: path.join(prefix, 'lib', 'libcrypto.a'),
+    ssl: path.join(prefix, 'lib', 'libssl.a'),
+    header: path.join(prefix, 'include', 'openssl', 'opensslv.h'),
+    stamp: path.join(prefix, '.crylo-openssl-build.txt'),
+    source: path.join(
+      root,
+      'build',
+      'windows-deps',
+      'sources',
+      `openssl-${windowsOpenSSLVersion}.tar.gz`
+    ),
+    work: path.join(
+      root,
+      'build',
+      'windows-deps',
+      'work',
+      `openssl-${windowsOpenSSLVersion}`
+    ),
+    patch: path.join(
+      root,
+      'contrib',
+      'depends',
+      'patches',
+      'openssl',
+      windowsOpenSSLPatch
+    ),
+    recipe: path.join(
+      root,
+      'contrib',
+      'depends',
+      'packages',
+      'openssl.mk'
+    )
+  };
+}
+
+function verifyWindowsDependencyVersions(bash) {
+  const expected = {
+    ...windowsSharedDependencyVersions,
+    ...windowsPlatformDependencyVersions
+  };
+
+  const checks = Object.entries(expected)
+    .map(([packageName, version]) => `${packageName}|${version}`)
+    .join('\n');
+
+  const script = `
+set -e
+export MSYSTEM=MINGW64
+export PATH="/mingw64/bin:/usr/bin:$PATH"
+
+normalize_pkg_version() {
+  printf '%s' "$1" | sed -E 's/-[0-9]+$//'
+}
+
+while IFS='|' read -r package expected; do
+  test -n "$package" || continue
+
+  installed="$(pacman -Q "$package" 2>/dev/null | awk '{print $2}')" || {
+    echo "ERROR: required Windows dependency is missing: $package"
+    exit 1
+  }
+
+  upstream="$(normalize_pkg_version "$installed")"
+
+  if test "$upstream" != "$expected"; then
+    echo "ERROR: Windows dependency version mismatch: $package expected $expected found $installed"
+    exit 1
+  fi
+
+  echo "VERIFIED: $package $installed"
+done <<'CRYLO_DEPENDENCIES'
+${checks}
+CRYLO_DEPENDENCIES
+
+verify_pc() {
+  module="$1"
+  expected="$2"
+  actual="$(pkg-config --modversion "$module" 2>/dev/null)" || {
+    echo "ERROR: required pkg-config module missing: $module"
+    exit 1
+  }
+
+  case "$actual" in
+    "$expected"|"$expected".0)
+      ;;
+    *)
+      echo "ERROR: pkg-config version mismatch: $module expected $expected found $actual"
+      exit 1
+      ;;
+  esac
+
+  echo "VERIFIED: pkg-config $module $actual"
+}
+
+verify_pc protobuf 36.2
+verify_pc hidapi 0.15.0
+verify_pc libusb-1.0 1.0.30
+verify_pc libzmq 4.3.5
+verify_pc libsodium 1.0.22
+verify_pc libunbound 1.26.1
+verify_pc icu-i18n 78.3
+`;
+
+  runCapture(bash, ['-lc', script]);
+}
+
+function verifyWindowsOpenSSLRecipe(context) {
+  if (!fs.existsSync(context.recipe)) {
+    fail(`CryLo OpenSSL recipe is missing: ${context.recipe}`);
+  }
+
+  if (!fs.existsSync(context.patch)) {
+    fail(`CryLo OpenSSL patch is missing: ${context.patch}`);
+  }
+
+  const recipe = fs.readFileSync(context.recipe, 'utf8');
+  const requiredRecipeLines = [
+    `$(package)_version=${windowsOpenSSLVersion}`,
+    `$(package)_sha256_hash=${windowsOpenSSLSha256}`,
+    `$(package)_patches=${windowsOpenSSLPatch}`,
+    '$(package)_config_env=AR="$($(package)_ar)" ARFLAGS=$($(package)_arflags) RANLIB="$($(package)_ranlib)" CC="$($(package)_cc)"',
+    '$(package)_config_opts=--prefix=$(host_prefix) --openssldir=$(host_prefix)/etc/openssl --libdir=lib',
+    '$(package)_config_opts+=no-capieng',
+    '$(package)_config_opts+=no-dso',
+    '$(package)_config_opts+=no-dtls1',
+    '$(package)_config_opts+=no-ec_nistp_64_gcc_128',
+    '$(package)_config_opts+=no-gost',
+    '$(package)_config_opts+=no-md2',
+    '$(package)_config_opts+=no-rc5',
+    '$(package)_config_opts+=no-rdrand',
+    '$(package)_config_opts+=no-rfc3779',
+    '$(package)_config_opts+=no-sctp',
+    '$(package)_config_opts+=no-shared',
+    '$(package)_config_opts+=no-ssl-trace',
+    '$(package)_config_opts+=no-ssl3',
+    '$(package)_config_opts+=no-tests',
+    '$(package)_config_opts+=no-unit-test',
+    '$(package)_config_opts+=no-weak-ssl-ciphers',
+    '$(package)_config_opts+=no-zlib',
+    '$(package)_config_opts+=no-zlib-dynamic',
+    '$(package)_config_opts+=$($(package)_cflags) $($(package)_cppflags)',
+    '$(package)_config_opts_x86_64_mingw32=mingw64',
+    '$(MAKE) $($(package)_build_opts) build_libs',
+    '$(MAKE) DESTDIR=$($(package)_staging_dir) install_sw',
+    'rm -rf share bin etc'
+  ];
+
+  for (const line of requiredRecipeLines) {
+    if (!recipe.includes(line)) {
+      fail(`CryLo OpenSSL recipe mismatch: ${line}`);
+    }
+  }
+
+  const patchHash = sha256File(context.patch);
+
+  if (patchHash !== windowsOpenSSLPatchSha256) {
+    fail(
+      'CryLo OpenSSL patch SHA256 mismatch.\n' +
+      `Expected: ${windowsOpenSSLPatchSha256}\n` +
+      `Actual:   ${patchHash}`
+    );
+  }
+}
+
+function windowsOpenSSLToolchainStamp(bash) {
+  const script = `
+set -e
+export MSYSTEM=MINGW64
+export PATH="/mingw64/bin:/usr/bin:$PATH"
+
+resolve_mingw_binutil() {
+  preferred="$1"
+  fallback="$2"
+
+  if command -v "$preferred" >/dev/null 2>&1; then
+    command -v "$preferred"
+    return 0
+  fi
+
+  resolved="$(command -v "$fallback" 2>/dev/null || true)"
+
+  case "$resolved" in
+    /mingw64/bin/$fallback|/mingw64/bin/$fallback.exe)
+      printf '%s\\n' "$resolved"
+      return 0
+      ;;
+  esac
+
+  echo "ERROR: $preferred is unavailable and $fallback is not the MSYS2 MinGW64 binutil" >&2
+  return 1
+}
+
+CC_TOOL="$(command -v x86_64-w64-mingw32-gcc)"
+AR_TOOL="$(resolve_mingw_binutil x86_64-w64-mingw32-ar ar)"
+RANLIB_TOOL="$(resolve_mingw_binutil x86_64-w64-mingw32-ranlib ranlib)"
+
+CC_VERSION="$(x86_64-w64-mingw32-gcc --version | sed -n '1p')"
+AR_VERSION="$("$AR_TOOL" --version | sed -n '1p')"
+RANLIB_VERSION="$("$RANLIB_TOOL" --version | sed -n '1p')"
+
+printf 'cc_path=%s\\n' "$CC_TOOL"
+printf 'cc_version=%s\\n' "$CC_VERSION"
+printf 'ar_path=%s\\n' "$AR_TOOL"
+printf 'ar_version=%s\\n' "$AR_VERSION"
+printf 'ranlib_path=%s\\n' "$RANLIB_TOOL"
+printf 'ranlib_version=%s\\n' "$RANLIB_VERSION"
+`;
+
+  const stamp = runCapture(bash, ['-lc', script]).trim();
+
+  if (!stamp) {
+    fail('Could not determine Windows OpenSSL toolchain identity.');
+  }
+
+  return stamp + '\n';
+}
+
+function windowsOpenSSLBuildStamp(toolchainStamp) {
+  return windowsOpenSSLBuildStampBase + toolchainStamp;
+}
+
+function verifyInstalledWindowsOpenSSL(context, expectedStamp) {
+  const required = [
+    context.header,
+    context.crypto,
+    context.ssl,
+    context.stamp
+  ];
+
+  if (required.some((file) => !fs.existsSync(file))) {
+    return false;
+  }
+
+  const header = fs.readFileSync(context.header, 'utf8');
+
+  if (
+    !header.includes('# define OPENSSL_VERSION_MAJOR  3') ||
+    !header.includes('# define OPENSSL_VERSION_MINOR  5') ||
+    !header.includes('# define OPENSSL_VERSION_PATCH  9') ||
+    !header.includes(`OPENSSL_VERSION_TEXT "OpenSSL ${windowsOpenSSLVersion} `)
+  ) {
+    return false;
+  }
+
+  if (fs.readFileSync(context.stamp, 'utf8') !== expectedStamp) {
+    return false;
+  }
+
+  const stack = [context.prefix];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const entryPath = path.join(current, entry.name);
+
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+
+      if (/icu/i.test(entry.name)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function buildWindowsPinnedOpenSSL(jobs) {
+  const bash = findWindowsBash();
+  const context = windowsOpenSSLContext();
+
+  verifyWindowsOpenSSLRecipe(context);
+
+  const toolchainStamp = windowsOpenSSLToolchainStamp(bash);
+  const expectedStamp = windowsOpenSSLBuildStamp(toolchainStamp);
+
+  if (verifyInstalledWindowsOpenSSL(context, expectedStamp)) {
+    console.log(
+      `Pinned Windows OpenSSL ${windowsOpenSSLVersion}... VERIFIED`
+    );
+    return context;
+  }
+
+  console.log();
+  console.log('===== BUILDING PINNED WINDOWS OPENSSL =====');
+  console.log(`Version: ${windowsOpenSSLVersion}`);
+  console.log(`Prefix: ${context.prefix}`);
+  console.log(`Parallel jobs: ${jobs}`);
+
+  const rootMsys = toMsysPath(root);
+  const prefixMsys = toMsysPath(context.prefix);
+  const sourceMsys = toMsysPath(context.source);
+  const workMsys = toMsysPath(context.work);
+  const patchMsys = toMsysPath(context.patch);
+  const sourceDirMsys = toMsysPath(path.dirname(context.source));
+  const partMsys = `${sourceMsys}.part`;
+
+  const script = `
+set -e
+export MSYSTEM=MINGW64
+export PATH="/mingw64/bin:/usr/bin:$PATH"
+
+for tool in curl perl tar patch sed awk sha256sum make x86_64-w64-mingw32-gcc ar ranlib; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "ERROR: required pinned OpenSSL build tool missing: $tool"
+    exit 1
+  }
+done
+
+resolve_mingw_binutil() {
+  preferred="$1"
+  fallback="$2"
+
+  if command -v "$preferred" >/dev/null 2>&1; then
+    command -v "$preferred"
+    return 0
+  fi
+
+  resolved="$(command -v "$fallback" 2>/dev/null || true)"
+
+  case "$resolved" in
+    /mingw64/bin/$fallback|/mingw64/bin/$fallback.exe)
+      printf '%s\n' "$resolved"
+      return 0
+      ;;
+  esac
+
+  echo "ERROR: $preferred is unavailable and $fallback is not the MSYS2 MinGW64 binutil" >&2
+  return 1
+}
+
+AR_TOOL="$(resolve_mingw_binutil x86_64-w64-mingw32-ar ar)" || exit 1
+RANLIB_TOOL="$(resolve_mingw_binutil x86_64-w64-mingw32-ranlib ranlib)" || exit 1
+
+echo "OpenSSL AR: $AR_TOOL"
+echo "OpenSSL RANLIB: $RANLIB_TOOL"
+
+mkdir -p "${sourceDirMsys}"
+rm -rf "${workMsys}"
+rm -rf "${prefixMsys}"
+
+if test -f "${sourceMsys}"; then
+  current_sha="$(sha256sum "${sourceMsys}" | awk '{print $1}')"
+  if test "$current_sha" != "${windowsOpenSSLSha256}"; then
+    rm -f "${sourceMsys}"
+  fi
+fi
+
+if test ! -f "${sourceMsys}"; then
+  rm -f "${partMsys}"
+  curl \\
+    --silent \\
+    --show-error \\
+    --fail \\
+    --location \\
+    --proto '=https' \\
+    --tlsv1.2 \\
+    --retry 3 \\
+    --retry-delay 2 \\
+    --output "${partMsys}" \\
+    "https://www.openssl.org/source/openssl-${windowsOpenSSLVersion}.tar.gz"
+
+  downloaded_sha="$(sha256sum "${partMsys}" | awk '{print $1}')"
+  if test "$downloaded_sha" != "${windowsOpenSSLSha256}"; then
+    echo "ERROR: downloaded OpenSSL source SHA256 mismatch"
+    rm -f "${partMsys}"
+    exit 1
+  fi
+
+  mv "${partMsys}" "${sourceMsys}"
+fi
+
+final_sha="$(sha256sum "${sourceMsys}" | awk '{print $1}')"
+if test "$final_sha" != "${windowsOpenSSLSha256}"; then
+  echo "ERROR: pinned OpenSSL source SHA256 mismatch"
+  exit 1
+fi
+
+mkdir -p "${workMsys}"
+tar -xzf "${sourceMsys}" -C "${workMsys}" --strip-components=1
+cd "${workMsys}"
+
+patch -p1 < "${patchMsys}"
+
+sed -i.old \\
+  's|crypto ssl apps util tools fuzz providers doc|crypto ssl util tools providers|' \\
+  build.info
+
+export CC="x86_64-w64-mingw32-gcc"
+export AR="$AR_TOOL"
+export ARFLAGS="cr"
+export RANLIB="$RANLIB_TOOL"
+
+./Configure \\
+  mingw64 \\
+  --prefix="${prefixMsys}" \\
+  --openssldir="${prefixMsys}/etc/openssl" \\
+  --libdir=lib \\
+  no-capieng \\
+  no-dso \\
+  no-dtls1 \\
+  no-ec_nistp_64_gcc_128 \\
+  no-gost \\
+  no-md2 \\
+  no-rc5 \\
+  no-rdrand \\
+  no-rfc3779 \\
+  no-sctp \\
+  no-shared \\
+  no-ssl-trace \\
+  no-ssl3 \\
+  no-tests \\
+  no-unit-test \\
+  no-weak-ssl-ciphers \\
+  no-zlib \\
+  no-zlib-dynamic \\
+  -pipe \\
+  -O2
+
+make -j${jobs} build_libs
+make install_sw
+
+rm -rf \\
+  "${prefixMsys}/share" \\
+  "${prefixMsys}/bin" \\
+  "${prefixMsys}/etc"
+`;
+
+  run(bash, ['-lc', script]);
+
+  fs.writeFileSync(context.stamp, expectedStamp, 'utf8');
+
+  if (!verifyInstalledWindowsOpenSSL(context, expectedStamp)) {
+    fail(
+      `Pinned Windows OpenSSL ${windowsOpenSSLVersion} did not install correctly.`
+    );
+  }
+
+  console.log(
+    `Pinned Windows OpenSSL ${windowsOpenSSLVersion}... BUILT AND VERIFIED`
+  );
+
+  return context;
+}
+
+function verifyWindowsOpenSSLConfigure(target, context, configureOutput) {
+  const cachePath = path.join(target.buildDir, 'CMakeCache.txt');
+
+  if (!fs.existsSync(cachePath)) {
+    fail(`Windows CMake cache was not produced: ${cachePath}`);
+  }
+
+  const cache = fs.readFileSync(cachePath, 'utf8');
+  const normalize = (value) => path.resolve(value).replace(/\\/g, '/');
+  const prefix = normalize(context.prefix);
+  const cryptoLibrary = normalize(context.crypto);
+  const sslLibrary = normalize(context.ssl);
+  const includeDirectory = normalize(context.include);
+
+  if (
+    !configureOutput.includes('Found OpenSSL:') ||
+    !configureOutput.includes(`(found version "${windowsOpenSSLVersion}")`)
+  ) {
+    fail(
+      `Windows CMake did not confirm OpenSSL ${windowsOpenSSLVersion}.`
+    );
+  }
+
+  const combined = (configureOutput + '\n' + cache).replace(/\\/g, '/');
+
+  for (const required of [
+    cryptoLibrary,
+    sslLibrary,
+    includeDirectory
+  ]) {
+    if (!combined.includes(required)) {
+      fail(`Windows CMake did not bind to pinned OpenSSL path: ${required}`);
+    }
+  }
+
+  const msysOpenSSL = /OPENSSL_(?:CRYPTO_LIBRARY|SSL_LIBRARY|INCLUDE_DIR)[^\n]*C:\/msys64\/mingw64/i;
+
+  if (msysOpenSSL.test(combined)) {
+    fail('Windows CMake selected MSYS2 OpenSSL instead of CryLo OpenSSL.');
+  }
+
+  if (!combined.includes(prefix)) {
+    fail('Windows CMake cache does not contain the CryLo OpenSSL root.');
+  }
+
+  console.log(
+    `Windows pinned OpenSSL ${windowsOpenSSLVersion} configure... VERIFIED`
+  );
+}
+
 function verifyPrerequisites(target) {
   let nodeVersion = process.version;
   let npmVersion;
@@ -830,20 +1371,6 @@ command -v pkg-config >/dev/null || {
   exit 1
 }
 
-pacman -Q   mingw-w64-x86_64-protobuf   mingw-w64-x86_64-hidapi   mingw-w64-x86_64-libusb   mingw-w64-x86_64-pkgconf >/dev/null || {
-  echo "ERROR: required Windows Trezor/runtime packages are missing"
-  exit 1
-}
-
-for pc in protobuf hidapi libusb-1.0; do
-  pkg-config --exists "$pc" || {
-    echo "ERROR: required pkg-config module missing: $pc"
-    exit 1
-  }
-done
-
-pacman -Q   mingw-w64-x86_64-protobuf   mingw-w64-x86_64-hidapi   mingw-w64-x86_64-libusb   mingw-w64-x86_64-pkgconf
-
 command -v cmake >/dev/null || { echo "ERROR: cmake missing"; exit 1; }
 command -v make >/dev/null || { echo "ERROR: make missing"; exit 1; }
 command -v x86_64-w64-mingw32-gcc >/dev/null || {
@@ -858,12 +1385,22 @@ command -v protoc >/dev/null || {
   echo "ERROR: protoc missing; Trezor support requires protobuf-compiler"
   exit 1
 }
+command -v curl >/dev/null || { echo "ERROR: curl missing"; exit 1; }
+command -v perl >/dev/null || { echo "ERROR: perl missing"; exit 1; }
+command -v tar >/dev/null || { echo "ERROR: tar missing"; exit 1; }
+command -v patch >/dev/null || { echo "ERROR: patch missing"; exit 1; }
+command -v sha256sum >/dev/null || { echo "ERROR: sha256sum missing"; exit 1; }
+command -v ar >/dev/null || { echo "ERROR: ar missing"; exit 1; }
+command -v ranlib >/dev/null || { echo "ERROR: ranlib missing"; exit 1; }
 `;
 
     runCapture(
       bash,
       ['-lc', windowsPrereqScript]
     );
+
+    verifyWindowsDependencyVersions(bash);
+    verifyWindowsOpenSSLRecipe(windowsOpenSSLContext());
 
     console.log(`MSYS2: ${bash}`);
     console.log('CMake: ready');
@@ -926,9 +1463,16 @@ command -v protoc >/dev/null || {
 
 function buildWindows(target, jobs) {
   const bash = findWindowsBash();
+  const openSSL = buildWindowsPinnedOpenSSL(jobs);
+
+  fs.rmSync(
+    target.buildDir,
+    { recursive: true, force: true }
+  );
 
   const rootMsys = toMsysPath(root);
   const buildMsys = toMsysPath(target.buildDir);
+  const openSSLMsys = toMsysPath(openSSL.prefix);
 
   const configureScript = `
 set -e
@@ -953,22 +1497,28 @@ command -v protoc >/dev/null || {
 mkdir -p "${buildMsys}"
 cd "${buildMsys}"
 
-cmake \
-  -G "MSYS Makefiles" \
-  -D STATIC=ON \
-  -D ARCH="x86-64" \
-  -D BUILD_64=ON \
-  -D CMAKE_BUILD_TYPE=Release \
-  -D BUILD_TAG="${target.buildTag}" \
-  -D BUILD_TESTS=OFF \
-  -D BUILD_DOCUMENTATION=OFF \
-  -D BUILD_DEBUG_UTILITIES=OFF \
-  -D USE_DEVICE_TREZOR=ON \
-  -D USE_DEVICE_TREZOR_LIBUSB=ON \
-  -D TREZOR_DEBUG=OFF \
-  -D BUILD_GUI_DEPS=OFF \
-  -D CMAKE_TOOLCHAIN_FILE="${rootMsys}/cmake/64-bit-toolchain.cmake" \
-  -D MSYS2_FOLDER="$(cd / && pwd -W)" \
+OPENSSL_ROOT_WIN="$(cygpath -m "${openSSLMsys}")"
+MSYS2_ROOT_WIN="$(cd / && pwd -W)"
+
+cmake \\
+  -G "MSYS Makefiles" \\
+  -D STATIC=ON \\
+  -D ARCH="x86-64" \\
+  -D BUILD_64=ON \\
+  -D CMAKE_BUILD_TYPE=Release \\
+  -D BUILD_TAG="${target.buildTag}" \\
+  -D BUILD_TESTS=OFF \\
+  -D BUILD_DOCUMENTATION=OFF \\
+  -D BUILD_DEBUG_UTILITIES=OFF \\
+  -D USE_DEVICE_TREZOR=ON \\
+  -D USE_DEVICE_TREZOR_LIBUSB=ON \\
+  -D TREZOR_DEBUG=OFF \\
+  -D BUILD_GUI_DEPS=OFF \\
+  -D CRYLO_WINDOWS_OPENSSL_ROOT="$OPENSSL_ROOT_WIN" \\
+  -D OPENSSL_ROOT_DIR="$OPENSSL_ROOT_WIN" \\
+  -D OPENSSL_USE_STATIC_LIBS=TRUE \\
+  -D CMAKE_TOOLCHAIN_FILE="${rootMsys}/cmake/64-bit-toolchain.cmake" \\
+  -D MSYS2_FOLDER="$MSYS2_ROOT_WIN" \\
   "${rootMsys}"
 `;
 
@@ -986,14 +1536,20 @@ cmake \
 
   console.log('Trezor support.... ENABLED');
 
+  verifyWindowsOpenSSLConfigure(
+    target,
+    openSSL,
+    configureOutput
+  );
+
   const buildScript = `
 set -e
 export MSYSTEM=MINGW64
 export PATH="/mingw64/bin:/usr/bin:$PATH"
 cd "${buildMsys}"
 
-cmake --build . \
-  --parallel ${jobs} \
+cmake --build . \\
+  --parallel ${jobs} \\
   --target daemon simplewallet wallet_rpc_server
 `;
 

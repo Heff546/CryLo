@@ -39,7 +39,25 @@ set (CMAKE_LINKER ld CACHE FILEPATH "" FORCE)
 #set (CMAKE_RANLIB ${GCC_PREFIX}-gcc-ranlib CACHE FILEPATH "" FORCE)
 set (CMAKE_RC_COMPILER windres)
 
-set (CMAKE_FIND_ROOT_PATH "${MSYS2_FOLDER}/mingw64")
+set (CMAKE_FIND_ROOT_PATH)
+
+if (
+  DEFINED CRYLO_WINDOWS_OPENSSL_ROOT
+  AND
+  NOT "${CRYLO_WINDOWS_OPENSSL_ROOT}" STREQUAL ""
+)
+  list(
+    APPEND
+    CMAKE_FIND_ROOT_PATH
+    "${CRYLO_WINDOWS_OPENSSL_ROOT}"
+  )
+endif()
+
+list(
+  APPEND
+  CMAKE_FIND_ROOT_PATH
+  "${MSYS2_FOLDER}/mingw64"
+)
 
 # Ensure cmake doesn't find things in the wrong places
 set (CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER) # Find programs on host
