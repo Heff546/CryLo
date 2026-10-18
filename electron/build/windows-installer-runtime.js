@@ -40,14 +40,53 @@ function assertExistingPathIsNotReparse(target, label) {
     return;
   }
 
-  const stat = fs.lstatSync(target);
-  if (stat.isSymbolicLink()) {
-    fail(`${label} is a symbolic-link/reparse path: ${target}`);
+  /*
+   * Do not compare the textual spelling of target with realpath().
+   *
+   * On Windows, an ordinary DOS 8.3 alias such as:
+   *
+   *   C:\Users\CRYLOI~1
+   *
+   * can canonicalize to:
+   *
+   *   C:\Users\CryLoInstallTest
+   *
+   * even when no symbolic link, junction, or other traversed link exists.
+   * Treating that textual difference as proof of reparse traversal causes
+   * legitimate NSIS %TEMP% paths to be rejected.
+   *
+   * Instead, inspect every existing path component with lstatSync(). A
+   * Windows junction/symbolic link encountered in the path is reported by
+   * Node as a symbolic-link entry and is rejected before the target is used.
+   */
+  const resolved = path.resolve(target);
+  const parsed = path.parse(resolved);
+
+  let current = parsed.root;
+
+  if (current && fs.existsSync(current)) {
+    const rootStat = fs.lstatSync(current);
+    if (rootStat.isSymbolicLink()) {
+      fail(`${label} traverses a symbolic-link/reparse path: ${current}`);
+    }
   }
 
-  const real = fs.realpathSync.native(target);
-  if (normalizeForCompare(real) !== normalizeForCompare(target)) {
-    fail(`${label} resolves through a reparse path: ${target} -> ${real}`);
+  const remainder = resolved.slice(parsed.root.length);
+  const components = remainder
+    .split(/[\\/]+/)
+    .filter(Boolean);
+
+  for (const component of components) {
+    current = path.join(current, component);
+
+    if (!fs.existsSync(current)) {
+      fail(`${label} path component unexpectedly does not exist: ${current}`);
+    }
+
+    const stat = fs.lstatSync(current);
+    if (stat.isSymbolicLink()) {
+      fail(`${label} traverses a symbolic-link/reparse path: ${current}`);
+    }
   }
 }
 
@@ -70,10 +109,11 @@ function assertTreeHasNoReparse(root, label) {
       }
 
       if (entry.isDirectory()) {
-        const real = fs.realpathSync.native(full);
-        if (normalizeForCompare(real) !== normalizeForCompare(full)) {
-          fail(`${label} contains a reparse directory: ${full} -> ${real}`);
-        }
+        /*
+         * stat.isSymbolicLink() above rejects junction/symlink entries.
+         * Do not reject a directory merely because realpath() expands an
+         * ordinary Windows 8.3 short-name alias.
+         */
         stack.push(full);
       }
     }
@@ -341,6 +381,205 @@ function git(gitExe, cwd, args, options = {}) {
   });
 }
 
+function gitRaw(gitExe, cwd, args, options = {}) {
+  const result = spawnSync(gitExe, ['-C', cwd, ...args], {
+    env: options.env || process.env,
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024
+  });
+
+  if (result.error || result.status !== 0) {
+    const detail = `${result.stdout || ''}${result.stderr || ''}`.trim();
+    fail(
+      `${options.label || `git ${args.join(' ')}`} failed` +
+      (detail ? `:\n${detail}` : '.')
+    );
+  }
+
+  return String(result.stdout || '');
+}
+
+function normalizeGitPath(value) {
+  return String(value).replace(/\\/g, '/');
+}
+
+function pathIsInsideRoot(root, target) {
+  const relative = path.relative(
+    path.resolve(root),
+    path.resolve(target)
+  );
+
+  return (
+    relative === '' ||
+    (
+      relative !== '..' &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative)
+    )
+  );
+}
+
+function trackedGitSymlinks(gitExe, checkout, options = {}) {
+  const tree = gitRaw(
+    gitExe,
+    checkout,
+    ['ls-tree', '-r', '-z', '--full-tree', 'HEAD'],
+    {
+      env: options.env,
+      label: 'CryLo Git symlink tree verification'
+    }
+  );
+
+  const tracked = new Map();
+
+  for (const record of tree.split('\0')) {
+    if (!record) {
+      continue;
+    }
+
+    const tab = record.indexOf('\t');
+    if (tab <= 0) {
+      fail('Unable to parse CryLo Git tree while validating symbolic links.');
+    }
+
+    const metadata = record.slice(0, tab).split(' ');
+    if (metadata.length !== 3) {
+      fail('Unable to parse CryLo Git tree metadata while validating symbolic links.');
+    }
+
+    const [mode, type, object] = metadata;
+
+    if (mode !== '120000') {
+      continue;
+    }
+
+    if (
+      type !== 'blob' ||
+      !/^[a-f0-9]{40,64}$/i.test(object)
+    ) {
+      fail('CryLo Git tree contains an invalid symbolic-link object.');
+    }
+
+    const relative = normalizeGitPath(
+      record.slice(tab + 1)
+    );
+
+    if (
+      !relative ||
+      relative.startsWith('/') ||
+      relative === '..' ||
+      relative.startsWith('../') ||
+      relative.includes('/../')
+    ) {
+      fail(`CryLo Git tree contains an unsafe symbolic-link path: ${relative}`);
+    }
+
+    const target = gitRaw(
+      gitExe,
+      checkout,
+      ['cat-file', 'blob', object],
+      {
+        env: options.env,
+        label: `CryLo Git symbolic-link target verification: ${relative}`
+      }
+    );
+
+    if (
+      target.includes('\0') ||
+      target.includes('\r') ||
+      target.includes('\n')
+    ) {
+      fail(`CryLo Git symbolic-link target is invalid: ${relative}`);
+    }
+
+    tracked.set(
+      relative,
+      normalizeGitPath(target)
+    );
+  }
+
+  return tracked;
+}
+
+function assertGitCheckoutTreeSafe(gitExe, checkout, label, options = {}) {
+  if (!fs.existsSync(checkout)) {
+    return;
+  }
+
+  assertExistingPathIsNotReparse(checkout, label);
+
+  const trackedSymlinks = trackedGitSymlinks(
+    gitExe,
+    checkout,
+    options
+  );
+
+  const stack = [checkout];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      const stat = fs.lstatSync(full);
+
+      if (stat.isSymbolicLink()) {
+        const relative = normalizeGitPath(
+          path.relative(checkout, full)
+        );
+
+        if (!trackedSymlinks.has(relative)) {
+          fail(
+            `${label} contains an untracked symbolic-link/reparse entry: ${full}`
+          );
+        }
+
+        const actualTarget = normalizeGitPath(
+          fs.readlinkSync(full)
+        );
+
+        const expectedTarget = trackedSymlinks.get(relative);
+
+        if (actualTarget !== expectedTarget) {
+          fail(
+            `${label} contains a tracked symbolic link whose target differs from Git HEAD: ` +
+            `${full}`
+          );
+        }
+
+        let real;
+        try {
+          real = fs.realpathSync.native(full);
+        } catch (_) {
+          fail(
+            `${label} contains an unresolved tracked symbolic link: ${full}`
+          );
+        }
+
+        if (!pathIsInsideRoot(checkout, real)) {
+          fail(
+            `${label} contains a tracked symbolic link that escapes the checkout: ` +
+            `${full} -> ${real}`
+          );
+        }
+
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        /*
+         * Untracked junction/symlink entries were already rejected by the
+         * lstatSync().isSymbolicLink() branch above. Keep ordinary directories
+         * traversable even when Windows expands an 8.3 alias in realpath().
+         */
+        stack.push(full);
+      }
+    }
+  }
+}
+
 function validateExistingCryLoCheckout(gitExe, checkout) {
   assertExistingPathIsNotReparse(checkout, 'Existing CryLo checkout');
 
@@ -357,6 +596,12 @@ function validateExistingCryLoCheckout(gitExe, checkout) {
   if (origin !== CRYLO_REPOSITORY) {
     fail(`Existing CryLo checkout origin mismatch: ${origin}`);
   }
+
+  assertGitCheckoutTreeSafe(
+    gitExe,
+    checkout,
+    'Existing CryLo checkout'
+  );
 
   for (const required of ['crylo.cmd', path.join('scripts', 'crylo.js')]) {
     const requiredPath = path.join(checkout, required);
@@ -423,7 +668,12 @@ function prepareCryLoCheckout(gitExe, manifestPath, userProfile) {
       fail('CryLo source checkout is not clean.');
     }
 
-    assertTreeHasNoReparse(stage, 'Staged CryLo source checkout');
+    assertGitCheckoutTreeSafe(
+      gitExe,
+      stage,
+      'Staged CryLo source checkout',
+      { env }
+    );
 
     for (const required of ['crylo.cmd', path.join('scripts', 'crylo.js')]) {
       const requiredPath = path.join(stage, required);
@@ -441,6 +691,13 @@ function prepareCryLoCheckout(gitExe, manifestPath, userProfile) {
     if (installedHead !== commit || installedOrigin !== CRYLO_REPOSITORY) {
       fail('Installed CryLo source checkout verification failed.');
     }
+
+    assertGitCheckoutTreeSafe(
+      gitExe,
+      final,
+      'Installed CryLo source checkout',
+      { env }
+    );
 
     return final;
   } catch (error) {
@@ -650,7 +907,9 @@ module.exports = Object.freeze({
   validateExistingCryLoCheckout,
   prepareCryLoCheckout,
   queryUserPath,
-  registerCryLoCommand
+  registerCryLoCommand,
+  trackedGitSymlinks,
+  assertGitCheckoutTreeSafe
 });
 
 if (require.main === module) {
