@@ -170,5 +170,9 @@
     "electron-winstaller": false,
     "electron@44.7.1": true
   },
-  "desktopName": "com.crylo.wallet"
+  "desktopName": "com.crylo.wallet",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Heff546/CryLo.git"
+  }
 }
