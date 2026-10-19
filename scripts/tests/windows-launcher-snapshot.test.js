@@ -84,7 +84,7 @@ try {
 
   fs.writeFileSync(registeredLauncher, wrapper, 'utf8');
   const result = spawnSync('cmd.exe', [
-    '/D', '/C', '"' + registeredLauncher + '"'
+    '/D', '/C', registeredLauncher
   ], {
     env: { ...process.env, USERPROFILE: fakeUser },
     encoding: 'utf8',
