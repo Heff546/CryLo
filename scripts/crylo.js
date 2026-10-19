@@ -3624,6 +3624,37 @@ function update() {
       'Signed release authorized. Updating CryLo source...'
     );
 
+    if (process.platform === 'win32' && signedTarget) {
+      /*
+       * A legacy command may still invoke the source batch directly.
+       * Refuse to replace that running batch; the managed v2 command
+       * launches from an ignored snapshot and explicitly marks that
+       * context. The initial v2 migration does not change crylo.cmd.
+       */
+      const launcherDiff = spawnSync(
+        gitExecutable(),
+        ['diff', '--quiet', before, remote, '--', 'crylo.cmd'],
+        { cwd: root, env: process.env, shell: false }
+      );
+
+      if (launcherDiff.error ||
+          ![0, 1].includes(launcherDiff.status)) {
+        fail('Unable to inspect CryLo Windows launcher changes safely.');
+      }
+
+      if (
+        launcherDiff.status === 1 &&
+        process.env.CRYLO_WINDOWS_SNAPSHOT_ACTIVE !== '1'
+      ) {
+        fail(
+          'This signed update changes crylo.cmd. To avoid replacing ' +
+          'an executing batch, open a NEW Command Prompt and run ' +
+          'crylo update using the registered update-safe CryLo launcher. ' +
+          'No source files were modified.'
+        );
+      }
+    }
+
     git([
       'merge',
       '--ff-only',
@@ -4382,71 +4413,80 @@ function ensureLinuxBuildDependencies() {
 function installUserCommand() {
   if (process.platform === 'win32') {
     const localAppData = process.env.LOCALAPPDATA;
+    const userProfile = process.env.USERPROFILE;
 
-    if (!localAppData) {
-      fail(
-        'Unable to determine the current Windows user application directory.'
-      );
+    if (!localAppData || !userProfile) {
+      fail('CryLo Windows user directories are unavailable.');
     }
 
     const launcher = path.join(root, 'crylo.cmd');
+    const expectedCheckout = path.join(userProfile, 'CryLo');
+
+    if (
+      path.resolve(root).toLowerCase() !==
+      path.resolve(expectedCheckout).toLowerCase()
+    ) {
+      fail('The managed Windows CryLo checkout must be located at ' +
+        expectedCheckout + '. No launcher was changed.');
+    }
 
     if (!fs.existsSync(launcher)) {
-      fail(
-        `CryLo Windows launcher was not found: ${launcher}`
-      );
+      fail('CryLo Windows source launcher was not found: ' + launcher);
     }
 
+    /*
+     * Never rewrite the legacy command while its CMD process is executing.
+     * Instead register an immutable, separately named, versioned launcher.
+     * It executes a per-invocation snapshot inside the SAME source folder,
+     * so %~dp0 continues to resolve to the original CryLo checkout.
+     *
+     * Future launcher revisions must use a NEW directory, not overwrite
+     * the version currently in use.
+     */
     const commandDirectory = path.join(
-      localAppData,
-      'CryLo',
-      'bin'
+      localAppData, 'CryLo', 'bin-v2'
     );
+    const commandPath = path.join(commandDirectory, 'crylo.cmd');
 
-    const commandPath = path.join(
-      commandDirectory,
-      'crylo.cmd'
-    );
+    fs.mkdirSync(commandDirectory, { recursive: true });
 
-    fs.mkdirSync(
-      commandDirectory,
-      { recursive: true }
-    );
-
-    const marker = ':: CryLo managed launcher';
-
-    if (fs.existsSync(commandPath)) {
-      const existing = fs.readFileSync(
-        commandPath,
-        'utf8'
-      );
-
-      if (!existing.includes(marker)) {
-        fail(
-          `Cannot replace existing CryLo command: ${commandPath}`
-        );
-      }
-    }
-
+    const marker = ':: CryLo managed snapshot launcher v2';
     const wrapper = [
       '@echo off',
       marker,
-      `call "${launcher}" %*`,
+      'setlocal EnableExtensions DisableDelayedExpansion',
+      'set "CRYLO_SNAPSHOT_SOURCE=%USERPROFILE%\\CryLo\\crylo.cmd"',
+      'if not exist "%CRYLO_SNAPSHOT_SOURCE%" exit /b 1',
+      'set "CRYLO_SNAPSHOT_FILE=%USERPROFILE%\\CryLo\\.crylo-launcher-run-%RANDOM%-%RANDOM%-%RANDOM%.cmd"',
+      'if exist "%CRYLO_SNAPSHOT_FILE%" exit /b 1',
+      'copy /B /Y "%CRYLO_SNAPSHOT_SOURCE%" "%CRYLO_SNAPSHOT_FILE%" >nul 2>nul',
+      'if errorlevel 1 exit /b 1',
+      'set "CRYLO_WINDOWS_SNAPSHOT_ACTIVE=1"',
+      'call "%CRYLO_SNAPSHOT_FILE%" %*',
+      'set "CRYLO_SNAPSHOT_RC=%ERRORLEVEL%"',
+      'del /Q "%CRYLO_SNAPSHOT_FILE%" >nul 2>nul',
+      'exit /b %CRYLO_SNAPSHOT_RC%',
       ''
     ].join('\r\n');
 
-    fs.writeFileSync(
-      commandPath,
-      wrapper,
-      'utf8'
-    );
+    if (fs.existsSync(commandPath)) {
+      const existing = fs.readFileSync(commandPath, 'utf8');
+      if (existing !== wrapper) {
+        fail('Existing immutable CryLo snapshot launcher differs from ' +
+          'the trusted v2 template: ' + commandPath +
+          '. It was not overwritten.');
+      }
+    } else {
+      fs.writeFileSync(commandPath, wrapper, {
+        encoding: 'utf8',
+        flag: 'wx'
+      });
+    }
 
     const userPathResult = spawnSync(
       windowsPowerShellExecutable(),
       [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
+        '-NoProfile', '-NonInteractive', '-Command',
         '[Environment]::GetEnvironmentVariable("Path","User")'
       ],
       {
@@ -4457,42 +4497,35 @@ function installUserCommand() {
       }
     );
 
-    if (
-      userPathResult.error ||
-      userPathResult.status !== 0
-    ) {
-      fail(
-        'Unable to read the Windows user PATH.'
-      );
+    if (userPathResult.error || userPathResult.status !== 0) {
+      fail('Unable to read the Windows user PATH.');
     }
 
-    const userPath = String(
-      userPathResult.stdout || ''
-    ).trim();
-
-    const userEntries = userPath
+    const userEntries = String(userPathResult.stdout || '')
+      .trim()
       .split(';')
       .map((entry) => entry.trim())
       .filter(Boolean);
 
-    const alreadyRegistered = userEntries.some(
-      (entry) =>
-        entry.toLowerCase() ===
-        commandDirectory.toLowerCase()
+    const equalDirectory = (value) =>
+      path.resolve(value).toLowerCase() ===
+      path.resolve(commandDirectory).toLowerCase();
+
+    const remainingEntries = userEntries.filter(
+      (entry) => !equalDirectory(entry)
     );
+    const newEntries = [commandDirectory, ...remainingEntries];
+    const pathAlreadyFirst =
+      userEntries.length === newEntries.length &&
+      userEntries.every((entry, index) => entry === newEntries[index]);
 
-    if (!alreadyRegistered) {
-      const updatedPath = userEntries.length
-        ? `${userEntries.join(';')};${commandDirectory}`
-        : commandDirectory;
-
+    if (!pathAlreadyFirst) {
+      const updatedPath = newEntries.join(';');
       const pathUpdate = spawnSync(
         windowsPowerShellExecutable(),
         [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `$value = [Environment]::GetEnvironmentVariable("CRYLO_USER_PATH_VALUE","Process"); ` +
+          '-NoProfile', '-NonInteractive', '-Command',
+          '$value = [Environment]::GetEnvironmentVariable("CRYLO_USER_PATH_VALUE","Process"); ' +
             '[Environment]::SetEnvironmentVariable("Path",$value,"User")'
         ],
         {
@@ -4506,26 +4539,17 @@ function installUserCommand() {
         }
       );
 
-      if (
-        pathUpdate.error ||
-        pathUpdate.status !== 0
-      ) {
-        fail(
-          'Unable to register CryLo in the Windows user PATH.'
-        );
+      if (pathUpdate.error || pathUpdate.status !== 0) {
+        fail('Unable to register the immutable CryLo Windows launcher.');
       }
     }
 
-    console.log(
-      `CryLo command registered: ${commandPath}`
-    );
-
-    if (!alreadyRegistered) {
+    console.log('CryLo command registered: ' + commandPath);
+    if (!pathAlreadyFirst) {
       console.log(
-        'Open a new terminal to use "crylo" from anywhere.'
+        'Open a new Command Prompt to use the update-safe CryLo launcher.'
       );
     }
-
     return;
   }
 
