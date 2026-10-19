@@ -4467,7 +4467,7 @@ function installUserCommand() {
       'del /Q "%CRYLO_SNAPSHOT_FILE%" >nul 2>nul',
       'exit /b %CRYLO_SNAPSHOT_RC%',
       ''
-    ].join('\\r\\n');
+    ].join('\r\n');
 
     if (fs.existsSync(commandPath)) {
       const existing = fs.readFileSync(commandPath, 'utf8');
