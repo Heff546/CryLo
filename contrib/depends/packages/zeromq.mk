@@ -9,6 +9,9 @@ define $(package)_set_vars
   $(package)_config_opts_linux=--with-pic
   $(package)_config_opts_freebsd=--with-pic
   $(package)_cxxflags=-std=c++11
+  # Apple Clang 17 flags upstream aggregate initialization in libzmq 4.3.5.
+  # Retain the warning, but do not turn this warning into a build failure.
+  $(package)_cxxflags_darwin+=-Wno-error=missing-braces
 endef
 
 
