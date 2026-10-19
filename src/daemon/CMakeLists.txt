@@ -32,8 +32,8 @@ set(daemon_curses_libraries ncursesw)
 if(WIN32)
   set(daemon_tui_source ../tui/crylo_tui_windows.cpp)
   set(daemon_curses_libraries "")
-elseif(DEPENDS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  # Linux depends builds use the pinned non-wide ncurses ABI.
+elseif(DEPENDS AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin"))
+  # Linux and macOS depends builds use the pinned non-wide ncurses ABI.
   # Resolve both archives only inside the deterministic depends prefix so
   # the linker cannot fall back to host ncurses/tinfo libraries.
   list(GET CMAKE_FIND_ROOT_PATH 0 CRYLO_DEPENDS_PREFIX)
