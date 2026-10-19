@@ -73,7 +73,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "===== COMPILER ENVIRONMENT ====="
+          xcrun --show-sdk-path
+          xcrun --show-sdk-version
+          xcrun --find clang
+          echo "===== DEPENDENCIES ====="
+          set +e
           make -C contrib/depends HOST=x86_64-apple-darwin11 -j2
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "===== DEPENDS FAILED (EXIT $rc) ====="
+            echo "===== LIBICONV CONFIGURATION LOGS ====="
+            find contrib/depends/work/build -path '*/libiconv/*/config.log' -type f -print | while IFS= read -r log; do
+              echo "===== $log ====="
+              tail -n 220 "$log"
+            done
+            exit "$rc"
+          fi
           test -f contrib/depends/x86_64-apple-darwin11/share/toolchain.cmake
           echo "===== DEPENDS TOOLCHAIN READY ====="
           ls -l contrib/depends/x86_64-apple-darwin11/share/toolchain.cmake
