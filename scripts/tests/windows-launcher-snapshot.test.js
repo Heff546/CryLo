@@ -23,7 +23,7 @@ function wrapperFromSource(source) {
   const to = source.indexOf(tail, from);
   assert(to >= 0, 'Expected Windows CRLF launcher text');
   const arrayExpression = source.slice(from + prefix.length, to + 1);
-  const lines = vm.runInNewContext(arrayExpression, Object.create(null));
+  const lines = vm.runInNewContext(arrayExpression, { marker: ':: CryLo managed snapshot launcher v2' });
   assert(Array.isArray(lines), 'Snapshot template must be an array');
   return lines.join('\r\n');
 }
