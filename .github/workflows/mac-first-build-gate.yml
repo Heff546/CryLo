@@ -1,0 +1,118 @@
+name: CryLo macOS Intel native first-build gate
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crylo-mac-first-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-intel:
+    name: macOS 15 Intel pinned-dependencies configure and build
+    runs-on: macos-15-intel
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out exact CryLo commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Read-only macOS toolchain and source audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== EXACT SOURCE ====="
+          git rev-parse HEAD
+          git status --short
+          echo "===== HOST ====="
+          sw_vers
+          uname -m
+          sysctl -n hw.ncpu
+          df -h .
+          xcode-select -p
+          xcrun --find clang
+          clang --version
+          echo "===== TOOLS ====="
+          for tool in git cmake make python3 perl pkg-config autoconf automake glibtoolize brew; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "$tool: $(command -v "$tool")"
+            else
+              echo "MISSING: $tool"
+            fi
+          done
+          echo "===== PINNED DEPENDENCY RECIPES ====="
+          grep -E '^\$\(package\)_version=' contrib/depends/packages/{boost,openssl,zeromq,unbound,libusb,hidapi,protobuf,abseil,sodium}.mk
+
+      - name: Provision host-only dependency build tools on disposable runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+          packages=()
+          command -v cmake >/dev/null 2>&1 || packages+=(cmake)
+          command -v pkg-config >/dev/null 2>&1 || packages+=(pkgconf)
+          command -v autoconf >/dev/null 2>&1 || packages+=(autoconf)
+          command -v automake >/dev/null 2>&1 || packages+=(automake)
+          command -v glibtoolize >/dev/null 2>&1 || packages+=(libtool)
+          if [ "${#packages[@]}" -gt 0 ]; then
+            brew install "${packages[@]}"
+          fi
+          cmake --version
+          make --version | head -2
+
+      - name: Build hash-pinned native CryLo dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C contrib/depends HOST=x86_64-apple-darwin11 -j2
+          test -f contrib/depends/x86_64-apple-darwin11/share/toolchain.cmake
+          echo "===== DEPENDS TOOLCHAIN READY ====="
+          ls -l contrib/depends/x86_64-apple-darwin11/share/toolchain.cmake
+          df -h .
+
+      - name: Configure native CryLo with full Trezor support
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/mac-x64 \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/contrib/depends/x86_64-apple-darwin11/share/toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TAG=mac-x64 \
+            -DBUILD_TESTS=OFF \
+            -DBUILD_DOCUMENTATION=OFF \
+            -DBUILD_DEBUG_UTILITIES=OFF \
+            -DBUILD_GUI_DEPS=OFF \
+            -DSTATIC=ON \
+            -DUSE_DEVICE_TREZOR=ON \
+            -DUSE_DEVICE_TREZOR_LIBUSB=ON \
+            -DTREZOR_DEBUG=OFF \
+            -DBUILD_64=ON \
+            -DARCH=x86-64
+          git status --short
+
+      - name: Compile daemon wallet and wallet-RPC
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/mac-x64 --parallel 2 --target daemon simplewallet wallet_rpc_server
+
+      - name: Verify native macOS runtime binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+            file "build/mac-x64/bin/$name"
+            otool -L "build/mac-x64/bin/$name"
+            "build/mac-x64/bin/$name" --version
+          done
+          test -z "$(git status --porcelain --untracked-files=all -- . ':!build' ':!contrib/depends')"
+          echo "===== NATIVE MAC X64 COMPILE GATE COMPLETE ====="
