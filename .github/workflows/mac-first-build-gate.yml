@@ -96,11 +96,11 @@ jobs:
           echo "SDKROOT=$SDKROOT"
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
-          printf 'int main(void) { return 0; }\\n' > "$tmp/conftest.c"
+          printf 'int main(void) { return 0; }\n' > "$tmp/conftest.c"
           prefix="$GITHUB_WORKSPACE/contrib/depends/x86_64-apple-darwin11"
           mkdir -p "$prefix/include" "$prefix/lib"
-          xcrun clang -mmacosx-version-min=10.8 -pipe -O1 \\
-            -I"$prefix/include" -L"$prefix/lib" \\
+          xcrun clang -mmacosx-version-min=10.8 -pipe -O1 \
+            -I"$prefix/include" -L"$prefix/lib" \
             "$tmp/conftest.c" -o "$tmp/conftest"
           file "$tmp/conftest"
           "$tmp/conftest"
