@@ -69,6 +69,24 @@ jobs:
           cmake --version
           make --version | head -2
 
+      - name: Probe Intel macOS compiler deployment target
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          printf 'int main(void) { return 0; }\n' > "$tmp/probe.c"
+          xcrun --show-sdk-version
+          for version in 10.8 11.0 15.0; do
+            echo "===== COMPILER LINK TEST: macOS $version ====="
+            set +e
+            clang "-mmacosx-version-min=$version" "$tmp/probe.c" -o "$tmp/probe-$version" >"$tmp/log-$version" 2>&1
+            rc=$?
+            set -e
+            cat "$tmp/log-$version"
+            echo "EXIT=$rc"
+          done
+
       - name: Build hash-pinned native CryLo dependencies
         shell: bash
         run: |
@@ -87,7 +105,7 @@ jobs:
             echo "===== LIBICONV CONFIGURATION LOGS ====="
             find contrib/depends/work/build -path '*/libiconv/*/config.log' -type f -print | while IFS= read -r log; do
               echo "===== $log ====="
-              tail -n 220 "$log"
+              sed -n '1,170p' "$log"
             done
             exit "$rc"
           fi
