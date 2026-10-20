@@ -172,3 +172,43 @@ jobs:
           done
           test -z "$(git status --porcelain --untracked-files=all -- . ':!build' ':!contrib/depends')"
           echo "===== NATIVE MAC X64 COMPILE GATE COMPLETE ====="
+
+      - name: Package unsigned CryLo Electron macOS x64 DMG
+        shell: bash
+        env:
+          CRYLO_RELEASE_BIN: ${{ github.workspace }}/build/mac-x64/bin
+          CRYLO_NETWORK: testnet
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+          npm run --prefix electron build-mac-x64
+
+      - name: Verify unsigned macOS app bundle and DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="electron/dist/mac/CryLo Wallet.app"
+          test -d "$app/Contents/Resources/bin/mac"
+          for name in CryLo-daemon CryLo-wallet-rpc; do
+            bundled="$app/Contents/Resources/bin/mac/$name"
+            original="build/mac-x64/bin/$name"
+            test -x "$bundled"
+            cmp "$original" "$bundled"
+            file "$bundled"
+            otool -L "$bundled"
+          done
+          test -f "$app/Contents/Resources/bin/mac/BINARY-MANIFEST.txt"
+          find electron/dist -maxdepth 1 -type f -name '*.dmg' -print
+          find electron/dist -maxdepth 1 -type f -name '*.dmg' -print -quit | grep -q .
+          shasum -a 256 electron/dist/*.dmg
+          echo "===== UNSIGNED MAC DMG PACKAGING GATE COMPLETE ====="
+
+      - name: Upload unsigned macOS test DMG
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: crylo-macos-intel-unsigned-test
+          path: electron/dist/*.dmg
+          if-no-files-found: error
+          retention-days: 7
