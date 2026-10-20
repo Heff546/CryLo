@@ -62,12 +62,22 @@ module.exports = async function afterPack(context) {
       ? path.join(root, 'build', 'electron-runtime', definition.dir)
       : path.join(electronDir, 'bin', definition.dir);
 
-  const packagedDir = path.join(
-    context.appOutDir,
-    'resources',
-    'bin',
-    definition.dir
-  );
+  const packagedDir =
+    context.electronPlatformName === 'darwin'
+      ? path.join(
+          context.appOutDir,
+          `${context.packager.appInfo.productFilename}.app`,
+          'Contents',
+          'Resources',
+          'bin',
+          definition.dir
+        )
+      : path.join(
+          context.appOutDir,
+          'resources',
+          'bin',
+          definition.dir
+        );
 
   let required = [...definition.required];
   let runtimeManifest = null;
