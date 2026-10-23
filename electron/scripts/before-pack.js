@@ -33,6 +33,16 @@ const WINDOWS_GIT_SHA256 =
 const WINDOWS_GIT_URL =
   `https://github.com/git-for-windows/git/releases/download/v${WINDOWS_GIT_BUILD}/${WINDOWS_GIT_ARCHIVE}`;
 
+/*
+ * The NSIS hash pin is generated at BUILD TIME from the exact canonical helper
+ * that NSIS embeds, not from the Git checkout line endings or a past release.
+ * The helper must match the reviewed commit's Git blob after normalization.
+ */
+const WINDOWS_INSTALLER_HELPER_NAME = 'windows-installer-runtime.js';
+const WINDOWS_INSTALLER_HELPER_STAGE = 'crylo-installer-helper-staged';
+const WINDOWS_INSTALLER_HELPER_PIN = 'helper-sha256.generated.nsh';
+const WINDOWS_INSTALLER_HELPER_DEFINE = 'CRYLO_INSTALLER_HELPER_SHA256';
+
 function runChecked(command, args, cwd, label) {
   const result = spawnSync(command, args, {
     cwd,
@@ -136,6 +146,133 @@ function downloadFile(url, destination, redirects = 0) {
 
     request.on('error', reject);
   });
+}
+
+function canonicalWindowsInstallerHelper(bytes, label) {
+  const decoded = bytes.toString('utf8');
+  if (!Buffer.from(decoded, 'utf8').equals(bytes)) {
+    throw new Error(`CryLo NSIS ${label} contains invalid UTF-8.`);
+  }
+
+  // Normalize only line endings. Reject lone CR; never change JS contents.
+  const canonical = decoded.replace(/\r\n/g, '\n');
+  if (canonical.includes('\r')) {
+    throw new Error(`CryLo NSIS ${label} contains unsupported lone CR.`);
+  }
+  return Buffer.from(canonical, 'utf8');
+}
+
+function stageWindowsInstallerHelper(electronDir) {
+  const root = path.resolve(electronDir, '..');
+  const buildDir = path.join(electronDir, 'build');
+  const source = path.join(buildDir, WINDOWS_INSTALLER_HELPER_NAME);
+  const nsisFile = path.join(buildDir, 'installer.nsh');
+  const stageDir = path.join(buildDir, WINDOWS_INSTALLER_HELPER_STAGE);
+  const staged = path.join(stageDir, WINDOWS_INSTALLER_HELPER_NAME);
+  const pinFile = path.join(stageDir, WINDOWS_INSTALLER_HELPER_PIN);
+
+  const sourceStat = fs.lstatSync(source);
+  if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+    throw new Error('CryLo NSIS helper must be a regular tracked file.');
+  }
+
+  const sourceBytes = fs.readFileSync(source);
+  const canonicalBytes = canonicalWindowsInstallerHelper(
+    sourceBytes, 'helper source'
+  );
+
+  // A generated hash is useful only if it authenticates approved source.
+  // Compare canonical checkout bytes to the Git blob at HEAD. On Windows,
+  // core.autocrlf may turn LF into CRLF without changing the reviewed code.
+  const trusted = spawnSync('git', [
+    'show', 'HEAD:electron/build/windows-installer-runtime.js'
+  ], {
+    cwd: root,
+    encoding: null,
+    shell: false,
+    maxBuffer: 1024 * 1024
+  });
+  if (trusted.error || trusted.status !== 0 ||
+      !Buffer.isBuffer(trusted.stdout)) {
+    throw new Error(
+      'CryLo NSIS cannot verify the installer helper against the reviewed Git HEAD.'
+    );
+  }
+
+  const committedBytes = canonicalWindowsInstallerHelper(
+    trusted.stdout, 'committed helper'
+  );
+  if (!canonicalBytes.equals(committedBytes)) {
+    throw new Error(
+      'CryLo NSIS helper differs from the reviewed Git HEAD. ' +
+      'Commit/review the helper change before Windows release packaging.'
+    );
+  }
+
+  const helperHash = crypto.createHash('sha256')
+    .update(canonicalBytes).digest('hex');
+
+  const nsisSource = fs.readFileSync(nsisFile, 'utf8');
+  const expectedInclude =
+    '!include "${BUILD_RESOURCES_DIR}\\crylo-installer-helper-staged\\helper-sha256.generated.nsh"';
+  const expectedEmbed =
+    'File /oname=$PLUGINSDIR\\windows-installer-runtime.js ' +
+    '"${BUILD_RESOURCES_DIR}\\crylo-installer-helper-staged\\windows-installer-runtime.js"';
+  const expectedCompare = '/C:"${CRYLO_INSTALLER_HELPER_SHA256}"';
+
+  for (const [label, text] of [
+    ['generated hash include', expectedInclude],
+    ['canonical staged helper embed', expectedEmbed],
+    ['generated hash comparison', expectedCompare]
+  ]) {
+    if (nsisSource.split(text).length !== 2) {
+      throw new Error(`CryLo NSIS ${label} is missing or duplicated.`);
+    }
+  }
+  const compareSection = nsisSource.match(
+    /StrCpy \$R9 "HELPER_HASH_COMPARE"[\s\S]*?StrCmp \$R0 "0" crylo_helper_verified crylo_runtime_failed/
+  );
+  if (!compareSection || !compareSection[0].includes(expectedCompare)) {
+    throw new Error('CryLo NSIS must compare the actual helper SHA256.');
+  }
+
+  if (fs.existsSync(stageDir)) {
+    const stageStat = fs.lstatSync(stageDir);
+    if (!stageStat.isDirectory() || stageStat.isSymbolicLink()) {
+      throw new Error('CryLo NSIS helper staging directory is unsafe.');
+    }
+  } else {
+    fs.mkdirSync(stageDir);
+  }
+
+  // Never follow a symlink or junction left by a previous build.
+  for (const target of [staged, pinFile]) {
+    if (!fs.existsSync(target)) continue;
+    const stat = fs.lstatSync(target);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error(`CryLo NSIS staging file is unsafe: ${target}`);
+    }
+    fs.rmSync(target);
+  }
+
+  const generatedPin =
+    '; Generated by CryLo before-pack.js from the committed helper bytes.\r\n' +
+    `!define ${WINDOWS_INSTALLER_HELPER_DEFINE} "${helperHash}"\r\n`;
+
+  fs.writeFileSync(staged, canonicalBytes, { flag: 'wx' });
+  fs.writeFileSync(pinFile, generatedPin, { flag: 'wx', encoding: 'ascii' });
+
+  const stagedHash = sha256(staged);
+  if (stagedHash !== helperHash ||
+      fs.readFileSync(pinFile, 'ascii') !== generatedPin ||
+      !fs.readFileSync(source).equals(sourceBytes)) {
+    throw new Error('CryLo NSIS generated helper and pin verification failed.');
+  }
+
+  console.log(`CryLo NSIS reviewed helper........ VERIFIED`);
+  console.log(`CryLo NSIS staged helper SHA256... ${stagedHash}`);
+  console.log('CryLo NSIS helper pin............. GENERATED');
+  return { staged, pinFile, hash: helperHash };
 }
 
 async function stageWindowsNodeInstallerResource(
@@ -465,6 +602,8 @@ module.exports = async function beforePack(context) {
   }
 
   if (platform === 'win') {
+    stageWindowsInstallerHelper(electronDir);
+
     await stageWindowsNodeInstallerResource(
       electronDir
     );
@@ -479,3 +618,6 @@ module.exports = async function beforePack(context) {
     'matches CryLo binaries'
   );
 };
+
+// Expose the standalone gate for deterministic CI tests only.
+module.exports.stageWindowsInstallerHelper = stageWindowsInstallerHelper;

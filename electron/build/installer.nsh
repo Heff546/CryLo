@@ -1,3 +1,7 @@
+; The exact staged helper hash is calculated automatically by before-pack.js.
+; This include MUST exist at compile time. NSIS will fail closed if missing.
+!include "${BUILD_RESOURCES_DIR}\crylo-installer-helper-staged\helper-sha256.generated.nsh"
+
 !macro customInstall
   ; ============================================================
   ; CryLo-managed Windows runtime bootstrap.
@@ -23,9 +27,11 @@
   FileClose $8
 
   ; Embed authenticated installer resources staged by before-pack.js.
+  ; The helper and its generated hash pin refer to the SAME canonical bytes.
+  ; No release-by-release manual SHA256 maintenance is required.
   File /oname=$PLUGINSDIR\node-v24.21.0-win-x64.zip "${BUILD_RESOURCES_DIR}\node-v24.21.0-win-x64.zip"
   File /oname=$PLUGINSDIR\MinGit-2.56.0-64-bit.zip "${BUILD_RESOURCES_DIR}\MinGit-2.56.0-64-bit.zip"
-  File /oname=$PLUGINSDIR\windows-installer-runtime.js "${BUILD_RESOURCES_DIR}\windows-installer-runtime.js"
+  File /oname=$PLUGINSDIR\windows-installer-runtime.js "${BUILD_RESOURCES_DIR}\crylo-installer-helper-staged\windows-installer-runtime.js"
 
   ; Fail closed if required Windows inbox tools are unavailable.
   StrCpy $R9 "REQUIRED_CERTUTIL"
@@ -84,7 +90,7 @@ crylo_helper_certutil_ok:
   FileWrite $8 "STAGE=HELPER_HASH_COMPARE$\r$\n"
   FileClose $8
 
-  nsExec::ExecToStack `"$SYSDIR\findstr.exe" /I /X /C:"69feebe2d19f7af89126358d57dbdef9e3068e7310d68ef9ee2f759b00c39a7f" "$PLUGINSDIR\crylo-hash-output.txt"`
+  nsExec::ExecToStack `"$SYSDIR\findstr.exe" /I /X /C:"${CRYLO_INSTALLER_HELPER_SHA256}" "$PLUGINSDIR\crylo-hash-output.txt"`
   Pop $R0
   Pop $R1
 
