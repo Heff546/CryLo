@@ -146,8 +146,8 @@ fs.mkdirSync(dist, { recursive: true });
 
 const builderArgs =
   platform === 'win'
-    ? ['electron-builder', '--win', `--${arch}`]
-    : ['electron-builder', '--mac', `--${arch}`];
+    ? ['electron-builder', '--win', `--${arch}`, '--publish', 'never']
+    : ['electron-builder', '--mac', `--${arch}`, '--publish', 'never'];
 
 let builderCommand;
 let builderRunArgs;
