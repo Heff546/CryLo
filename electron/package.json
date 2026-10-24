@@ -162,7 +162,8 @@
           "x": 130,
           "y": 200,
           "type": "file",
-          "path": "CryLo Wallet.app"
+          "path": "dist/mac/CryLo Wallet.app",
+          "name": "CryLo Wallet.app"
         },
         {
           "x": 390,
