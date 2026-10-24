@@ -2,6 +2,7 @@
 #include "crylo_loading.h"
 #include <cstdlib>
 #include <ctime>
+#include <cinttypes>
 #include <cstdio>
 #include <unistd.h>
 #include <fcntl.h>
@@ -274,16 +275,16 @@ void run_tui(std::atomic<bool>& stop_signal) {
 
         char tmp[128];
 
-        snprintf(tmp, sizeof(tmp), "%lu", stats.height.load());
+        snprintf(tmp, sizeof(tmp), "%" PRIu64 "", stats.height.load());
         print_stat(1, "HEIGHT:", tmp, CP_NORMAL);
 
-        snprintf(tmp, sizeof(tmp), "%lu", stats.difficulty.load());
+        snprintf(tmp, sizeof(tmp), "%" PRIu64 "", stats.difficulty.load());
         print_stat(2, "DIFFICULTY:", tmp, CP_NORMAL);
 
-        snprintf(tmp, sizeof(tmp), "%lu", stats.blocks_added.load());
+        snprintf(tmp, sizeof(tmp), "%" PRIu64 "", stats.blocks_added.load());
         // print_stat(3, "BLOCKS OK:", tmp, stats.blocks_added.load() > 0 ? CP_SUCCESS : CP_NORMAL);
 
-        snprintf(tmp, sizeof(tmp), "%lu", stats.blocks_alt.load());
+        snprintf(tmp, sizeof(tmp), "%" PRIu64 "", stats.blocks_alt.load());
         // print_stat(4, "BLOCKS ALT:", tmp, stats.blocks_alt.load() > 0 ? CP_WARNING : CP_NORMAL);
 
         std::string reward_str;
@@ -297,7 +298,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
         // snprintf(tmp, sizeof(tmp), "%lu", stats.rpc_calls.load());
         // print_stat(4, "RPC CALLS:", tmp, CP_NORMAL);
 
-        snprintf(tmp, sizeof(tmp), "%lu OUT / %lu IN",
+        snprintf(tmp, sizeof(tmp), "%" PRIu64 " OUT / %" PRIu64 " IN",
 		stats.peers_out.load(),
 	 	stats.peers_in.load());
 
@@ -306,7 +307,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
 		stats.peers_in.load() > 0 ?
 		CP_SUCCESS : CP_WARNING);
 
-	snprintf(tmp, sizeof(tmp), "%lu H/s",
+	snprintf(tmp, sizeof(tmp), "%" PRIu64 " H/s",
              stats.hashrate.load());
 
 	print_stat(5, "HASHRATE:", tmp,
@@ -325,13 +326,13 @@ void run_tui(std::atomic<bool>& stop_signal) {
                 uint64_t eta_secs = eta % 60;
 
                 if (eta_days > 0) {
-                    snprintf(tmp, sizeof(tmp), "%lud %luh %lum",
+                    snprintf(tmp, sizeof(tmp), "%" PRIu64 "d %" PRIu64 "h %" PRIu64 "m",
                              eta_days, eta_hours, eta_mins);
                 } else if (eta_hours > 0) {
-                    snprintf(tmp, sizeof(tmp), "%luh %lum %lus",
+                    snprintf(tmp, sizeof(tmp), "%" PRIu64 "h %" PRIu64 "m %" PRIu64 "s",
                              eta_hours, eta_mins, eta_secs);
                 } else {
-                    snprintf(tmp, sizeof(tmp), "%lum %lus",
+                    snprintf(tmp, sizeof(tmp), "%" PRIu64 "m %" PRIu64 "s",
                              eta_mins, eta_secs);
                 }
 
@@ -357,7 +358,7 @@ void run_tui(std::atomic<bool>& stop_signal) {
                 uint64_t eta_hours = eta_seconds / 3600;
                 uint64_t eta_mins = (eta_seconds % 3600) / 60;
 
-                snprintf(tmp, sizeof(tmp), "%lu / %lu (%lu%%) ETA %luh %lum",
+                snprintf(tmp, sizeof(tmp), "%" PRIu64 " / %" PRIu64 " (%" PRIu64 "%%) ETA %" PRIu64 "h %" PRIu64 "m",
                          h, t, pct, eta_hours, eta_mins);
                 print_stat(7, "SYNC:", tmp, CP_WARNING);
             }
@@ -687,12 +688,12 @@ void tui_log_handler(const std::string& message) {
         stats.blocks_added++;
         char buf[128];
         if (block_from_peer) {
-            snprintf(buf, sizeof(buf), "<<<<< BLOCK RECEIVED HEIGHT %lu", stats.height.load());
+            snprintf(buf, sizeof(buf), "<<<<< BLOCK RECEIVED HEIGHT %" PRIu64 "", stats.height.load());
             stats.add_log(std::string(buf), LOG_NORMAL);
             block_from_peer = false;
         } else {
             stats.set_status("MINING");
-            snprintf(buf, sizeof(buf), "+++++ BLOCK MINED! HEIGHT %lu", stats.height.load());
+            snprintf(buf, sizeof(buf), "+++++ BLOCK MINED! HEIGHT %" PRIu64 "", stats.height.load());
             stats.add_log(std::string(buf), LOG_SUCCESS);
         }
         return;
