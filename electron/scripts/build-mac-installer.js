@@ -73,6 +73,10 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
 `;
 fs.writeFileSync(path.join(daemon, 'Contents', 'Info.plist'), plist);
 verifyArch(embedded);
+const dmgSource = path.join(electronDir, 'build', 'mac-installer', 'CryLo Daemon.app');
+fs.mkdirSync(path.dirname(dmgSource), { recursive: true });
+fs.rmSync(dmgSource, { recursive: true, force: true });
+fs.cpSync(daemon, dmgSource, { recursive: true });
 command('/usr/bin/plutil', ['-lint', path.join(daemon, 'Contents', 'Info.plist')]);
 command('/bin/sh', ['-n', executable]);
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'crylo-mac-pkg-'));
