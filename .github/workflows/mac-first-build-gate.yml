@@ -218,7 +218,10 @@ jobs:
           pkgutil --payload-files "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg" | grep -F 'CryLo Wallet.app'
           pkgutil --payload-files "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg" | grep -F 'CryLo Daemon.app'
           pkgutil --expand "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg" "$RUNNER_TEMP/crylo-pkg-audit"
-          find "$RUNNER_TEMP/crylo-pkg-audit" -name Scripts -type f -print | grep -q .
+          scripts_dir="$(find "$RUNNER_TEMP/crylo-pkg-audit" -name Scripts -type d -print -quit)"
+          test -n "$scripts_dir"
+          test -f "$scripts_dir/postinstall"
+          sh -n "$scripts_dir/postinstall"
           test -z "$(find "$RUNNER_TEMP/crylo-pkg-audit" -name 'preinstall' -print)"
           echo "===== BOTH MAC APPLICATIONS AND DESKTOP LINK INSTALLER CHECKS PASSED ====="
           hdiutil detach "$mount_dir"
