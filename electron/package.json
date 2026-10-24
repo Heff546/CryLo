@@ -136,9 +136,7 @@
     },
     "mac": {
       "target": [
-        {
-          "target": "dmg"
-        }
+        "dir"
       ],
       "category": "public.app-category.finance",
       "icon": "assets/icon.png",
@@ -155,31 +153,7 @@
       ]
     },
     "beforePack": "scripts/before-pack.js",
-    "afterPack": "scripts/after-pack.js",
-    "dmg": {
-      "contents": [
-        {
-          "x": 115,
-          "y": 155,
-          "type": "file",
-          "path": "dist/mac/CryLo Wallet.app",
-          "name": "CryLo Wallet.app"
-        },
-        {
-          "x": 115,
-          "y": 305,
-          "type": "file",
-          "path": "build/mac-installer/CryLo Daemon.app",
-          "name": "CryLo Daemon.app"
-        },
-        {
-          "x": 405,
-          "y": 225,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ]
-    }
+    "afterPack": "scripts/after-pack.js"
   },
   "homepage": "https://crylo.com",
   "dependencies": {
