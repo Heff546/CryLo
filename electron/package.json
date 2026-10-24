@@ -159,22 +159,22 @@
     "dmg": {
       "contents": [
         {
-          "x": 120,
-          "y": 190,
+          "x": 115,
+          "y": 155,
           "type": "file",
           "path": "dist/mac/CryLo Wallet.app",
           "name": "CryLo Wallet.app"
         },
         {
-          "x": 380,
-          "y": 190,
+          "x": 115,
+          "y": 305,
           "type": "file",
           "path": "build/mac-installer/CryLo Daemon.app",
           "name": "CryLo Daemon.app"
         },
         {
-          "x": 250,
-          "y": 380,
+          "x": 405,
+          "y": 225,
           "type": "link",
           "path": "/Applications"
         }
