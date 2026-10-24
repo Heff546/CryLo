@@ -173,7 +173,7 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all -- . ':!build' ':!contrib/depends')"
           echo "===== NATIVE MAC X64 COMPILE GATE COMPLETE ====="
 
-      - name: Package unsigned CryLo Electron macOS x64 DMG
+      - name: Package unsigned CryLo macOS x64 application and PKG
         shell: bash
         env:
           CRYLO_RELEASE_BIN: ${{ github.workspace }}/build/mac-x64/bin
@@ -185,11 +185,12 @@ jobs:
           npm --version
           npm run --prefix electron build-mac-x64
 
-      - name: Verify unsigned macOS app bundle and DMG
+      - name: Verify unsigned Mac installer package only
         shell: bash
         run: |
           set -euo pipefail
           app="electron/dist/mac/CryLo Wallet.app"
+          pkg="electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg"
           test -d "$app/Contents/Resources/bin/mac"
           for name in CryLo-daemon CryLo-wallet-rpc; do
             bundled="$app/Contents/Resources/bin/mac/$name"
@@ -200,40 +201,26 @@ jobs:
             otool -L "$bundled"
           done
           test -f "$app/Contents/Resources/bin/mac/BINARY-MANIFEST.txt"
-          find electron/dist -maxdepth 1 -type f -name '*.dmg' -print
-          find electron/dist -maxdepth 1 -type f -name '*.dmg' -print -quit | grep -q .
-          shasum -a 256 electron/dist/*.dmg
-          mount_dir="$(mktemp -d)"
-          dmg="$(find electron/dist -maxdepth 1 -name '*.dmg' -type f -print -quit)"
-          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir"
-          test -d "$mount_dir/CryLo Wallet.app"
-          test -d "$mount_dir/CryLo Daemon.app"
-          test -x "$mount_dir/CryLo Daemon.app/Contents/MacOS/CryLo Daemon"
-          test -x "$mount_dir/CryLo Daemon.app/Contents/Resources/CryLo-daemon"
-          cmp "build/mac-x64/bin/CryLo-daemon" "$mount_dir/CryLo Daemon.app/Contents/Resources/CryLo-daemon"
-          plutil -lint "$mount_dir/CryLo Daemon.app/Contents/Info.plist"
-          test -s "$mount_dir/CryLo Daemon.app/Contents/Resources/CryLo.icns"
-          sh -n "$mount_dir/CryLo Daemon.app/Contents/MacOS/CryLo Daemon"
-          test -f "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg"
-          pkgutil --payload-files "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg" | grep -F 'CryLo Wallet.app'
-          pkgutil --payload-files "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg" | grep -F 'CryLo Daemon.app'
-          pkgutil --expand "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg" "$RUNNER_TEMP/crylo-pkg-audit"
+          test -f "$pkg"
+          if find electron/dist -maxdepth 1 -type f -name '*.dmg' -print -quit | grep -q .; then
+            echo "ERROR: DMG is forbidden for macOS releases"
+            exit 1
+          fi
+          shasum -a 256 "$pkg"
+          pkgutil --payload-files "$pkg" | grep -F 'CryLo Wallet.app'
+          pkgutil --payload-files "$pkg" | grep -F 'CryLo Daemon.app'
+          pkgutil --expand "$pkg" "$RUNNER_TEMP/crylo-pkg-audit"
           scripts_dir="$(find "$RUNNER_TEMP/crylo-pkg-audit" -name Scripts -type d -print -quit)"
           test -n "$scripts_dir"
           test -f "$scripts_dir/postinstall"
           sh -n "$scripts_dir/postinstall"
           test -z "$(find "$RUNNER_TEMP/crylo-pkg-audit" -name 'preinstall' -print)"
-          echo "===== BOTH MAC APPLICATIONS AND DESKTOP LINK INSTALLER CHECKS PASSED ====="
-          hdiutil detach "$mount_dir"
-          rmdir "$mount_dir"
-          echo "===== UNSIGNED MAC DMG PACKAGING GATE COMPLETE ====="
+          echo "===== MAC PKG-ONLY INSTALLER GATE COMPLETE ====="
 
-      - name: Upload unsigned macOS test DMG
+      - name: Upload unsigned Mac installer PKG only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: crylo-macos-intel-unsigned-test
-          path: |
-            electron/dist/*.dmg
-            electron/dist/*.pkg
+          name: crylo-macos-intel-unsigned-pkg
+          path: electron/dist/*.pkg
           if-no-files-found: error
           retention-days: 7
