@@ -212,10 +212,15 @@ jobs:
           test -x "$mount_dir/CryLo Daemon.app/Contents/Resources/CryLo-daemon"
           cmp "build/mac-x64/bin/CryLo-daemon" "$mount_dir/CryLo Daemon.app/Contents/Resources/CryLo-daemon"
           plutil -lint "$mount_dir/CryLo Daemon.app/Contents/Info.plist"
+          test -s "$mount_dir/CryLo Daemon.app/Contents/Resources/CryLo.icns"
           sh -n "$mount_dir/CryLo Daemon.app/Contents/MacOS/CryLo Daemon"
           test -f "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg"
           pkgutil --payload-files "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg" | grep -F 'CryLo Wallet.app'
           pkgutil --payload-files "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg" | grep -F 'CryLo Daemon.app'
+          pkgutil --expand "electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg" "$RUNNER_TEMP/crylo-pkg-audit"
+          find "$RUNNER_TEMP/crylo-pkg-audit" -name Scripts -type f -print | grep -q .
+          test -z "$(find "$RUNNER_TEMP/crylo-pkg-audit" -name 'preinstall' -print)"
+          echo "===== BOTH MAC APPLICATIONS AND DESKTOP LINK INSTALLER CHECKS PASSED ====="
           hdiutil detach "$mount_dir"
           rmdir "$mount_dir"
           echo "===== UNSIGNED MAC DMG PACKAGING GATE COMPLETE ====="
