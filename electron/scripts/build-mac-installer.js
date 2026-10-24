@@ -91,5 +91,4 @@ try {
 } finally {
   fs.rmSync(stage, { recursive: true, force: true });
 }
-command('/usr/sbin/pkgutil', ['--check-signature', pkg]); // diagnostic: unsigned pkg expected
 console.log(`Created unsigned macOS ${arch} installer: ${pkg}`);
