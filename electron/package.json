@@ -155,7 +155,29 @@
       ]
     },
     "beforePack": "scripts/before-pack.js",
-    "afterPack": "scripts/after-pack.js"
+    "afterPack": "scripts/after-pack.js",
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 200,
+          "type": "file",
+          "path": "CryLo Wallet.app"
+        },
+        {
+          "x": 390,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 130,
+          "y": 380,
+          "type": "file",
+          "path": "build/CryLo Daemon.command"
+        }
+      ]
+    }
   },
   "homepage": "https://crylo.com",
   "dependencies": {
