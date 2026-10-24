@@ -167,6 +167,25 @@ module.exports = async function afterPack(context) {
     }
   }
 
+  if (context.electronPlatformName === 'darwin') {
+    const { spawnSync } = require('child_process');
+    const nativeArch = context.appOutDir.endsWith('mac-arm64') ? 'arm64' : 'x64';
+    const result = spawnSync(process.execPath, [
+      path.join(electronDir, 'scripts', 'build-mac-installer.js'),
+      nativeArch
+    ], {
+      cwd: electronDir,
+      stdio: 'inherit',
+      shell: false
+    });
+    if (result.error || result.status !== 0) {
+      throw new Error(
+        'CryLo macOS Wallet/Daemon installer generation failed: ' +
+        (result.error?.message || result.status)
+      );
+    }
+  }
+
   const forbidden = fs.readdirSync(packagedDir).filter(name =>
     name.endsWith('.log') ||
     name.includes('.old-') ||
