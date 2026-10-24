@@ -54,6 +54,7 @@ crylo_tar_present:
   StrCpy $R9 "HELPER_CERTUTIL"
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "STAGE=HELPER_CERTUTIL$\r$\n"
   FileClose $8
 
@@ -62,6 +63,7 @@ crylo_tar_present:
   Pop $R1
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "HELPER_CERTUTIL_RC=$R0$\r$\n"
   FileWrite $8 "HELPER_CERTUTIL_OUTPUT_BEGIN$\r$\n"
   FileWrite $8 "$R1$\r$\n"
@@ -87,6 +89,7 @@ crylo_helper_certutil_ok:
   StrCpy $R9 "HELPER_HASH_COMPARE"
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "STAGE=HELPER_HASH_COMPARE$\r$\n"
   FileClose $8
 
@@ -95,6 +98,7 @@ crylo_helper_certutil_ok:
   Pop $R1
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "HELPER_HASH_COMPARE_RC=$R0$\r$\n"
   FileWrite $8 "HELPER_HASH_COMPARE_OUTPUT=$R1$\r$\n"
   FileClose $8
@@ -110,6 +114,7 @@ crylo_helper_hash_write_failed:
 
 crylo_helper_verified:
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "HELPER_HASH=PASS$\r$\n"
   FileClose $8
 
@@ -120,6 +125,7 @@ crylo_helper_verified:
   StrCpy $R9 "NODE_ARCHIVE_CERTUTIL"
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "STAGE=NODE_ARCHIVE_CERTUTIL$\r$\n"
   FileClose $8
 
@@ -128,6 +134,7 @@ crylo_helper_verified:
   Pop $R1
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "NODE_ARCHIVE_CERTUTIL_RC=$R0$\r$\n"
   FileWrite $8 "NODE_ARCHIVE_CERTUTIL_OUTPUT_BEGIN$\r$\n"
   FileWrite $8 "$R1$\r$\n"
@@ -153,6 +160,7 @@ crylo_node_archive_certutil_ok:
   StrCpy $R9 "NODE_ARCHIVE_HASH_COMPARE"
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "STAGE=NODE_ARCHIVE_HASH_COMPARE$\r$\n"
   FileClose $8
 
@@ -161,6 +169,7 @@ crylo_node_archive_certutil_ok:
   Pop $R1
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "NODE_ARCHIVE_HASH_COMPARE_RC=$R0$\r$\n"
   FileWrite $8 "NODE_ARCHIVE_HASH_COMPARE_OUTPUT=$R1$\r$\n"
   FileClose $8
@@ -176,6 +185,7 @@ crylo_node_archive_hash_write_failed:
 
 crylo_node_archive_verified:
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "NODE_ARCHIVE_HASH=PASS$\r$\n"
   FileClose $8
 
@@ -189,6 +199,7 @@ crylo_node_archive_verified:
   CreateDirectory "$PLUGINSDIR\crylo-node-stage"
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "STAGE=NODE_EXTRACTION$\r$\n"
   FileClose $8
 
@@ -196,6 +207,7 @@ crylo_node_archive_verified:
   ExecWait `"$SYSDIR\tar.exe" -xf "$PLUGINSDIR\node-v24.21.0-win-x64.zip" -C "$PLUGINSDIR\crylo-node-stage"` $R0
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "NODE_EXTRACTION_RC=$R0$\r$\n"
   FileClose $8
 
@@ -209,6 +221,7 @@ crylo_node_stage_ready:
 
 crylo_node_exe_present:
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "NODE_EXTRACTION=PASS$\r$\n"
   FileClose $8
 
@@ -219,6 +232,7 @@ crylo_node_exe_present:
   StrCpy $R9 "NODE_EXE_CERTUTIL"
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "STAGE=NODE_EXE_CERTUTIL$\r$\n"
   FileClose $8
 
@@ -227,6 +241,7 @@ crylo_node_exe_present:
   Pop $R1
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "NODE_EXE_CERTUTIL_RC=$R0$\r$\n"
   FileWrite $8 "NODE_EXE_CERTUTIL_OUTPUT_BEGIN$\r$\n"
   FileWrite $8 "$R1$\r$\n"
@@ -252,6 +267,7 @@ crylo_node_exe_certutil_ok:
   StrCpy $R9 "NODE_EXE_HASH_COMPARE"
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "STAGE=NODE_EXE_HASH_COMPARE$\r$\n"
   FileClose $8
 
@@ -260,6 +276,7 @@ crylo_node_exe_certutil_ok:
   Pop $R1
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "NODE_EXE_HASH_COMPARE_RC=$R0$\r$\n"
   FileWrite $8 "NODE_EXE_HASH_COMPARE_OUTPUT=$R1$\r$\n"
   FileClose $8
@@ -275,6 +292,7 @@ crylo_node_exe_hash_write_failed:
 
 crylo_runtime_helper:
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "NODE_EXE_HASH=PASS$\r$\n"
   FileWrite $8 "STAGE=RUNTIME_HELPER_EXECUTION$\r$\n"
   FileClose $8
@@ -301,6 +319,7 @@ crylo_runtime_helper:
   ReadEnvStr $R6 "TMP"
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "RUNTIME_HELPER_USERPROFILE=$R2$\r$\n"
   FileWrite $8 "RUNTIME_HELPER_LOCALAPPDATA=$R3$\r$\n"
   FileWrite $8 "RUNTIME_HELPER_SYSTEMROOT=$R4$\r$\n"
@@ -319,6 +338,7 @@ crylo_runtime_helper:
   Pop $R1
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "RUNTIME_HELPER_MANIFEST_CERTUTIL_RC=$R0$\r$\n"
   FileWrite $8 "RUNTIME_HELPER_MANIFEST_CERTUTIL_OUTPUT_BEGIN$\r$\n"
   FileWrite $8 "$R1$\r$\n"
@@ -336,6 +356,7 @@ crylo_runtime_helper_manifest_ok:
   Pop $R1
 
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "RUNTIME_HELPER_RC=$R0$\r$\n"
   FileWrite $8 "RUNTIME_HELPER_OUTPUT_BEGIN$\r$\n"
   FileWrite $8 "$R1$\r$\n"
@@ -347,6 +368,7 @@ crylo_runtime_helper_manifest_ok:
 
 crylo_runtime_failed:
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "FAIL_STAGE=$R9$\r$\n"
   FileWrite $8 "FAIL_RC=$R0$\r$\n"
   FileWrite $8 "RESULT=FAIL$\r$\n"
@@ -371,6 +393,7 @@ crylo_runtime_failed_abort:
 
 crylo_runtime_ready:
   FileOpen $8 "$LOCALAPPDATA\CryLo\installer-bootstrap.log" a
+  FileSeek $8 0 END
   FileWrite $8 "RUNTIME_HELPER=PASS$\r$\n"
   FileWrite $8 "RESULT=READY$\r$\n"
   FileClose $8
