@@ -183,6 +183,8 @@ jobs:
           set -euo pipefail
           node --version
           npm --version
+          chmod 755 "electron/build/CryLo Daemon.command"
+          sh -n "electron/build/CryLo Daemon.command"
           npm run --prefix electron build-mac-x64
 
       - name: Verify unsigned macOS app bundle and DMG
@@ -203,6 +205,16 @@ jobs:
           find electron/dist -maxdepth 1 -type f -name '*.dmg' -print
           find electron/dist -maxdepth 1 -type f -name '*.dmg' -print -quit | grep -q .
           shasum -a 256 electron/dist/*.dmg
+          mount_dir="$(mktemp -d)"
+          dmg="$(find electron/dist -maxdepth 1 -name '*.dmg' -type f -print -quit)"
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir"
+          test -d "$mount_dir/CryLo Wallet.app"
+          test -f "$mount_dir/CryLo Daemon.command"
+          test -x "$mount_dir/CryLo Daemon.command"
+          sh -n "$mount_dir/CryLo Daemon.command"
+          cmp "electron/build/CryLo Daemon.command" "$mount_dir/CryLo Daemon.command"
+          hdiutil detach "$mount_dir"
+          rmdir "$mount_dir"
           echo "===== UNSIGNED MAC DMG PACKAGING GATE COMPLETE ====="
 
       - name: Upload unsigned macOS test DMG
