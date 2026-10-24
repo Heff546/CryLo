@@ -419,66 +419,18 @@ function waitForRpc(port, maxMs = 120000) {
 }
 
 // ─── Process management ──────────────────────────────────────────────────────
-async function spawnDaemon() {
+function spawnDaemon() {
   const logger = makeLogger('daemon');
 
-  // Preserve the existing externally managed daemon behavior on other hosts.
-  if (!IS_MAC) {
-    logger.write(
-      `Using existing CryLo daemon on 127.0.0.1:${DAEMON_RPC_PORT}\n`
-    );
-    return null;
-  }
+  logger.write(
+    `Using existing CryLo daemon on 127.0.0.1:${DAEMON_RPC_PORT}\n`
+  );
 
-  // An existing daemon belongs to its owner; never terminate it on exit.
-  let existingInfo = null;
-  try {
-    existingInfo = await daemonRpc('get_info');
-  } catch (_) {
-    // No responding local RPC: start the bundled Mac daemon below.
-  }
-
-  if (existingInfo) {
-    if (existingInfo.nettype !== 'testnet' && existingInfo.testnet !== true) {
-      throw new Error(
-        `Local daemon on port ${DAEMON_RPC_PORT} is not the expected CryLo testnet.`
-      );
-    }
-    logger.write(
-      `Using existing CryLo testnet daemon on 127.0.0.1:${DAEMON_RPC_PORT}\n`
-    );
-    return null;
-  }
-
-  const bin = getBinPath('CryLo-daemon');
-  if (!fs.existsSync(bin)) {
-    throw new Error(`Bundled CryLo daemon not found: ${bin}`);
-  }
-
-  const args = [
-    '--testnet',
-    '--non-interactive',
-    '--rpc-bind-ip=127.0.0.1',
-    `--rpc-bind-port=${DAEMON_RPC_PORT}`,
-    `--data-dir=${getDataDir()}`,
-    '--log-level=1'
-  ];
-
-  logger.write(`Starting bundled daemon: ${bin} ${args.join(' ')}\n`);
-  const proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  proc.stdout.on('data', (data) => logger.write(data.toString()));
-  proc.stderr.on('data', (data) => logger.write(data.toString()));
-  proc.on('error', (error) => {
-    logger.write(`Daemon startup error: ${error.message}\n`);
-    sendStatus('error', `Daemon startup error: ${error.message}`);
-  });
-  proc.on('exit', (code, signal) => {
-    logger.write(`Daemon exited: code=${code} signal=${signal}\n`);
-    if (!shuttingDown) {
-      sendStatus('error', `CryLo daemon exited unexpectedly (code ${code}).`);
-    }
-  });
-  return proc;
+  return {
+    exitCode: null,
+    once: () => {},
+    kill: () => {}
+  };
 }
 
 function spawnWalletRpc() {
@@ -532,8 +484,8 @@ function sendStatus(state, message) {
 async function startBackend() {
   try {
     sendStatus('starting', 'Starting CryLo daemon...');
-    daemonProc = await spawnDaemon();
-    if (!IS_MAC && !daemonProc) return;
+    daemonProc = spawnDaemon();
+    if (!daemonProc) return;
 
     sendStatus('starting', 'Waiting for daemon RPC...');
     await waitForRpc(DAEMON_RPC_PORT, 180000);
