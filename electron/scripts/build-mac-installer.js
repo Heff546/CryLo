@@ -41,6 +41,28 @@ const macos = path.join(daemon, 'Contents', 'MacOS');
 const resources = path.join(daemon, 'Contents', 'Resources');
 fs.mkdirSync(macos, { recursive: true });
 fs.mkdirSync(resources, { recursive: true });
+const iconSource = path.join(electronDir, 'assets', 'icon.png');
+if (!fs.existsSync(iconSource)) throw new Error('CryLo icon.png is missing');
+const iconset = fs.mkdtempSync(path.join(os.tmpdir(), 'crylo-iconset-')) + '.iconset';
+fs.mkdirSync(iconset);
+try {
+  for (const [pixels, suffix] of [
+    [16, '16x16'], [32, '16x16@2x'], [32, '32x32'],
+    [64, '32x32@2x'], [128, '128x128'], [256, '128x128@2x'],
+    [256, '256x256'], [512, '256x256@2x'], [512, '512x512'],
+    [1024, '512x512@2x']
+  ]) {
+    command('/usr/bin/sips', [
+      '-s', 'format', 'png', '-z', String(pixels), String(pixels),
+      iconSource, '--out', path.join(iconset, 'icon_' + suffix + '.png')
+    ]);
+  }
+  command('/usr/bin/iconutil', [
+    '-c', 'icns', iconset, '-o', path.join(resources, 'CryLo.icns')
+  ]);
+} finally {
+  fs.rmSync(iconset, { recursive: true, force: true });
+}
 const executable = path.join(macos, 'CryLo Daemon');
 const embedded = path.join(resources, 'CryLo-daemon');
 fs.copyFileSync(walletDaemon, embedded);
@@ -65,6 +87,7 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <key>CFBundleName</key><string>CryLo Daemon</string>
 <key>CFBundleDisplayName</key><string>CryLo Daemon</string>
 <key>CFBundleExecutable</key><string>CryLo Daemon</string>
+<key>CFBundleIconFile</key><string>CryLo.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>${version}</string>
 <key>CFBundleVersion</key><string>${version}</string>
@@ -85,8 +108,35 @@ try {
   fs.mkdirSync(apps, { recursive: true });
   fs.cpSync(wallet, path.join(apps, 'CryLo Wallet.app'), { recursive: true });
   fs.cpSync(daemon, path.join(apps, 'CryLo Daemon.app'), { recursive: true });
+  const scriptDir = path.join(stage, '..', 'crylo-installer-scripts');
+  fs.mkdirSync(scriptDir, { recursive: true });
+  const postinstall = path.join(scriptDir, 'postinstall');
+  fs.writeFileSync(postinstall, `#!/bin/sh
+set -eu
+# Installer does not launch the daemon or alter existing user data.
+user=$(/usr/bin/stat -f %Su /dev/console)
+case "$user" in
+  ''|root|loginwindow) exit 0 ;;
+esac
+uid=$(/usr/bin/id -u "$user") || exit 0
+home=$(/usr/bin/dscl . -read "/Users/$user" NFSHomeDirectory | /usr/bin/awk '{print $2}') || exit 0
+[ -n "$home" ] || exit 0
+desktop="$home/Desktop"
+[ -d "$desktop" ] || exit 0
+for name in 'CryLo Wallet' 'CryLo Daemon'; do
+  target="/Applications/$name.app"
+  link="$desktop/$name.app"
+  [ -d "$target" ] || continue
+  [ ! -e "$link" ] && [ ! -L "$link" ] || continue
+  /bin/ln -s "$target" "$link"
+  /usr/sbin/chown -h "$uid" "$link"
+done
+exit 0
+`, { mode: 0o755 });
+  command('/bin/sh', ['-n', postinstall]);
   command('/usr/bin/pkgbuild', [
     '--root', stage,
+    '--scripts', scriptDir,
     '--identifier', 'com.crylo.installer',
     '--version', version,
     '--install-location', '/',
