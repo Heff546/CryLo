@@ -1,0 +1,65 @@
+name: CryLo unified release candidate provenance inventory
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/unified-release-candidate-provenance.yml
+      - scripts/release/unified-candidate-provenance.js
+      - scripts/tests/unified-candidate-provenance.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  unsigned-provenance:
+    name: Audit all five unsigned candidate provenances (no signing)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout approved source without persisting credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Establish pinned audit runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Validate provenance fail-closed behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v24.21.0
+          node --check scripts/release/unified-candidate-provenance.js
+          node --test scripts/tests/unified-candidate-provenance.test.js
+      - name: Inventory GitHub validation artifacts and source differences
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CRYLO_RELEASE_PREFLIGHT_REPORT: ${{ runner.temp }}/crylo-unified-release-provenance.json
+        run: |
+          set -euo pipefail
+          node scripts/release/unified-candidate-provenance.js
+          test -s "$CRYLO_RELEASE_PREFLIGHT_REPORT"
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const r=JSON.parse(fs.readFileSync(process.env.CRYLO_RELEASE_PREFLIGHT_REPORT,'utf8'));
+          if(r.eligibleForOfficialPublication!==false||r.classification!=='UNSIGNED_VALIDATION_ONLY')
+            throw new Error('Release preflight must never certify unsigned artifacts for publication.');
+          for(const x of r.candidates){
+            if(!x.reusableAsUnsignedCandidate)
+              console.log('::warning::Release target '+x.target+' requires fresh native build from approved source');
+          }
+          console.log('PASS: complete, fail-closed release inventory; official signing remains Pi1 only');
+          NODE
+      - name: Upload unsigned audit report, not a release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-unified-release-provenance-audit-unsigned
+          path: ${{ runner.temp }}/crylo-unified-release-provenance.json
+          if-no-files-found: error
+          retention-days: 30
