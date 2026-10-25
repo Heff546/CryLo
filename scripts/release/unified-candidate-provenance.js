@@ -16,8 +16,11 @@ const CANDIDATES=Object.freeze([
 ]);
 
 function api(resource,token){
- if(!/^[a-zA-Z0-9_./-]+$/.test(resource)||resource.includes('..'))
-   throw new Error('GitHub API path failed fixed-host validation.');
+ const accepted=resource==='releases?per_page=100'||
+   /^actions\/runs\/\d+$/.test(resource)||
+   /^actions\/runs\/\d+\/artifacts\?per_page=100$/.test(resource)||
+   /^compare\/[a-f0-9]{40}\.\.\.[a-f0-9]{40}$/.test(resource);
+ if(!accepted)throw new Error('GitHub API path failed allowlisted endpoint validation.');
  return new Promise((resolve,reject)=>{
   const request=https.get('https://api.github.com/repos/'+REPOSITORY+'/'+resource,{
    headers:{'Authorization':'Bearer '+token,'User-Agent':'CryLo-Unsigned-Release-Preflight',
