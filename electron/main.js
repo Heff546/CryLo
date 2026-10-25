@@ -2,7 +2,7 @@
 
 require('dotenv').config({ quiet: true });
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session } = require('electron');
 
 const path = require('path');
 const fs = require('fs');
@@ -11,6 +11,31 @@ const { spawn, spawnSync } = require('child_process');
 const http = require('http');
 const os = require('os');
 const { ethers } = require('ethers');
+const {
+  isWalletDocument,
+  trustedIpcSender,
+  safeExternalHttpsUrl
+} = require('./security/renderer-policy');
+
+// All renderer-to-main IPC handlers, including wallet RPC, bridge, staking,
+// miner and local file actions, are gated to the top-level local wallet page.
+// Never authorize a child frame solely because it belongs to our window.
+function secureIpcHandle(channel, handler) {
+  return ipcMain.handle(channel, (event, ...args) => {
+    if (!trustedIpcSender(event, mainWindow)) {
+      throw new Error('CryLo blocked an unauthorized renderer IPC request.');
+    }
+    return handler(event, ...args);
+  });
+}
+
+function openVerifiedExternalLink(value) {
+  const safeUrl = safeExternalHttpsUrl(value);
+  if (!safeUrl) return;
+  void shell.openExternal(safeUrl).catch(error => {
+    console.error('CryLo could not open validated external link:', error);
+  });
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const DAEMON_RPC_PORT   = 22641;
@@ -208,7 +233,7 @@ function clearNexusRuntimeConfig() {
   nexusRuntimeLoadedAt = 0;
 }
 
-ipcMain.handle('nexus-runtime-status', async () => {
+secureIpcHandle('nexus-runtime-status', async () => {
   try {
     const runtime = await getNexusRuntimeConfig(true);
     const latestBlock = await runtime.provider.getBlockNumber();
@@ -505,19 +530,19 @@ async function startBackend() {
 
 // ─── IPC handlers ─────────────────────────────────────────────────────────────
 // Daemon RPC
-ipcMain.handle('daemon-rpc', async (_, method, params) => {
+secureIpcHandle('daemon-rpc', async (_, method, params) => {
   try { return { ok: true,  result: await daemonRpc(method, params) }; }
   catch (e) { return { ok: false, error: e.message }; }
 });
 
 // Wallet RPC
-ipcMain.handle('wallet-rpc', async (_, method, params, timeoutMs) => {
+secureIpcHandle('wallet-rpc', async (_, method, params, timeoutMs) => {
   try { return { ok: true,  result: await walletRpc(method, params, timeoutMs || 10000) }; }
   catch (e) { return { ok: false, error: e.message }; }
 });
 
 // List wallet files in wallet dir
-ipcMain.handle('list-wallets', async () => {
+secureIpcHandle('list-wallets', async () => {
   try {
     const dir = getWalletDir();
     const files = fs.readdirSync(dir);
@@ -647,7 +672,7 @@ async function registerBoundNexusWallet(wallet) {
 }
 
 
-ipcMain.handle('nexus-wallet-create', async (_, walletName, cryloAddress) => {
+secureIpcHandle('nexus-wallet-create', async (_, walletName, cryloAddress) => {
   try {
     if (!walletName || !cryloAddress) {
       throw new Error('Open a CryLo wallet before creating a Nexus wallet');
@@ -751,7 +776,7 @@ ipcMain.handle('nexus-wallet-create', async (_, walletName, cryloAddress) => {
   }
 });
 
-ipcMain.handle('nexus-wallet-load', async (_, walletName, cryloAddress) => {
+secureIpcHandle('nexus-wallet-load', async (_, walletName, cryloAddress) => {
   try {
     if (!walletName || !cryloAddress) {
       return { ok: true, nexusAddress: '' };
@@ -869,22 +894,22 @@ function loadBoundNexusWallet(walletName, cryloAddress) {
 
 
 // Open log directory
-ipcMain.handle('open-log-dir', async () => {
+secureIpcHandle('open-log-dir', async () => {
   shell.openPath(getLogDir());
 });
 
 // Open wallet data directory
-ipcMain.handle('open-data-dir', async () => {
+secureIpcHandle('open-data-dir', async () => {
   shell.openPath(getUserDataPath());
 });
 
 // Get app version
-ipcMain.handle('get-version', async () => {
+secureIpcHandle('get-version', async () => {
   return app.getVersion();
 });
 
 // Confirm dialog
-ipcMain.handle('confirm-dialog', async (_, opts) => {
+secureIpcHandle('confirm-dialog', async (_, opts) => {
   const result = await dialog.showMessageBox(mainWindow, {
     type: opts.type || 'question',
     buttons: opts.buttons || ['OK', 'Cancel'],
@@ -900,7 +925,7 @@ ipcMain.handle('confirm-dialog', async (_, opts) => {
 // ─── Miner ───────────────────────────────────────────────────────────────────
 
 // Miner IPC — CryLo daemon mining
-ipcMain.handle('miner-get-info', async () => {
+secureIpcHandle('miner-get-info', async () => {
   return {
     ok: true,
     cpuCount: os.cpus().length,
@@ -949,7 +974,7 @@ async function shutdownBackendsSafely() {
 }
 
 
-ipcMain.handle('miner-start', async (_, opts) => {
+secureIpcHandle('miner-start', async (_, opts) => {
   try {
     const result = await daemonHttp('/start_mining', {
       miner_address: opts.walletAddress,
@@ -964,7 +989,7 @@ ipcMain.handle('miner-start', async (_, opts) => {
   }
 });
 
-ipcMain.handle('miner-stop', async () => {
+secureIpcHandle('miner-stop', async () => {
   try {
     await stopDaemonMining();
     return { ok: true };
@@ -976,7 +1001,7 @@ ipcMain.handle('miner-stop', async () => {
   }
 });
 
-ipcMain.handle('miner-get-status', async () => {
+secureIpcHandle('miner-get-status', async () => {
   try {
     const result = await daemonHttp('/mining_status', {});
 
@@ -993,7 +1018,7 @@ ipcMain.handle('miner-get-status', async () => {
 });
 
 // ─── CryLo Nexus ──────────────────────────────────────────────────────────────
-ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
+secureIpcHandle('nexus-scan-nfts', async (_, linkedAddress) => {
   try {
     const normalizedLinked = String(linkedAddress || '').toLowerCase();
 
@@ -1069,7 +1094,7 @@ ipcMain.handle('nexus-scan-nfts', async (_, linkedAddress) => {
   }
 });
 
-ipcMain.handle('nexus-buyback-nft', async (_, tokenId, walletName, cryloAddress) => {
+secureIpcHandle('nexus-buyback-nft', async (_, tokenId, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -1142,7 +1167,7 @@ ipcMain.handle('nexus-buyback-nft', async (_, tokenId, walletName, cryloAddress)
   }
 });
 
-ipcMain.handle('nexus-burn-nft', async (_, tokenId, walletName, cryloAddress) => {
+secureIpcHandle('nexus-burn-nft', async (_, tokenId, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -1196,7 +1221,7 @@ ipcMain.handle('nexus-burn-nft', async (_, tokenId, walletName, cryloAddress) =>
 });
 
 
-ipcMain.handle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloAddress) => {
+secureIpcHandle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -1253,7 +1278,7 @@ ipcMain.handle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloAd
 });
 
 
-ipcMain.handle('bridge-request', async (_, payload) => {
+secureIpcHandle('bridge-request', async (_, payload) => {
   try {
     const res = await fetch(`${BRIDGE_API_URL}/bridge/request`, {
       method: 'POST',
@@ -1275,7 +1300,7 @@ ipcMain.handle('bridge-request', async (_, payload) => {
   }
 });
 
-ipcMain.handle('bridge-status', async (_, paymentId) => {
+secureIpcHandle('bridge-status', async (_, paymentId) => {
   try {
     const res = await fetch(`${BRIDGE_API_URL}/bridge/status/${encodeURIComponent(paymentId)}`);
 
@@ -1294,7 +1319,7 @@ ipcMain.handle('bridge-status', async (_, paymentId) => {
 });
 
 
-ipcMain.handle('bridge-release-status', async (_, nexusTxHash) => {
+secureIpcHandle('bridge-release-status', async (_, nexusTxHash) => {
   try {
     const res = await fetch(`${BRIDGE_API_URL}/bridge/release-status/${encodeURIComponent(nexusTxHash)}`);
     const text = await res.text();
@@ -1312,7 +1337,7 @@ ipcMain.handle('bridge-release-status', async (_, nexusTxHash) => {
 });
 
 
-ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
+secureIpcHandle('nexus-wcrylo-balance', async (_, linkedAddress) => {
   try {
     if (!ethers.isAddress(linkedAddress)) {
       return { ok: false, error: 'Invalid Nexus address' };
@@ -1348,7 +1373,7 @@ ipcMain.handle('nexus-wcrylo-balance', async (_, linkedAddress) => {
   }
 });
 
-ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
+secureIpcHandle('nexus-staked-balance', async (_, linkedAddress) => {
   try {
     if (!ethers.isAddress(linkedAddress)) {
       return { ok: false, error: 'Invalid Nexus address' };
@@ -1374,7 +1399,7 @@ ipcMain.handle('nexus-staked-balance', async (_, linkedAddress) => {
   }
 });
 
-ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
+secureIpcHandle('nexus-pending-rewards', async (_, linkedAddress) => {
   try {
     if (!ethers.isAddress(linkedAddress)) {
       return { ok: false, error: 'Invalid Nexus address' };
@@ -1400,7 +1425,7 @@ ipcMain.handle('nexus-pending-rewards', async (_, linkedAddress) => {
   }
 });
 
-ipcMain.handle('nexus-claim-rewards', async (_, walletName, cryloAddress) => {
+secureIpcHandle('nexus-claim-rewards', async (_, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const wallet = loadBoundNexusWallet(
@@ -1432,7 +1457,7 @@ ipcMain.handle('nexus-claim-rewards', async (_, walletName, cryloAddress) => {
   }
 });
 
-ipcMain.handle('nexus-stake-wcrylo', async (_, amountText, walletName, cryloAddress) => {
+secureIpcHandle('nexus-stake-wcrylo', async (_, amountText, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -1484,7 +1509,7 @@ ipcMain.handle('nexus-stake-wcrylo', async (_, amountText, walletName, cryloAddr
   }
 });
 
-ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText, walletName, cryloAddress) => {
+secureIpcHandle('nexus-unstake-wcrylo', async (_, amountText, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -1521,7 +1546,7 @@ ipcMain.handle('nexus-unstake-wcrylo', async (_, amountText, walletName, cryloAd
   }
 });
 
-ipcMain.handle('nexus-node-status', async (_, linkedAddress) => {
+secureIpcHandle('nexus-node-status', async (_, linkedAddress) => {
   try {
     if (!ethers.isAddress(linkedAddress)) {
       return { ok: false, error: 'Invalid Nexus address' };
@@ -1862,7 +1887,7 @@ function saveOperatorConfig({
   return config;
 }
 
-ipcMain.handle('nexus-register-operator', async (_, walletName, cryloAddress) => {
+secureIpcHandle('nexus-register-operator', async (_, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -1936,7 +1961,7 @@ ipcMain.handle('nexus-register-operator', async (_, walletName, cryloAddress) =>
   }
 });
 
-ipcMain.handle('nexus-register-validator', async (_, walletName, cryloAddress) => {
+secureIpcHandle('nexus-register-validator', async (_, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -2010,7 +2035,7 @@ ipcMain.handle('nexus-register-validator', async (_, walletName, cryloAddress) =
   }
 });
 
-ipcMain.handle('nexus-unregister-node', async (_, walletName, cryloAddress) => {
+secureIpcHandle('nexus-unregister-node', async (_, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -2050,7 +2075,7 @@ ipcMain.handle('nexus-unregister-node', async (_, walletName, cryloAddress) => {
   }
 });
 
-ipcMain.handle('nexus-claim-node-rewards', async (_, walletName, cryloAddress) => {
+secureIpcHandle('nexus-claim-node-rewards', async (_, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -4298,7 +4323,7 @@ function readOperatorAuthorization(filePath, expectedAddress) {
 
 
 
-ipcMain.handle(
+secureIpcHandle(
   'nexus-operator-installation-status',
   async () => {
     try {
@@ -4407,7 +4432,7 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle(
+secureIpcHandle(
   'nexus-install-operator-service',
   async () => {
     try {
@@ -4428,7 +4453,7 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle(
+secureIpcHandle(
   'nexus-control-operator-service',
   async (_event, action) => {
     try {
@@ -4452,7 +4477,7 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle(
+secureIpcHandle(
   'nexus-authorize-operator',
   async (_, walletName, cryloAddress) => {
     try {
@@ -4727,7 +4752,7 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle('nexus-operator-dashboard', async (_, linkedAddress) => {
+secureIpcHandle('nexus-operator-dashboard', async (_, linkedAddress) => {
   const paths = getOperatorPaths();
   const configResult = readJsonFileSafe(paths.config);
   const statusFile = findOperatorStatusFile(paths.statusCandidates);
@@ -5038,7 +5063,9 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true,
+      webSecurity: true,
+      webviewTag: false
     },
     // No native frame for custom titlebar feel
     frame: true,
@@ -5087,7 +5114,23 @@ if (process.platform === 'darwin') {
 }
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  session.defaultSession.setPermissionRequestHandler(
+    (contents, permission, callback) => {
+      const localWallet =
+        mainWindow &&
+        !mainWindow.isDestroyed() &&
+        contents === mainWindow.webContents &&
+        isWalletDocument(contents.getURL());
+
+      // Only ordinary clipboard write is necessary for copying wallet
+      // addresses. Never allow camera, microphone, geolocation or other
+      // renderer permissions without an explicit security review.
+      callback(Boolean(localWallet && permission === 'clipboard-sanitized-write'));
+    }
+  );
+  createWindow();
+});
 
 app.on('window-all-closed', async () => {
   await shutdownBackendsSafely();
@@ -5164,17 +5207,20 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-// Open external URLs in system browser, prevent in-app navigation
+// Only the wallet document may remain inside Electron. All other navigation
+// is blocked; only separately validated HTTPS URLs may open in the OS browser.
 app.on('web-contents-created', (_, contents) => {
   contents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('file://')) {
-      event.preventDefault();
-      shell.openExternal(url);
+    if (isWalletDocument(url)) return;
+    event.preventDefault();
+    if (mainWindow && contents === mainWindow.webContents) {
+      openVerifiedExternalLink(url);
     }
   });
   contents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://') || url.startsWith('http://')) {
-      shell.openExternal(url);
+    if (mainWindow && contents === mainWindow.webContents &&
+        isWalletDocument(contents.getURL())) {
+      openVerifiedExternalLink(url);
     }
     return { action: 'deny' };
   });
@@ -5257,7 +5303,7 @@ async function getClaimableGasEpoch(gm, walletAddress) {
  * treasury state, and gas epochs, so it is too slow for post-onboarding
  * balance detection.
  */
-ipcMain.handle('nexus-native-gas-balance', async (_, linkedAddress) => {
+secureIpcHandle('nexus-native-gas-balance', async (_, linkedAddress) => {
   try {
     if (!ethers.isAddress(linkedAddress)) {
       return {
@@ -5294,7 +5340,7 @@ ipcMain.handle('nexus-native-gas-balance', async (_, linkedAddress) => {
 });
 
 
-ipcMain.handle('nexus-gas-status', async (_, linkedAddress) => {
+secureIpcHandle('nexus-gas-status', async (_, linkedAddress) => {
   try {
     if (!ethers.isAddress(linkedAddress)) {
       return {
@@ -5392,7 +5438,7 @@ ipcMain.handle('nexus-gas-status', async (_, linkedAddress) => {
   }
 });
 
-ipcMain.handle('nexus-claim-daily-gas', async (_, walletName, cryloAddress) => {
+secureIpcHandle('nexus-claim-daily-gas', async (_, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
@@ -5448,7 +5494,7 @@ ipcMain.handle('nexus-claim-daily-gas', async (_, walletName, cryloAddress) => {
   }
 });
 
-ipcMain.handle('nexus-buy-gas-wcrylo', async (_, amountText, walletName, cryloAddress) => {
+secureIpcHandle('nexus-buy-gas-wcrylo', async (_, amountText, walletName, cryloAddress) => {
   let stage = 'initialization';
 
   try {
@@ -5630,7 +5676,7 @@ ipcMain.handle('nexus-buy-gas-wcrylo', async (_, amountText, walletName, cryloAd
   }
 });
 
-ipcMain.handle('nexus-transactions', async (_, linkedAddress) => {
+secureIpcHandle('nexus-transactions', async (_, linkedAddress) => {
   try {
     if (!ethers.isAddress(linkedAddress)) {
       return { ok: false, error: 'Invalid Nexus address' };
