@@ -1,0 +1,31 @@
+name: CryLo OpenSSL Win64 remaining warnings isolated audit
+on:
+  push:
+    branches: [feature/mac-first-build-gate]
+    paths:
+      - .github/workflows/windows-openssl-unused-compat-audit.yml
+      - contrib/depends/patches/openssl/openssl-3.5.9-mingw-unused-compat.patch
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/openssl-unused" && cd "$RUNNER_TEMP/openssl-unused"
+          curl --fail --silent --show-error --location --retry 3 https://www.openssl.org/source/openssl-3.5.9.tar.gz -o source.tar.gz
+          echo '603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a  source.tar.gz' | sha256sum -c -
+          tar -xzf source.tar.gz && cd openssl-3.5.9
+          patch --batch --forward -p1 < "$GITHUB_WORKSPACE/contrib/depends/patches/openssl/openssl-3.5.9-mingw-warning-compat.patch"
+          patch --batch --forward --dry-run -p1 < "$GITHUB_WORKSPACE/contrib/depends/patches/openssl/openssl-3.5.9-mingw-unused-compat.patch"
+          patch --batch --forward -p1 < "$GITHUB_WORKSPACE/contrib/depends/patches/openssl/openssl-3.5.9-mingw-unused-compat.patch"
+          ! grep -q 'static void wsa_done' ssl/rio/rio_notifier.c
+          grep -F '#if !defined(OPENSSL_SYS_WINDOWS)' ssl/rio/rio_notifier.c
+          echo 'PASS: isolated follow-on patch, release remains frozen'
