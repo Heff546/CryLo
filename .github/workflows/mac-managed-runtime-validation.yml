@@ -1,0 +1,94 @@
+name: CryLo macOS managed Node/npm provisioning and data preservation
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - crylo
+      - .github/workflows/mac-managed-runtime-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-runtime:
+    name: Authentic macOS runtime and rollback — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: intel
+            runner: macos-15-intel
+            arch: x64
+          - name: apple-silicon
+            runner: macos-15
+            arch: arm64
+    steps:
+      - name: Check out current CryLo launcher
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Check shell syntax and expected host
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          sh -n ./crylo
+          if [ "$EXPECTED_ARCH" = arm64 ]; then test "$(uname -m)" = arm64; fi
+          if [ "$EXPECTED_ARCH" = x64 ]; then test "$(uname -m)" = x86_64; fi
+          grep -F 'elif [ "$(uname -s)" = "Darwin" ]; then' crylo
+
+      - name: Fresh Mac install without Homebrew or ambient Node
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/CryLo user-data preservation"
+          mkdir -p "$HOME/Library/Application Support/CryLo/wallets"
+          echo 'preserve Mac user configuration' > "$HOME/Library/Application Support/CryLo/CryLo.conf"
+          echo 'preserve wallet bytes' > "$HOME/Library/Application Support/CryLo/wallets/private-wallet"
+          sh ./crylo help
+          d="$HOME/Library/Application Support/CryLo/runtime/node-v24.21.0-darwin-$EXPECTED_ARCH"
+          test -x "$d/bin/node"
+          test -x "$d/bin/npm"
+          test "$("$d/bin/node" --version)" = v24.21.0
+          test "$("$d/bin/node" -p 'process.arch')" = "$EXPECTED_ARCH"
+          test "$(PATH="$d/bin:$PATH" "$d/bin/npm" --version)" = 12.1.0
+          test -z "$(find "$HOME/Library/Application Support/CryLo/runtime" -maxdepth 1 -name '*.pre-crylo-bootstrap' -print)"
+          echo 'preserve existing runtime' > "$d/existing-runtime-sentinel"
+          echo 'PASS: macOS first-user pinned runtime and architecture autodetection'
+
+      - name: Failed replacement preserves previous runtime, wallet and configuration
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/CryLo user-data preservation"
+          d="$HOME/Library/Application Support/CryLo/runtime/node-v24.21.0-darwin-$EXPECTED_ARCH"
+          mv "$d/bin/npm" "$d/bin/npm.saved"
+          mock="$RUNNER_TEMP/crylo-unavailable-download"
+          mkdir -p "$mock"
+          printf '#!/bin/sh\nexit 77\n' > "$mock/curl"
+          chmod 755 "$mock/curl"
+          if PATH="$mock:$PATH" sh ./crylo help > "$RUNNER_TEMP/crylo-recovery-check.log" 2>&1; then
+            echo 'ERROR: simulated failed download unexpectedly succeeded' >&2
+            exit 1
+          fi
+          test -f "$d/existing-runtime-sentinel"
+          test -e "$d/bin/npm.saved"
+          test "$(cat "$HOME/Library/Application Support/CryLo/CryLo.conf")" = 'preserve Mac user configuration'
+          test "$(cat "$HOME/Library/Application Support/CryLo/wallets/private-wallet")" = 'preserve wallet bytes'
+          test ! -e "$d.pre-crylo-bootstrap"
+          mv "$d/bin/npm.saved" "$d/bin/npm"
+          sh ./crylo help
+          test "$(PATH="$d/bin:$PATH" "$d/bin/npm" --version)" = 12.1.0
+          echo 'PASS: failed macOS dependency update preserved all existing files'
