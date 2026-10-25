@@ -94,12 +94,13 @@ test('simulated five-target release assembly validates hashes and rejects tamper
   write(path.join(wd,'BINARY-MANIFEST.txt'),'Runtime-Manifest-SHA256: '+sha(metadata)+'\n');
   write(path.join(wd,'SOURCE-COMMIT.txt'),run.head_sha+'\n');
   for(const [i,label] of ['DAEMON','WALLET','RPC'].entries())
-   write(path.join(wd,label+'-SHA256.txt'),'SHA256 hash\n'+roots[i].sha+'\nCertUtil: completed');
+   write(path.join(wd,label+'-SHA256.txt'),'SHA256 hash\n'+roots[i].sha256+'\nCertUtil: completed');
   write(path.join(wd,'CryLo Wallet Setup 1.1.1.exe'),pe());
   assert.equal(winPackage(wd,wo,run,'1.1.1').runtimeDLLs,1);
   const winZip=path.join(root,'Windows.zip');packageZip(wo,winZip);assert.ok(fs.statSync(winZip).size>0);
   fs.appendFileSync(path.join(wd,'libtest.dll'),Buffer.from('tamper'));
-  assert.throws(()=>winPackage(wd,path.join(root,'winfail'),run,'1.1.1'));
+  fs.mkdirSync(path.join(root,'winfail'));
+  assert.throws(()=>winPackage(wd,path.join(root,'winfail'),run,'1.1.1'),/size mismatch/);
   for(const arch of ['x64','arm64']){
    const d=path.join(root,'linux-'+arch),o=path.join(root,'out-'+arch);
    fs.mkdirSync(d);fs.mkdirSync(o);
@@ -116,7 +117,8 @@ test('simulated five-target release assembly validates hashes and rejects tamper
    linuxPackage(d,o,run,arch,'1.1.1');
    const tarFile=path.join(root,arch+'.tar');packageTar(o,tarFile);assert.ok(fs.statSync(tarFile).size>0);
    fs.appendFileSync(path.join(d,'CryLo-daemon'),Buffer.from('modified'));
-   assert.throws(()=>linuxPackage(d,path.join(root,'broken-'+arch),run,arch,'1.1.1'));
+   fs.mkdirSync(path.join(root,'broken-'+arch));
+   assert.throws(()=>linuxPackage(d,path.join(root,'broken-'+arch),run,arch,'1.1.1'),/SHA-256 differs/);
   }
   for(const arch of ['x64','arm64']){
    const d=path.join(root,'mac-'+arch),o=path.join(root,'mac-out-'+arch);fs.mkdirSync(d);fs.mkdirSync(o);
