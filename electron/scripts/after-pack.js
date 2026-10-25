@@ -171,7 +171,7 @@ module.exports = async function afterPack(context) {
     // The installed GUI must contain the exact reviewed release verification
     // implementation and currently trusted Pi1 public key. Refuse to package
     // a Mac wallet with missing or stale update-trust resources.
-    const packagedMacResources = path.dirname(packagedDir);
+    const packagedMacResources = path.dirname(path.dirname(packagedDir));
     const macTrustInputs = [
       ['scripts/release/macos-package-trust.js', 'macos-package-trust.js'],
       ['scripts/release/macos-unsigned-update-stage.js', 'macos-unsigned-update-stage.js'],
