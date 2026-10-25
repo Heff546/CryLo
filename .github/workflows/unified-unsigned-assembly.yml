@@ -1,0 +1,98 @@
+name: CryLo five-platform unsigned release candidate assembly
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/unified-unsigned-assembly.yml
+      - scripts/release/unified-unsigned-assemble.js
+      - scripts/tests/unified-unsigned-assemble.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  unsigned-assembly:
+    name: Validate and assemble five unsigned candidate targets — never publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out reviewed source without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Pinned offline staging runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Validate fail-closed staging contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/release/unified-unsigned-assemble.js
+          node --test scripts/tests/unified-unsigned-assemble.test.js
+      - name: Collect only successful five-platform candidate inputs and provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          input="$RUNNER_TEMP/crylo-candidate-input"
+          metadata="$RUNNER_TEMP/crylo-candidate-metadata"
+          output="$RUNNER_TEMP/crylo-unsigned-staging"
+          mkdir -p "$input" "$metadata" "$output"
+          echo "CRYLO_UNSIGNED_INPUT_DIR=$input" >> "$GITHUB_ENV"
+          echo "CRYLO_UNSIGNED_META_DIR=$metadata" >> "$GITHUB_ENV"
+          echo "CRYLO_UNSIGNED_OUTPUT_DIR=$output" >> "$GITHUB_ENV"
+          for record in \
+            'win|40235096809|crylo-unified-windows-x64-unsigned-native-candidate|x64' \
+            'linux|40235385178|crylo-unified-linux-x64-unsigned-build|x64' \
+            'linux|40235385178|crylo-unified-linux-arm64-unsigned-build|arm64' \
+            'mac|40232358622|crylo-mac-x64-verified-unsigned-candidate-retained|x64' \
+            'mac|40232358622|crylo-mac-arm64-verified-unsigned-candidate-retained|arm64'; do
+            IFS='|' read -r family run artifact arch <<< "$record"
+            echo "Inspecting $family/$arch from exact Actions run $run"
+            success="$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.conclusion')"
+            if [ "$success" != 'success' ]; then
+              echo "::error::Required unsigned source run $run is not successful; refusing incomplete release staging"
+              exit 1
+            fi
+            gh run download "$run" --repo Heff546/CryLo --name "$artifact" \
+              --dir "$input/$family-$arch"
+            test "$(find "$input/$family-$arch" -type f | wc -l)" -gt 0
+          done
+          for record in \
+            'win|40235096809' \
+            'linux|40235385178' \
+            'mac|40232358622'; do
+            IFS='|' read -r family run <<< "$record"
+            gh api "repos/Heff546/CryLo/actions/runs/$run" > "$metadata/$family-run.json"
+            source_sha="$(node -e "const x=require(process.argv[1]);process.stdout.write(x.head_sha)" "$metadata/$family-run.json")"
+            test "$source_sha" != ""
+            gh api "repos/Heff546/CryLo/compare/$source_sha...$GITHUB_SHA" \
+              > "$metadata/$family-compare.json"
+          done
+      - name: Verify all five architectures and create unsigned staging archive inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release/unified-unsigned-assemble.js
+          test -s "$CRYLO_UNSIGNED_OUTPUT_DIR/SHA256SUMS-CI-ONLY.txt"
+          (cd "$CRYLO_UNSIGNED_OUTPUT_DIR" && sha256sum -c SHA256SUMS-CI-ONLY.txt)
+          test "$(find "$CRYLO_UNSIGNED_OUTPUT_DIR" -maxdepth 1 -type f -name 'CryLo-*.pkg' | wc -l)" = 2
+          test "$(find "$CRYLO_UNSIGNED_OUTPUT_DIR" -maxdepth 1 -type f -name 'CryLo-*.tar' | wc -l)" = 2
+          test "$(find "$CRYLO_UNSIGNED_OUTPUT_DIR" -maxdepth 1 -type f -name 'CryLo-*.zip' | wc -l)" = 1
+          echo 'PASS: five unsigned release candidates, hashes, network and architecture verified'
+          echo 'Official signing, release sequence advancement and publishing remain Pi1 only'
+      - name: Retain validation-only release assembly, not an official release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-five-platform-unsigned-assembly-DO-NOT-PUBLISH
+          path: ${{ env.CRYLO_UNSIGNED_OUTPUT_DIR }}/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
