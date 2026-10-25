@@ -1,13 +1,8 @@
 name: CryLo five-platform unsigned release candidate assembly
 
+# RELEASE FREEZE: Do not assemble candidates while Windows warnings remain under review.
+# Manual dispatch must be reauthorized after cross-platform impact verification.
 on:
-  push:
-    branches:
-      - feature/mac-first-build-gate
-    paths:
-      - .github/workflows/unified-unsigned-assembly.yml
-      - scripts/release/unified-unsigned-assemble.js
-      - scripts/tests/unified-unsigned-assemble.test.js
   workflow_dispatch:
 
 permissions:
@@ -17,6 +12,7 @@ permissions:
 jobs:
   unsigned-assembly:
     name: Validate and assemble five unsigned candidate targets — never publish
+    if: ${{ false }} # Frozen: explicit review required before restoring
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
