@@ -23,6 +23,13 @@ the signed manifest. Never rename a mismatched package to make it pass.
 
 ## For users
 
+The installed macOS PKG includes a `/usr/local/bin/crylo` command. In Terminal,
+run **`crylo update`** to authenticate and prepare a matching Intel or Apple Silicon
+release without Homebrew, Git or a source checkout. The command asks permission
+to download and then opens the verified PKG in macOS Installer, where you approve
+installation under normal macOS security controls. No Pi1-signed update means no
+installation. The accepted sequence is not advanced by download or staging.
+
 1. Obtain an official CryLo release through the Pi1-authenticated release
    channel. Do **not** install GitHub Actions' unsigned CI validation artifacts
    as official public releases.

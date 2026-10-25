@@ -176,7 +176,9 @@ module.exports = async function afterPack(context) {
       ['scripts/release/macos-package-trust.js', 'macos-package-trust.js'],
       ['scripts/release/macos-unsigned-update-stage.js', 'macos-unsigned-update-stage.js'],
       ['scripts/release/keys/crylo-testnet-release-ed25519-public.pem',
-        'crylo-testnet-release-ed25519-public.pem']
+        'crylo-testnet-release-ed25519-public.pem'],
+      ['electron/security/macos-update-client.js', 'macos-update-client.js'],
+      ['scripts/release/macos-installed-update.js', 'macos-installed-update.js']
     ];
     for (const [sourceName, fileName] of macTrustInputs) {
       const sourceFile = path.join(root, sourceName);

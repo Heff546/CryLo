@@ -115,6 +115,14 @@ try {
   fs.mkdirSync(apps, { recursive: true });
   fs.cpSync(wallet, path.join(apps, 'CryLo Wallet.app'), { recursive: true });
   fs.cpSync(daemon, path.join(apps, 'CryLo Daemon.app'), { recursive: true });
+  // The PKG installs the same `crylo update` entry point on Intel and ARM64.
+  // Never include user wallet/configuration data in the installation payload.
+  const commandSource = path.join(electronDir, '..', 'scripts', 'release', 'macos-installed-command.sh');
+  const commandDestination = path.join(stage, 'usr', 'local', 'bin', 'crylo');
+  fs.mkdirSync(path.dirname(commandDestination), { recursive: true });
+  fs.copyFileSync(commandSource, commandDestination, fs.constants.COPYFILE_EXCL);
+  fs.chmodSync(commandDestination, 0o755);
+  command('/bin/sh', ['-n', commandDestination]);
   fs.mkdirSync(scriptDir, { mode: 0o700 });
   const postinstall = path.join(scriptDir, 'postinstall');
   fs.writeFileSync(postinstall, `#!/bin/sh

@@ -162,6 +162,14 @@
         {
           "from": "../scripts/release/keys/crylo-testnet-release-ed25519-public.pem",
           "to": "macos-update/crylo-testnet-release-ed25519-public.pem"
+        },
+        {
+          "from": "security/macos-update-client.js",
+          "to": "macos-update/macos-update-client.js"
+        },
+        {
+          "from": "../scripts/release/macos-installed-update.js",
+          "to": "macos-update/macos-installed-update.js"
         }
       ]
     },
