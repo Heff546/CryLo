@@ -1,0 +1,86 @@
+name: CryLo signed macOS PKG trust and no-install rejection gate
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/mac-signed-package-trust-gate.yml
+      - scripts/release/macos-package-trust.js
+      - scripts/tests/macos-package-trust.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trust-preflight:
+    name: macOS signed installer trust — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: intel
+            runner: macos-15-intel
+            arch: x64
+          - name: apple-silicon
+            runner: macos-15
+            arch: arm64
+    steps:
+      - name: Check out exact reviewed source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Verify native Mac trust-module syntax and system utilities
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          node --check scripts/release/macos-package-trust.js
+          node --check scripts/tests/macos-package-trust.test.js
+          node -e "if(process.arch!==process.env.EXPECTED_ARCH)process.exit(1)"
+          test -x /usr/sbin/pkgutil
+          test -x /usr/sbin/spctl
+          test -x /usr/bin/xcrun
+          node --test scripts/tests/macos-package-trust.test.js
+
+      - name: Build a synthetic unsigned PKG and prove fail-closed behavior
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          root="$RUNNER_TEMP/crylo-unsigned-rejection"
+          mkdir -p "$root/payload" "$root/wallet"
+          echo wallet-private-sentinel > "$root/wallet/seed"
+          echo no-install > "$root/payload/marker"
+          pkg="$root/CryLo-1.1.1-mac-$EXPECTED_ARCH.pkg"
+          /usr/bin/pkgbuild --root "$root/payload" \
+            --identifier com.crylo.unsigned-ci-fixture \
+            --version 1.1.1 --install-location /Applications "$pkg"
+          export PKG_TO_REJECT="$pkg"
+          node - <<'NODE'
+          const assert=require('node:assert/strict');
+          const fs=require('node:fs');
+          const crypto=require('node:crypto');
+          const {verifyMacPackage}=require('./scripts/release/macos-package-trust');
+          const file=process.env.PKG_TO_REJECT;
+          const data=fs.readFileSync(file);
+          const manifest={
+            product:'CryLo',network:'testnet',version:'1.1.1',releaseSequence:20,
+            artifacts:[{platform:'mac',architecture:process.arch,
+              file:require('node:path').basename(file),size:data.length,
+              sha256:crypto.createHash('sha256').update(data).digest('hex')}]
+          };
+          assert.throws(()=>verifyMacPackage({packagePath:file,manifest,
+            architecture:process.arch,trustedTeamId:'AB12CD34EF'}));
+          console.log('PASS: unsigned installer rejected by actual macOS signature utilities');
+          NODE
+          test "$(cat "$root/wallet/seed")" = wallet-private-sentinel
+          test -z "$(git status --porcelain)"
+          echo 'PASS: rejection preserved wallet data and source tree'
