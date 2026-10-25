@@ -10,6 +10,8 @@ on:
       - electron/preload.js
       - electron/security/**
       - electron/test/renderer-security.test.js
+      - electron/test/release-packaging-security.test.js
+      - electron/package.json
       - scripts/tests/install-win-linux-pi-static.js
       - scripts/crylo.js
       - scripts/tests/signed-update-contract.test.js
@@ -85,6 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           node --test electron/test/renderer-security.test.js
+          node --test electron/test/release-packaging-security.test.js
           node --test electron/test/node-center-facts.test.js electron/test/node-center-state.test.js electron/test/node-center-renderer.test.js
 
       - name: Verify existing install/update source contract
