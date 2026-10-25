@@ -193,6 +193,41 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all -- . ':!build' ':!contrib/depends')"
           echo "===== NATIVE MAC X64 COMPILE GATE COMPLETE ====="
 
+      - name: Audit native Mach-O load commands and unwind sections
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== READ-ONLY INTEL MACH-O DIAGNOSTICS ====="
+          for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+            binary="build/mac-x64/bin/$name"
+            test -s "$binary"
+            echo "===== $name: ARCHITECTURE AND HEADER ====="
+            file "$binary"
+            lipo -archs "$binary"
+            otool -hv "$binary"
+            echo "===== $name: DYNAMIC LIBRARY REFERENCES ====="
+            otool -L "$binary"
+            echo "===== $name: BUILD VERSION ====="
+            xcrun vtool -show-build "$binary" || true
+            echo "===== $name: UNWIND / ENVIRONMENT SECTIONS ====="
+            loadcmds="$(mktemp)"
+            otool -l "$binary" > "$loadcmds"
+            grep -n -B 10 -A 16 -E 'sectname (__unwind_info|__eh_frame|text_env)|segname __TEXT|cmd LC_CODE_SIGNATURE' "$loadcmds" || true
+            rm -f "$loadcmds"
+            echo "===== $name: SIGNATURE DETAILS (UNSIGNED VALIDATION EXPECTED) ====="
+            if codesign -dv --verbose=4 "$binary" 2>&1; then
+              echo "Signature metadata present"
+            else
+              echo "No valid signature metadata reported (may be expected for unsigned build)"
+            fi
+            if codesign --verify --verbose=2 "$binary" 2>&1; then
+              echo "Code signature verification succeeded"
+            else
+              echo "Code signature verification unavailable or failed (not a release signing gate)"
+            fi
+          done
+          echo "===== MACH-O DIAGNOSTICS COMPLETE; NO FILES OR LINK FLAGS MODIFIED ====="
+
       - name: Package unsigned CryLo macOS x64 application and PKG
         shell: bash
         env:
