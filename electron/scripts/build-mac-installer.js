@@ -43,8 +43,11 @@ fs.mkdirSync(macos, { recursive: true });
 fs.mkdirSync(resources, { recursive: true });
 const iconSource = path.join(electronDir, 'assets', 'icon.png');
 if (!fs.existsSync(iconSource)) throw new Error('CryLo icon.png is missing');
-const iconset = fs.mkdtempSync(path.join(os.tmpdir(), 'crylo-iconset-')) + '.iconset';
-fs.mkdirSync(iconset);
+// Use a private workspace: suffixing the mkdtemp path with .iconset
+// would create a second, raceable path in a shared temporary directory.
+const iconWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'crylo-iconset-'));
+const iconset = path.join(iconWorkspace, 'CryLo.iconset');
+fs.mkdirSync(iconset, { mode: 0o700 });
 try {
   for (const [pixels, suffix] of [
     [16, '16x16'], [32, '16x16@2x'], [32, '32x32'],
@@ -61,7 +64,7 @@ try {
     '-c', 'icns', iconset, '-o', path.join(resources, 'CryLo.icns')
   ]);
 } finally {
-  fs.rmSync(iconset, { recursive: true, force: true });
+  fs.rmSync(iconWorkspace, { recursive: true, force: true });
 }
 const executable = path.join(macos, 'CryLo Daemon');
 const embedded = path.join(resources, 'CryLo-daemon');
@@ -102,14 +105,17 @@ fs.rmSync(dmgSource, { recursive: true, force: true });
 fs.cpSync(daemon, dmgSource, { recursive: true });
 command('/usr/bin/plutil', ['-lint', path.join(daemon, 'Contents', 'Info.plist')]);
 command('/bin/sh', ['-n', executable]);
-const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'crylo-mac-pkg-'));
+// Isolate payload and scripts under one mode-0700 mkdtemp workspace.
+// Neither temporary scripts nor their path are shared between builds.
+const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'crylo-mac-pkg-'));
+const stage = path.join(workspace, 'root');
+const scriptDir = path.join(workspace, 'scripts');
 try {
   const apps = path.join(stage, 'Applications');
   fs.mkdirSync(apps, { recursive: true });
   fs.cpSync(wallet, path.join(apps, 'CryLo Wallet.app'), { recursive: true });
   fs.cpSync(daemon, path.join(apps, 'CryLo Daemon.app'), { recursive: true });
-  const scriptDir = path.join(stage, '..', 'crylo-installer-scripts');
-  fs.mkdirSync(scriptDir, { recursive: true });
+  fs.mkdirSync(scriptDir, { mode: 0o700 });
   const postinstall = path.join(scriptDir, 'postinstall');
   fs.writeFileSync(postinstall, `#!/bin/sh
 set -eu
@@ -143,6 +149,6 @@ exit 0
     pkg
   ]);
 } finally {
-  fs.rmSync(stage, { recursive: true, force: true });
+  fs.rmSync(workspace, { recursive: true, force: true });
 }
 console.log(`Created unsigned macOS ${arch} installer: ${pkg}`);
