@@ -70,7 +70,10 @@ jobs:
           pkg="$dir/CryLo-1.1.1-mac-arm64-unsigned.pkg"
           test -s "$pkg"
           echo 'ea866eb037e857da15171846dbc4ac9965672b45c50462862dc36913edc99f7a  '"$pkg" | shasum -a 256 -c
-          pkgutil --check-signature "$pkg" | grep -F 'Status: no signature'
+          # pkgutil returns nonzero for deliberately unsigned packages.
+          # Capture its status text without letting pipefail reject that state.
+          signature="$(pkgutil --check-signature "$pkg" 2>&1 || true)"
+          printf '%s\n' "$signature" | grep -F 'Status: no signature'
           # pkgutil --expand-full is not reliable on every hosted macOS image.
           # Expand the flat package, then extract its gzip-compressed CPIO
           # Payload with the system ditto utility (without executing scripts).
@@ -132,7 +135,10 @@ jobs:
           old="$RUNNER_TEMP/crylo-arm64-original/CryLo-1.1.1-mac-arm64-unsigned.pkg"
           pkg='electron/dist/CryLo-1.1.1-mac-arm64-unsigned.pkg'
           test -s "$pkg"
-          pkgutil --check-signature "$pkg" | grep -F 'Status: no signature'
+          # pkgutil returns nonzero for deliberately unsigned packages.
+          # Capture its status text without letting pipefail reject that state.
+          signature="$(pkgutil --check-signature "$pkg" 2>&1 || true)"
+          printf '%s\n' "$signature" | grep -F 'Status: no signature'
           pkgutil --payload-files "$old" | LC_ALL=C sort > "$RUNNER_TEMP/old-payload.txt"
           pkgutil --payload-files "$pkg" | LC_ALL=C sort > "$RUNNER_TEMP/new-payload.txt"
           cmp "$RUNNER_TEMP/old-payload.txt" "$RUNNER_TEMP/new-payload.txt"
