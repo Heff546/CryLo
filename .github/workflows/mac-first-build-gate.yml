@@ -228,6 +228,44 @@ jobs:
           done
           echo "===== MACH-O DIAGNOSTICS COMPLETE; NO FILES OR LINK FLAGS MODIFIED ====="
 
+      - name: Trace Mach-O text_env sections in static archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== READ-ONLY STATIC ARCHIVE SECTION ORIGIN AUDIT ====="
+          archive_list="$(mktemp)"
+          section_log="$(mktemp)"
+          trap 'rm -f "$archive_list" "$section_log"' EXIT
+          find build/mac-x64 contrib/depends/x86_64-apple-darwin11/lib \
+            -type f -name '*.a' -print > "$archive_list"
+          echo "Archive count: $(wc -l < "$archive_list")"
+          matches=0
+          inspected=0
+          failed=0
+          while IFS= read -r archive; do
+            inspected=$((inspected + 1))
+            if ! otool -l "$archive" > "$section_log" 2>/dev/null; then
+              failed=$((failed + 1))
+              echo "UNREADABLE ARCHIVE: $archive"
+              continue
+            fi
+            if grep -Eq 'sectname[[:space:]]+text_env([[:space:]]|$)' "$section_log"; then
+              matches=$((matches + 1))
+              echo "===== MATCHING ARCHIVE: $archive ====="
+              awk '
+                /\\.o\\):$/ || /\\.o:$/ || /\\.obj\\):$/ { member=$0 }
+                /sectname[[:space:]]+text_env([[:space:]]|$)/ {
+                  print "MEMBER: " member
+                  print "SECTION: " $0
+                }
+              ' "$section_log"
+            fi
+          done < "$archive_list"
+          echo "Archives inspected: $inspected"
+          echo "Archives with text_env: $matches"
+          echo "Archives unreadable by otool: $failed"
+          echo "===== ARCHIVE SECTION AUDIT COMPLETE (DIAGNOSTIC ONLY) ====="
+
       - name: Package unsigned CryLo macOS x64 application and PKG
         shell: bash
         env:
