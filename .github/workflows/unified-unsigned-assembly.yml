@@ -36,7 +36,6 @@ jobs:
           node --check scripts/release/unified-unsigned-assemble.js
           node --test scripts/tests/unified-unsigned-assemble.test.js
       - name: Collect only successful five-platform candidate inputs and provenance
-        if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,7 +77,6 @@ jobs:
               > "$metadata/$family-compare.json"
           done
       - name: Verify all five architectures and create unsigned staging archive inputs
-        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
@@ -91,7 +89,6 @@ jobs:
           echo 'PASS: five unsigned release candidates, hashes, network and architecture verified'
           echo 'Official signing, release sequence advancement and publishing remain Pi1 only'
       - name: Retain validation-only release assembly, not an official release
-        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: crylo-five-platform-unsigned-assembly-DO-NOT-PUBLISH
