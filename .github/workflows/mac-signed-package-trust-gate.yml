@@ -8,6 +8,8 @@ on:
       - .github/workflows/mac-signed-package-trust-gate.yml
       - scripts/release/macos-package-trust.js
       - scripts/tests/macos-package-trust.test.js
+      - scripts/release/macos-unsigned-update-stage.js
+      - scripts/tests/macos-update-staging.test.js
   workflow_dispatch:
 
 permissions:
@@ -43,7 +45,9 @@ jobs:
           node --check scripts/release/macos-package-trust.js
           node --check scripts/tests/macos-package-trust.test.js
           node -e "if (process.arch !== process.env.EXPECTED_ARCH) process.exit(1)"
-          node --test scripts/tests/macos-package-trust.test.js
+          node --check scripts/release/macos-unsigned-update-stage.js
+          node --check scripts/tests/macos-update-staging.test.js
+          node --test scripts/tests/macos-package-trust.test.js scripts/tests/macos-update-staging.test.js
 
       - name: Exercise real unsigned PKG with ephemeral test-only signing key
         shell: bash
