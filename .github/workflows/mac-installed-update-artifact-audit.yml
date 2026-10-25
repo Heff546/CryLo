@@ -1,0 +1,120 @@
+name: CryLo verified installed-Mac-updater PKG contents audit
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/mac-installed-update-artifact-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify-actual-installer:
+    name: Verify installed updater in exact PKG — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: intel
+            runner: macos-15-intel
+            arch: x64
+            macho: x86_64
+          - name: apple-silicon
+            runner: macos-15
+            arch: arm64
+            macho: arm64
+    steps:
+      - name: Check out reviewed installer security source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Use identical release Node/npm for ASAR inspection only
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Install locked ASAR inspection tooling, without package scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global --ignore-scripts --no-audit --no-fund npm@12.1.0
+          npm --prefix electron ci --ignore-scripts --no-audit --no-fund
+          test -d electron/node_modules/@electron/asar
+      - name: Download exact previously completed Electron-update-enabled Mac PKG
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          EXPECTED_MACHO: ${{ matrix.macho }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/crylo-mac-installed-updater-audit"
+          mkdir -p "$root/zip" "$root/extracted" "$root/expanded"
+          gh run download 40224007435 --repo Heff546/CryLo \
+            --name "crylo-macos-$TARGET_ARCH-electron-security-validation" \
+            --dir "$root/zip"
+          pkg="$root/zip/CryLo-1.1.1-mac-$TARGET_ARCH-unsigned.pkg"
+          test -s "$pkg"
+          signature_output="$(pkgutil --check-signature "$pkg" 2>&1 || true)"
+          printf '%s\n' "$signature_output" | grep -Fi 'no signature'
+          pkgutil --expand "$pkg" "$root/expanded/contents"
+          payload="$(find "$root/expanded/contents" -name Payload -type f -print -quit)"
+          test -s "$payload"
+          /usr/bin/ditto -x "$payload" "$root/extracted"
+          app="$root/extracted/Applications/CryLo Wallet.app"
+          test -d "$app"
+          test "$(lipo -archs "$app/Contents/MacOS/CryLo Wallet")" = "$EXPECTED_MACHO"
+          export CRYLO_APP="$app"
+          node - <<'NODE'
+          const assert=require('node:assert/strict');
+          const fs=require('node:fs');
+          const path=require('node:path');
+          const crypto=require('node:crypto');
+          const asar=require('./electron/node_modules/@electron/asar');
+          const app=process.env.CRYLO_APP;
+          const res=path.join(app,'Contents','Resources');
+          const packed=path.join(res,'app.asar');
+          assert.ok(fs.statSync(packed).size>0);
+          for(const name of ['main.js','security/renderer-policy.js',
+              'security/macos-update-client.js']){
+            const installed=asar.extractFile(packed,name);
+            const source=fs.readFileSync(path.join('electron',name));
+            assert.equal(crypto.createHash('sha256').update(installed).digest('hex'),
+              crypto.createHash('sha256').update(source).digest('hex'),
+              'Packaged Electron source mismatch: '+name);
+          }
+          const main=asar.extractFile(packed,'main.js').toString('utf8');
+          assert.match(main,/Check for Verified Updates/);
+          assert.match(main,/downloadAndStageMacUpdate/);
+          assert.match(main,/shell.showItemInFolder/);
+          const client=asar.extractFile(packed,'security/macos-update-client.js').toString('utf8');
+          assert.match(client,/TRUSTED_KEY_FINGERPRINT/);
+          assert.match(client,/authenticatedManifest/);
+          assert.match(client,/currentReleaseFloor/);
+          for(const [source,relative] of [
+            ['scripts/release/macos-package-trust.js','macos-package-trust.js'],
+            ['scripts/release/macos-unsigned-update-stage.js','macos-unsigned-update-stage.js'],
+            ['scripts/release/keys/crylo-testnet-release-ed25519-public.pem',
+              'crylo-testnet-release-ed25519-public.pem']]){
+            const bundled=path.join(res,'macos-update',relative);
+            assert.ok(fs.existsSync(bundled),'Missing installed trust file: '+relative);
+            assert.deepEqual(fs.readFileSync(bundled),fs.readFileSync(source));
+          }
+          const pem=fs.readFileSync(path.join(res,'macos-update',
+            'crylo-testnet-release-ed25519-public.pem'));
+          const der=crypto.createPublicKey(pem).export({type:'spki',format:'der'});
+          assert.equal(crypto.createHash('sha256').update(der).digest('hex'),
+            '86f4b72805393b1bb71a58d982a274b156c8b69e11fcba2739cba598901a7385');
+          console.log('PASS: real installed Mac app.asar, menu, updater, trusted Pi1 key, and helper bytes verified');
+          NODE
+          for name in CryLo-daemon CryLo-wallet-rpc; do
+            test "$(lipo -archs "$app/Contents/Resources/bin/mac/$name")" = "$EXPECTED_MACHO"
+          done
+          shasum -a 256 "$pkg"
+          echo 'PASS: unsigned packaged installer verified without executing or installing'
