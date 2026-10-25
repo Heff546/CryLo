@@ -1,0 +1,55 @@
+name: CryLo pinned Boost patch source validation
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - contrib/depends/packages/boost.mk
+      - contrib/depends/patches/boost/boost-histogram-project-requirements.patch
+      - .github/workflows/boost-upstream-patch-check.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-boost-backport:
+    name: Verify pinned Boost 1.92.0 archive patch without compilation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact CryLo source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Validate pinned archive and upstream Histogram fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="c4a3b310ddd2472416e091067166b0713be97c63f38c212c484ada022fd296ce"
+          patchfile="$GITHUB_WORKSPACE/contrib/depends/patches/boost/boost-histogram-project-requirements.patch"
+          test -s "$patchfile"
+          grep -Fxq '$(package)_patches=boost-histogram-project-requirements.patch' contrib/depends/packages/boost.mk
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          archive="$scratch/boost_1_92_0.tar.gz"
+          curl --fail --location --retry 3 --silent --show-error --output "$archive" \
+            https://archives.boost.io/release/1.92.0/source/boost_1_92_0.tar.gz
+          printf '%s  %s\n' "$expected" "$archive" | sha256sum --check -
+          mkdir -p "$scratch/root"
+          tar -xzf "$archive" -C "$scratch/root" --strip-components=1 \
+            boost_1_92_0/libs/histogram/build.jam \
+            boost_1_92_0/libs/histogram/examples/Jamfile \
+            boost_1_92_0/libs/histogram/test/Jamfile
+          cd "$scratch/root"
+          grep -Fq '<local-visibility>hidden' libs/histogram/build.jam
+          patch --dry-run --fuzz=0 -p1 < "$patchfile"
+          patch --fuzz=0 -p1 < "$patchfile"
+          grep -Fxq 'project /boost/histogram ;' libs/histogram/build.jam
+          if grep -Fq '<local-visibility>hidden' libs/histogram/build.jam; then
+            echo 'ERROR: global Histogram visibility requirement remains'
+            exit 1
+          fi
+          for target in examples test; do
+            grep -Fq '<local-visibility>hidden' "libs/histogram/$target/Jamfile"
+            grep -Fq '<warnings>extra' "libs/histogram/$target/Jamfile"
+          done
+          echo 'PASS: original Boost 1.92.0 archive verified; upstream three-file fix applies exactly'

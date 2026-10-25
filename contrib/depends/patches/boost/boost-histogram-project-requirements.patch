@@ -1,0 +1,54 @@
+--- a/libs/histogram/build.jam
++++ b/libs/histogram/build.jam
+@@ -19,16 +19,7 @@ constant boost_dependencies :
+     /boost/throw_exception//boost_throw_exception
+     /boost/variant2//boost_variant2 ;
+ 
+-project /boost/histogram
+-    : requirements
+-        <toolset>clang:<cxxflags>"-Wsign-compare -Wstrict-aliasing -fstrict-aliasing -Wvexing-parse -Wfloat-conversion"
+-        <toolset>gcc:<cxxflags>"-Wsign-compare -Wstrict-aliasing -fstrict-aliasing -Wfloat-conversion"
+-        <toolset>msvc:<cxxflags>"/bigobj"
+-        <toolset>intel-win:<cxxflags>"/bigobj"
+-        <local-visibility>hidden
+-    : default-build
+-        <warnings>extra
+-    ;
++project /boost/histogram ;
+ 
+ explicit
+     [ alias boost_histogram : : :
+
+--- a/libs/histogram/examples/Jamfile
++++ b/libs/histogram/examples/Jamfile
+@@ -20,6 +20,13 @@ project
+       # list could go on...
+     ]
+     <library>/boost/format//boost_format
++    <toolset>clang:<cxxflags>"-Wsign-compare -Wstrict-aliasing -fstrict-aliasing -Wvexing-parse -Wfloat-conversion"
++    <toolset>gcc:<cxxflags>"-Wsign-compare -Wstrict-aliasing -fstrict-aliasing -Wfloat-conversion"
++    <toolset>msvc:<cxxflags>"/bigobj"
++    <toolset>intel-win:<cxxflags>"/bigobj"
++    <local-visibility>hidden
++    : default-build
++    <warnings>extra
+     ;
+ 
+ alias cxx14 :
+
+--- a/libs/histogram/test/Jamfile
++++ b/libs/histogram/test/Jamfile
+@@ -30,6 +30,13 @@ project
+       cxx14_constexpr cxx14_decltype_auto cxx14_generic_lambdas cxx14_return_type_deduction cxx11_user_defined_literals
+       # list could go on...
+     ]
++    <toolset>clang:<cxxflags>"-Wsign-compare -Wstrict-aliasing -fstrict-aliasing -Wvexing-parse -Wfloat-conversion"
++    <toolset>gcc:<cxxflags>"-Wsign-compare -Wstrict-aliasing -fstrict-aliasing -Wfloat-conversion"
++    <toolset>msvc:<cxxflags>"/bigobj"
++    <toolset>intel-win:<cxxflags>"/bigobj"
++    <local-visibility>hidden
++    : default-build
++    <warnings>extra
+     ;
+ 
+ # Check consistency of build systems

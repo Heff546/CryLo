@@ -178,6 +178,33 @@ jobs:
           set -euo pipefail
           cmake --build build/mac-x64 --parallel 2 --target daemon simplewallet wallet_rpc_server
 
+      - name: Report exact generated CMake linker archive duplicates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import collections
+          import pathlib
+          import shlex
+          paths = {
+            "daemon": "build/mac-x64/src/daemon/CMakeFiles/daemon.dir/link.txt",
+            "wallet": "build/mac-x64/src/simplewallet/CMakeFiles/simplewallet.dir/link.txt",
+            "wallet-rpc": "build/mac-x64/src/wallet/CMakeFiles/wallet_rpc_server.dir/link.txt",
+          }
+          for name, filename in paths.items():
+              path = pathlib.Path(filename)
+              if not path.is_file():
+                  raise SystemExit(f"Missing generated linker command: {path}")
+              command = shlex.split(path.read_text())
+              archives = [word for word in command if word.endswith(".a")]
+              counts = collections.Counter(archives)
+              duplicates = sorted((value, count) for value, count in counts.items() if count > 1)
+              print(f"===== {name}: {len(archives)} archive inputs, {len(duplicates)} duplicated paths =====")
+              for value, count in duplicates:
+                  print(f"  {count}x {value}")
+          print("READ ONLY: no link arguments or CMake sources were modified")
+          PY
+
       - name: Verify native macOS runtime binaries
         shell: bash
         run: |
