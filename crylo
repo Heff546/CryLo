@@ -178,6 +178,135 @@ if [ "$(uname -s)" = "Linux" ]; then
 
   CRYLO_NODE_RUNTIME="$NODE_DIRECTORY"
   export CRYLO_NODE_RUNTIME
+elif [ "$(uname -s)" = "Darwin" ]; then
+  # A macOS release must not depend on a developer's Homebrew/system Node.
+  # Detect the actual runner/user architecture and authenticate the exact
+  # managed runtime before touching an existing CryLo installation.
+  case "$(uname -m)" in
+    arm64|aarch64)
+      NODE_ARCH=arm64
+      NODE_SHA256=bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057
+      ;;
+    x86_64|amd64)
+      NODE_ARCH=x64
+      NODE_SHA256=1462cb3b3046b815cf8ea436d3da450ec1a9f11dac7e5a46b0ada5305d7e8097
+      ;;
+    *)
+      echo "ERROR: Unsupported macOS architecture for CryLo: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+
+  NODE_VERSION=24.21.0
+  NPM_VERSION=12.1.0
+  NODE_NAME="node-v$NODE_VERSION-darwin-$NODE_ARCH"
+  NODE_BASE="$HOME/Library/Application Support/CryLo/runtime"
+  NODE_DIRECTORY="$NODE_BASE/$NODE_NAME"
+  NODE_BACKUP="$NODE_BASE/$NODE_NAME.pre-crylo-bootstrap"
+  NODE_ARCHIVE="$NODE_NAME.tar.gz"
+  NODE_URL="https://nodejs.org/dist/v$NODE_VERSION/$NODE_ARCHIVE"
+
+  verify_macos_crylo_node() {
+    current="$1"
+    [ -x "$current/bin/node" ] || return 1
+    [ -x "$current/bin/npm" ] || return 1
+    [ "$("$current/bin/node" --version 2>/dev/null || true)" = "v$NODE_VERSION" ] || return 1
+    [ "$("$current/bin/node" -p 'process.arch' 2>/dev/null || true)" = "$NODE_ARCH" ] || return 1
+    [ "$(PATH="$current/bin:$PATH" "$current/bin/npm" --version 2>/dev/null || true)" = "$NPM_VERSION" ] || return 1
+  }
+
+  install_macos_crylo_node() (
+    set -eu
+    mkdir -p "$NODE_BASE"
+
+    if [ -e "$NODE_BACKUP" ] || [ -L "$NODE_BACKUP" ]; then
+      echo "ERROR: A previous CryLo Node.js recovery backup must be resolved: $NODE_BACKUP" >&2
+      exit 1
+    fi
+
+    stage_root=$(mktemp -d "$NODE_BASE/.node-install.XXXXXX")
+    trap 'rm -rf "$stage_root"' EXIT
+    trap 'exit 1' HUP INT TERM
+    archive="$stage_root/$NODE_ARCHIVE"
+    staged="$stage_root/$NODE_NAME"
+
+    command -v curl >/dev/null 2>&1 || {
+      echo "ERROR: macOS curl is required for authenticated CryLo Node.js provisioning." >&2
+      exit 1
+    }
+
+    curl --fail --location --silent --show-error \
+      --proto '=https' --tlsv1.2 "$NODE_URL" --output "$archive"
+
+    (
+      cd "$stage_root"
+      printf '%s  %s\n' "$NODE_SHA256" "$NODE_ARCHIVE" | shasum -a 256 -c -
+    )
+    tar -xzf "$archive" -C "$stage_root"
+    [ -x "$staged/bin/node" ] && [ -x "$staged/bin/npm" ] || {
+      echo "ERROR: Authenticated macOS CryLo Node.js archive is incomplete." >&2
+      exit 1
+    }
+
+    # Install pinned npm inside private staging, never over user data.
+    PATH="$staged/bin:$PATH"
+    export PATH
+    "$staged/bin/npm" install --global --prefix "$staged" \
+      --no-audit --no-fund --ignore-scripts "npm@$NPM_VERSION"
+
+    verify_macos_crylo_node "$staged" || {
+      echo "ERROR: Staged macOS CryLo Node/npm version or architecture mismatch." >&2
+      exit 1
+    }
+
+    backed_up=false
+    if [ -e "$NODE_DIRECTORY" ] || [ -L "$NODE_DIRECTORY" ]; then
+      mv "$NODE_DIRECTORY" "$NODE_BACKUP"
+      backed_up=true
+    fi
+
+    if ! mv "$staged" "$NODE_DIRECTORY"; then
+      if [ "$backed_up" = true ]; then
+        mv "$NODE_BACKUP" "$NODE_DIRECTORY" || {
+          echo "ERROR: macOS runtime recovery backup preserved: $NODE_BACKUP" >&2
+          exit 1
+        }
+      fi
+      echo "ERROR: Unable to activate verified macOS CryLo Node.js." >&2
+      exit 1
+    fi
+
+    if ! verify_macos_crylo_node "$NODE_DIRECTORY"; then
+      rm -rf "$NODE_DIRECTORY"
+      if [ "$backed_up" = true ]; then
+        mv "$NODE_BACKUP" "$NODE_DIRECTORY" || {
+          echo "ERROR: macOS runtime recovery backup preserved: $NODE_BACKUP" >&2
+          exit 1
+        }
+      fi
+      echo "ERROR: Failed macOS Node/npm verification; prior runtime restored." >&2
+      exit 1
+    fi
+
+    if [ "$backed_up" = true ]; then
+      rm -rf "$NODE_BACKUP"
+    fi
+    echo "Verified CryLo Node.js $NODE_VERSION and npm $NPM_VERSION for macOS/$NODE_ARCH."
+  )
+
+  if ! verify_macos_crylo_node "$NODE_DIRECTORY"; then
+    install_macos_crylo_node
+  fi
+
+  if ! verify_macos_crylo_node "$NODE_DIRECTORY"; then
+    echo "ERROR: CryLo-managed macOS Node/npm verification failed." >&2
+    exit 1
+  fi
+
+  PATH="$NODE_DIRECTORY/bin:$PATH"
+  export PATH
+  CRYLO_NODE_RUNTIME="$NODE_DIRECTORY"
+  export CRYLO_NODE_RUNTIME
 else
   if ! command -v node >/dev/null 2>&1 ||
      ! command -v npm >/dev/null 2>&1; then
