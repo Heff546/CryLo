@@ -150,6 +150,18 @@
             "CryLo-wallet-rpc",
             "BINARY-MANIFEST.txt"
           ]
+        },
+        {
+          "from": "../scripts/release/macos-package-trust.js",
+          "to": "macos-update/macos-package-trust.js"
+        },
+        {
+          "from": "../scripts/release/macos-unsigned-update-stage.js",
+          "to": "macos-update/macos-unsigned-update-stage.js"
+        },
+        {
+          "from": "../scripts/release/keys/crylo-testnet-release-ed25519-public.pem",
+          "to": "macos-update/crylo-testnet-release-ed25519-public.pem"
         }
       ]
     },
