@@ -71,8 +71,19 @@ jobs:
           test -s "$pkg"
           echo 'ea866eb037e857da15171846dbc4ac9965672b45c50462862dc36913edc99f7a  '"$pkg" | shasum -a 256 -c
           pkgutil --check-signature "$pkg" | grep -F 'Status: no signature'
-          pkgutil --expand-full "$pkg" "$RUNNER_TEMP/crylo-arm64-original-expanded"
-          echo 'PASS: verified provenance, exact package SHA256 and unpacking'
+          # pkgutil --expand-full is not reliable on every hosted macOS image.
+          # Expand the flat package, then extract its gzip-compressed CPIO
+          # Payload with the system ditto utility (without executing scripts).
+          component="$RUNNER_TEMP/crylo-arm64-component"
+          extracted="$RUNNER_TEMP/crylo-arm64-original-expanded"
+          pkgutil --expand "$pkg" "$component"
+          payload="$(find "$component" -type f -name Payload -print -quit)"
+          test -n "$payload"
+          file "$payload"
+          mkdir -p "$extracted"
+          /usr/bin/ditto -x "$payload" "$extracted"
+          test -d "$extracted/Applications/CryLo Wallet.app"
+          echo 'PASS: verified provenance, exact PKG SHA256 and safe CPIO unpacking'
 
       - name: Restore verified application into isolated ARM64 packaging inputs
         shell: bash
