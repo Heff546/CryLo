@@ -1,0 +1,140 @@
+name: CryLo Windows pinned unsigned release build
+
+on:
+  push:
+    branches: [feature/mac-first-build-gate]
+    paths: [.github/workflows/windows-pinned-unsigned-native-release.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 210
+    steps:
+      - name: Checkout exact source and submodules
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+          submodules: recursive
+      - name: Initialize MSYS2
+        shell: cmd
+        run: |
+          if not exist C:\msys64\usr\bin\bash.exe exit /b 1
+          C:\msys64\usr\bin\bash.exe -lc "true"
+          C:\msys64\usr\bin\bash.exe -lc "pacman --version"
+          if errorlevel 1 exit /b 1
+      - name: Acquire exactly pinned and signed Windows build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/crylo-reviewed-win-deps.sh"
+          cat > "$script" <<'SH'
+          set -euo pipefail
+          export MSYSTEM=MINGW64
+          export PATH=/mingw64/bin:/usr/bin
+          pacman -Syu --noconfirm
+          pacman -Syu --noconfirm
+          pacman -S --needed --noconfirm \
+            mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-pkgconf make python python-pip perl \
+            patch diffutils tar wget curl \
+            mingw-w64-x86_64-boost mingw-w64-x86_64-protobuf \
+            mingw-w64-x86_64-abseil-cpp mingw-w64-x86_64-zeromq \
+            mingw-w64-x86_64-libsodium mingw-w64-x86_64-zstd \
+            mingw-w64-x86_64-zlib mingw-w64-x86_64-icu \
+            mingw-w64-x86_64-libiconv mingw-w64-x86_64-readline \
+            mingw-w64-x86_64-ncurses mingw-w64-x86_64-miniupnpc \
+            mingw-w64-x86_64-ldns
+          mkdir -p /tmp/crylo-msys2-pinned
+          cd /tmp/crylo-msys2-pinned
+          cat > packages.txt <<'PINS'
+          mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst 89fb61549a437d65076a092a367fcb264fc7045ee9ebef48cd81f5a76a5588f8
+          mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst 124edc26b009678a4c5e759481a364abf63ed7f2f49a53092e8bd0a47c0c0740
+          mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst 4d737e09dd1137bb318e2d563962ddcbe511de02155e5835affc1f09d174c6a3
+          PINS
+          while read -r file hash; do
+            url="https://repo.msys2.org/mingw/mingw64/$file"
+            curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+              --silent --show-error --output "$file" "$url"
+            curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+              --silent --show-error --output "$file.sig" "$url.sig"
+            printf '%s  %s\n' "$hash" "$file" | sha256sum -c -
+            gpgv --keyring /etc/pacman.d/gnupg/pubring.gpg "$file.sig" "$file"
+            pacman -Qp "$file"
+          done < packages.txt
+          pacman -U --noconfirm \
+            mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst \
+            mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst \
+            mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst
+          cat > versions.txt <<'VERSIONS'
+          mingw-w64-x86_64-hidapi 0.15.0
+          mingw-w64-x86_64-libusb 1.0.30
+          mingw-w64-x86_64-unbound 1.26.1
+          mingw-w64-x86_64-boost 1.92.0
+          mingw-w64-x86_64-protobuf 36.2
+          mingw-w64-x86_64-abseil-cpp 20260526.0
+          mingw-w64-x86_64-zeromq 4.3.5
+          mingw-w64-x86_64-libsodium 1.0.22
+          mingw-w64-x86_64-libiconv 1.19
+          mingw-w64-x86_64-icu 78.3
+          VERSIONS
+          while read -r pkg expected; do
+            actual="$(pacman -Q "$pkg" | awk '{print $2}' | sed -E 's/-[0-9]+$//')"
+            test "$actual" = "$expected" || { echo "ERROR: pinned $pkg: expected $expected found $actual"; exit 1; }
+            echo "VERIFIED: $pkg $actual"
+          done < versions.txt
+          for tool in x86_64-w64-mingw32-gcc cmake make pkg-config python3 protoc patch curl perl tar; do
+            command -v "$tool"
+          done
+          echo 'PASS: pinned MSYS2 Windows build dependencies'
+          SH
+          tr -d '\r' < "$script" > "$script.unix"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
+      - name: Verify normal-user CMD release prerequisites
+        shell: cmd
+        run: |
+          set "CRYLO_JOBS=1"
+          call crylo.cmd --check
+          if errorlevel 1 exit /b 1
+      - name: Build Windows native binaries and matching Electron without signing
+        shell: cmd
+        run: |
+          set "CRYLO_JOBS=1"
+          set "CSC_IDENTITY_AUTO_DISCOVERY=false"
+          call crylo.cmd release
+          if errorlevel 1 exit /b 1
+          if not exist build\win-x64\bin\CryLo-daemon.exe exit /b 1
+          if not exist build\win-x64\bin\CryLo-wallet.exe exit /b 1
+          if not exist build\win-x64\bin\CryLo-wallet-rpc.exe exit /b 1
+          if not exist build\electron-runtime\win\WINDOWS-BUILD-RUNTIME-MANIFEST.json exit /b 1
+          echo PASS: Windows native and Electron unsigned release candidate
+      - name: Record artifact hashes and source revision
+        shell: cmd
+        run: |
+          mkdir "%RUNNER_TEMP%\crylo-windows-unsigned-audit"
+          git rev-parse HEAD > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\SOURCE-COMMIT.txt"
+          certutil -hashfile build\win-x64\bin\CryLo-daemon.exe SHA256 > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\DAEMON-SHA256.txt"
+          if errorlevel 1 exit /b 1
+          certutil -hashfile build\win-x64\bin\CryLo-wallet.exe SHA256 > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\WALLET-SHA256.txt"
+          if errorlevel 1 exit /b 1
+          certutil -hashfile build\win-x64\bin\CryLo-wallet-rpc.exe SHA256 > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\RPC-SHA256.txt"
+          if errorlevel 1 exit /b 1
+          echo CI validation only - not Pi1 signed > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\UNSIGNED.txt"
+      - name: Retain unsigned Windows candidate only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-unified-windows-x64-unsigned-native-candidate
+          path: |
+            build/win-x64/bin/CryLo-daemon.exe
+            build/win-x64/bin/CryLo-wallet.exe
+            build/win-x64/bin/CryLo-wallet-rpc.exe
+            build/electron-runtime/win/BINARY-MANIFEST.txt
+            build/electron-runtime/win/WINDOWS-BUILD-RUNTIME-MANIFEST.json
+            electron/dist/*.exe
+            ${{ runner.temp }}/crylo-windows-unsigned-audit/*
+          if-no-files-found: error
+          retention-days: 30
