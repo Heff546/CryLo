@@ -8,6 +8,7 @@ on:
       - .gitattributes
       - contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch
       - contrib/depends/patches/openssl/openssl-3.5.9-mingw-warning-compat.patch
+      - contrib/depends/patches/openssl/openssl-3.5.9-mingw-unused-compat.patch
       - scripts/release/crylo-release.js
   workflow_dispatch:
 

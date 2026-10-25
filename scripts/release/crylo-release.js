@@ -20,11 +20,14 @@ const windowsOpenSSLMinGWCompatPatch =
   'openssl-3.5.9-mingw-warning-compat.patch';
 const windowsOpenSSLMinGWCompatSha256 =
   'fc55415905380d6cb7ccb81c6b3c722142e7668b67f77d024f29d531f34f4700';
+const windowsOpenSSLUnusedCompatPatch = 'openssl-3.5.9-mingw-unused-compat.patch';
+const windowsOpenSSLUnusedCompatGitBlob = '9582b71f9e646f9eb3adc81a771c3c091c852b34';
 const windowsOpenSSLBuildStampBase = [
   `version=${windowsOpenSSLVersion}`,
   `source_sha256=${windowsOpenSSLSha256}`,
   `patch_sha256=${windowsOpenSSLPatchSha256}`,
   `mingw_compat_sha256=${windowsOpenSSLMinGWCompatSha256}`,
+  `mingw_unused_blob=${windowsOpenSSLUnusedCompatGitBlob}`,
   'target=mingw64',
   'cflags=-pipe -O2',
   'arflags=cr',
@@ -866,6 +869,8 @@ function windowsOpenSSLContext() {
       'openssl',
       windowsOpenSSLMinGWCompatPatch
     ),
+    mingwUnusedPatch: path.join(root, 'contrib', 'depends', 'patches', 'openssl',
+      windowsOpenSSLUnusedCompatPatch),
     recipe: path.join(
       root,
       'contrib',
@@ -959,6 +964,9 @@ function verifyWindowsOpenSSLRecipe(context) {
   if (!fs.existsSync(context.mingwCompatPatch)) {
     fail(`CryLo Windows OpenSSL compatibility patch is missing: ${context.mingwCompatPatch}`);
   }
+  if (!fs.existsSync(context.mingwUnusedPatch)) {
+    fail(`CryLo Windows OpenSSL unused-helper patch is missing: ${context.mingwUnusedPatch}`);
+  }
 
   const recipe = fs.readFileSync(context.recipe, 'utf8');
   const requiredRecipeLines = [
@@ -1006,6 +1014,13 @@ function verifyWindowsOpenSSLRecipe(context) {
       `Expected: ${windowsOpenSSLPatchSha256}\n` +
       `Actual:   ${patchHash}`
     );
+  }
+  const unusedPatchBlob = crypto.createHash('sha1').update(
+    Buffer.concat([Buffer.from(`blob ${fs.statSync(context.mingwUnusedPatch).size}\0`),
+      fs.readFileSync(context.mingwUnusedPatch)])
+  ).digest('hex');
+  if (unusedPatchBlob !== windowsOpenSSLUnusedCompatGitBlob) {
+    fail('CryLo Windows OpenSSL unused-helper patch Git blob mismatch.');
   }
   const mingwCompatHash = sha256File(context.mingwCompatPatch);
   if (mingwCompatHash !== windowsOpenSSLMinGWCompatSha256) {
@@ -1149,6 +1164,7 @@ function buildWindowsPinnedOpenSSL(jobs) {
   const workMsys = toMsysPath(context.work);
   const patchMsys = toMsysPath(context.patch);
   const mingwCompatPatchMsys = toMsysPath(context.mingwCompatPatch);
+  const mingwUnusedPatchMsys = toMsysPath(context.mingwUnusedPatch);
   const sourceDirMsys = toMsysPath(path.dirname(context.source));
   const partMsys = `${sourceMsys}.part`;
 
@@ -1241,6 +1257,7 @@ patch -p1 < "${patchMsys}"
 # Windows-only ABI/type correction, separately SHA256 pinned. Linux/ARM/macOS
 # depends builds are unchanged.
 patch --batch --forward -p1 < "${mingwCompatPatchMsys}"
+patch --batch --forward -p1 < "${mingwUnusedPatchMsys}"
 
 sed -i.old \\
   's|crypto ssl apps util tools fuzz providers doc|crypto ssl util tools providers|' \\
