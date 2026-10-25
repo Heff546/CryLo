@@ -37,6 +37,7 @@ const installerRuntime = readText(
   'build',
   'windows-installer-runtime.js'
 );
+const managedBootstrap = readText('scripts', 'windows-runtime-bootstrap.js');
 
 assert(
   cryloJs.includes(
@@ -102,18 +103,42 @@ assert(
 assert(
   windowsLauncher.includes('set "CRYLO_NODE_VERSION=24.21.0"') &&
   windowsLauncher.includes('set "CRYLO_NPM_VERSION=12.1.0"') &&
-  windowsLauncher.includes('call :ensure_npm') &&
-  windowsLauncher.includes(
-    'set "PATH=%CRYLO_NODE_DIRECTORY%;%CRYLO_GIT_DIRECTORY%\\cmd;%PATH%"'
-  ),
-  'Windows launcher must prepare and prefer the exact isolated Node/npm runtime.'
+  windowsLauncher.includes('set "CRYLO_GIT_BUILD=2.56.0.windows.1"') &&
+  windowsLauncher.includes('windows-runtime-bootstrap.js') &&
+  windowsLauncher.includes('call :verify_sha256') &&
+  windowsLauncher.includes('"%CRYLO_STAGED_NODE%" "%CRYLO_HELPER%" activate') &&
+  windowsLauncher.includes('"%CRYLO_NODE_EXE%" "%CRYLO_HELPER%" verify') &&
+  windowsLauncher.includes('set "PATH=%CRYLO_NODE_DIRECTORY%;%CRYLO_GIT_DIRECTORY%\\cmd;%PATH%"') &&
+  windowsLauncher.includes('set "GIT_TERMINAL_PROMPT=0"') &&
+  !/powershell\\.exe|Invoke-WebRequest|\\.ps1\b|-NoProfile/i.test(windowsLauncher),
+  'Windows CMD launcher must use exact managed versions and never call PowerShell.'
 );
 
 assert(
-  windowsLauncher.includes(
-    "('npm@' + $env:CRYLO_NPM_VERSION)"
-  ),
-  'Windows launcher must repair npm inside the isolated CryLo runtime.'
+  windowsLauncher.includes('--proto-redir "=https"') &&
+  windowsLauncher.includes('"%CRYLO_CERTUTIL%" -hashfile') &&
+  windowsLauncher.includes('"%CRYLO_TAR%" -xf') &&
+  windowsLauncher.includes('findstr.exe') &&
+  windowsLauncher.indexOf('call :verify_sha256 "%CRYLO_NODE_ARCHIVE%"') <
+  windowsLauncher.indexOf('"%CRYLO_TAR%" -xf') &&
+  windowsLauncher.indexOf('call :verify_sha256 "%CRYLO_STAGED_NODE%"') <
+  windowsLauncher.indexOf('"%CRYLO_STAGED_NODE%" "%CRYLO_HELPER%" activate'),
+  'Windows first-run must checksum both archive and runtime before executing staged Node.'
+);
+
+assert(
+  managedBootstrap.includes('verifyNodeRuntime') &&
+  managedBootstrap.includes('verifyGitRuntime') &&
+  managedBootstrap.includes('assertTreeHasNoReparse') &&
+  managedBootstrap.includes("const NODE_VERSION = '24.21.0';") &&
+  managedBootstrap.includes("const NPM_VERSION = '12.1.0';") &&
+  managedBootstrap.includes("const GIT_BUILD = '2.56.0.windows.1';") &&
+  managedBootstrap.includes('npm@') &&
+  managedBootstrap.includes('fs.renameSync(item.final, item.backup)') &&
+  managedBootstrap.includes('fs.cpSync(item.source, item.final') &&
+  managedBootstrap.includes("shell: false") &&
+  !/powershell\\.exe|Invoke-WebRequest|\\.ps1\b/i.test(managedBootstrap),
+  'Authenticated Node helper must provide transactional Node/npm/MinGit repair without shell or PowerShell.'
 );
 
 assert(
