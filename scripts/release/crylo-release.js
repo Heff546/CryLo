@@ -535,7 +535,22 @@ function expectedManagedRuntime(target) {
     );
   }
 
-  return null;
+  if (target.platform === 'mac') {
+    const home = process.env.HOME;
+    if (!home) {
+      fail('HOME is required for the managed CryLo macOS runtime.');
+    }
+    return path.join(
+      home,
+      'Library',
+      'Application Support',
+      'CryLo',
+      'runtime',
+      `node-v${managedNodeVersion}-darwin-${target.arch}`
+    );
+  }
+
+  fail(`No managed CryLo release runtime exists for ${target.platform}.`);
 }
 
 function managedNpmCli(target, runtimeDirectory) {
@@ -1317,7 +1332,8 @@ function verifyPrerequisites(target) {
 
   if (
     target.platform === 'win' ||
-    target.platform === 'linux'
+    target.platform === 'linux' ||
+    target.platform === 'mac'
   ) {
     const managed = verifyManagedReleaseToolchain(target);
     nodeVersion = managed.nodeVersion;
