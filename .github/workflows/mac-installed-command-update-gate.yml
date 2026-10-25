@@ -1,0 +1,55 @@
+name: CryLo installed Mac crylo update single-command gate
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/mac-installed-command-update-gate.yml
+      - scripts/release/macos-installed-command.sh
+      - scripts/release/macos-installed-update.js
+      - scripts/tests/macos-installed-command.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac-installed-command:
+    name: Native installed Mac command — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: intel
+            runner: macos-15-intel
+            arch: x64
+          - name: apple-silicon
+            runner: macos-15
+            arch: arm64
+    steps:
+      - name: Checkout reviewed CLI without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Syntax and architecture
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          node -e 'if(process.platform!=="darwin"||process.arch!==process.env.EXPECTED_ARCH)process.exit(1)'
+          /bin/sh -n scripts/release/macos-installed-command.sh
+          node --check scripts/release/macos-installed-update.js
+          node --check electron/security/macos-update-client.js
+          node --check scripts/tests/macos-installed-command.test.js
+      - name: Test one-command packaging and pinned dependency security
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/tests/macos-installed-command.test.js
+          node --test scripts/tests/macos-package-trust.test.js scripts/tests/macos-update-staging.test.js
+          echo 'PASS: native macOS installed command source, architecture, Pi1 trust and staging gate'
