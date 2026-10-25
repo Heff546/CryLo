@@ -1,0 +1,105 @@
+name: CryLo Windows CMD-only managed runtime and updater security
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/windows-cmd-bootstrap-security-gate.yml
+      - crylo.cmd
+      - scripts/windows-runtime-bootstrap.js
+      - scripts/crylo.js
+      - scripts/tests/install-win-linux-pi-static.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cmd-normal-user:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - name: Check out pinned source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Static syntax, identity and PowerShell exclusion gates
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Review normal-user code with pinned Node host
+        shell: cmd
+        run: |
+          node --check scripts\crylo.js
+          if errorlevel 1 exit /b 1
+          node --check scripts\windows-runtime-bootstrap.js
+          if errorlevel 1 exit /b 1
+          node scripts\tests\install-win-linux-pi-static.js
+          if errorlevel 1 exit /b 1
+          node --test scripts\tests\signed-update-contract.test.js
+          if errorlevel 1 exit /b 1
+          echo PASS: CMD and updater static security checks
+
+      - name: First-time normal-user CMD bootstrap from zero managed tools
+        shell: cmd
+        run: |
+          set "LOCALAPPDATA=%RUNNER_TEMP%\CryLo isolated standard-user test"
+          set "CRYLO_RUNTIME=%LOCALAPPDATA%\CryLo\runtime"
+          mkdir "%LOCALAPPDATA%\CryLo\wallets" 2>nul
+          echo preserve-existing-wallet-data>"%LOCALAPPDATA%\CryLo\wallets\wallet-sentinel"
+          if exist "%CRYLO_RUNTIME%\node-v24.21.0-win-x64" exit /b 1
+          if exist "%CRYLO_RUNTIME%\mingit-2.56.0.windows.1-x64" exit /b 1
+          call crylo.cmd help
+          if errorlevel 1 exit /b 1
+          if not exist "%CRYLO_RUNTIME%\node-v24.21.0-win-x64\node.exe" exit /b 1
+          if not exist "%CRYLO_RUNTIME%\mingit-2.56.0.windows.1-x64\cmd\git.exe" exit /b 1
+          "%CRYLO_RUNTIME%\node-v24.21.0-win-x64\node.exe" "%CD%\scripts\windows-runtime-bootstrap.js" verify
+          if errorlevel 1 exit /b 1
+          "%CRYLO_RUNTIME%\node-v24.21.0-win-x64\node.exe" --version
+          if errorlevel 1 exit /b 1
+          "%CRYLO_RUNTIME%\mingit-2.56.0.windows.1-x64\cmd\git.exe" --version
+          if errorlevel 1 exit /b 1
+          echo PASS: first-time CMD bootstrap without system Node Git or PowerShell
+
+      - name: Repeat CMD launch and recovery-backup fail-closed preservation
+        shell: cmd
+        run: |
+          set "LOCALAPPDATA=%RUNNER_TEMP%\CryLo isolated standard-user test"
+          set "CRYLO_RUNTIME=%LOCALAPPDATA%\CryLo\runtime"
+          call crylo.cmd help > "%RUNNER_TEMP%\crylo-second-launch.txt"
+          if errorlevel 1 exit /b 1
+          findstr /C:"Preparing authenticated CryLo" "%RUNNER_TEMP%\crylo-second-launch.txt" >nul
+          if not errorlevel 1 exit /b 1
+          mkdir "%CRYLO_RUNTIME%\node-v24.21.0-win-x64.pre-crylo-bootstrap"
+          if errorlevel 1 exit /b 1
+          call crylo.cmd help > "%RUNNER_TEMP%\crylo-forced-rollback.txt" 2>&1
+          if not errorlevel 1 exit /b 1
+          if not exist "%CRYLO_RUNTIME%\node-v24.21.0-win-x64.pre-crylo-bootstrap" exit /b 1
+          if not exist "%CRYLO_RUNTIME%\node-v24.21.0-win-x64\node.exe" exit /b 1
+          if not exist "%CRYLO_RUNTIME%\mingit-2.56.0.windows.1-x64\cmd\git.exe" exit /b 1
+          if not exist "%LOCALAPPDATA%\CryLo\wallets\wallet-sentinel" exit /b 1
+          rmdir "%CRYLO_RUNTIME%\node-v24.21.0-win-x64.pre-crylo-bootstrap"
+          if errorlevel 1 exit /b 1
+          call crylo.cmd help
+          if errorlevel 1 exit /b 1
+          echo PASS: repeated launch and crash-state refusal preserved runtime and wallet
+
+      - name: Reject tampered staged Node archive without runtime changes
+        shell: cmd
+        run: |
+          set "LOCALAPPDATA=%RUNNER_TEMP%\CryLo isolated standard-user test"
+          set "CRYLO_RUNTIME=%LOCALAPPDATA%\CryLo\runtime"
+          set "STAGE=%CRYLO_RUNTIME%\.crylo-bootstrap-invalid-input"
+          mkdir "%STAGE%\node-v24.21.0-win-x64"
+          if errorlevel 1 exit /b 1
+          copy /y "%CRYLO_RUNTIME%\node-v24.21.0-win-x64\node.exe" "%STAGE%\node-v24.21.0-win-x64\node.exe" >nul
+          if errorlevel 1 exit /b 1
+          echo intentionally-unauthenticated > "%STAGE%\node-v24.21.0-win-x64.zip"
+          "%STAGE%\node-v24.21.0-win-x64\node.exe" "%CD%\scripts\windows-runtime-bootstrap.js" activate "%STAGE%"
+          if not errorlevel 1 exit /b 1
+          if not exist "%LOCALAPPDATA%\CryLo\wallets\wallet-sentinel" exit /b 1
+          if not exist "%CRYLO_RUNTIME%\node-v24.21.0-win-x64\node.exe" exit /b 1
+          if not exist "%CRYLO_RUNTIME%\mingit-2.56.0.windows.1-x64\cmd\git.exe" exit /b 1
+          echo PASS: tampered download refused before active runtime replacement
