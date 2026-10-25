@@ -33,8 +33,8 @@ jobs:
           import hashlib
           from pathlib import Path
           p=Path('contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch').read_bytes()
-          assert b'\\r\\n' not in p
-          converted=p.replace(b'\\n', b'\\r\\n')
+          assert bytes([13,10]) not in p
+          converted=p.replace(bytes([10]), bytes([13,10]))
           actual=hashlib.sha256(converted).hexdigest()
           expected='1699117451ee2454fa3a72e478d59999594a6551303c71bf26bc0074e890d9ab'
           if actual!=expected: raise SystemExit('Windows mismatch is NOT explained by newline conversion')
