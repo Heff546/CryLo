@@ -114,3 +114,4 @@ jobs:
           if not exist "%CRYLO_RUNTIME%\node-v24.21.0-win-x64\node.exe" exit /b 1
           if not exist "%CRYLO_RUNTIME%\mingit-2.56.0.windows.1-x64\cmd\git.exe" exit /b 1
           echo PASS: tampered download refused before active runtime replacement
+          exit /b 0
