@@ -1,0 +1,72 @@
+name: CryLo patched transitive dependency lock validation
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/secure-transitive-lock-refresh.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-lock-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out current exact dependency locks
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Install exact release Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Update only vulnerable transitive dependencies within semver
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global --no-audit --no-fund --ignore-scripts npm@12.1.0
+          npm --prefix electron update fast-uri undici --package-lock-only --ignore-scripts --no-fund --no-audit
+          npm --prefix node-operator/runtime update fast-uri --package-lock-only --ignore-scripts --no-fund --no-audit
+          node - <<'NODE'
+          const fs = require('node:fs');
+          function load(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+          const electron = load('electron/package-lock.json').packages;
+          const operator = load('node-operator/runtime/package-lock.json').packages;
+          const semver = (v) => v.split('.').map(Number);
+          const min = (v, min) => {
+            const a=semver(v), b=semver(min);
+            for(let i=0;i<3;i++){if(a[i]>b[i])return true;if(a[i]<b[i])return false;}
+            return true;
+          };
+          const versions = {
+            electron:electron['node_modules/electron'].version,
+            fastUriElectron:electron['node_modules/fast-uri'].version,
+            fastUriOperator:operator['node_modules/fast-uri'].version,
+            undiciElectron:electron['node_modules/undici'].version,
+            undiciNodeGyp:electron['node_modules/node-gyp/node_modules/undici'].version
+          };
+          console.log(JSON.stringify(versions));
+          if(versions.electron!=='44.9.3' ||
+            !min(versions.fastUriElectron,'3.1.9') ||
+            !min(versions.fastUriOperator,'3.1.9') ||
+            !min(versions.undiciElectron,'7.30.1') ||
+            !versions.undiciNodeGyp.startsWith('6.')) {
+              throw Error('Security version gate failed or node-gyp major ABI changed');
+          }
+          NODE
+          git diff --stat -- electron/package-lock.json node-operator/runtime/package-lock.json
+          echo 'PASS: semver-compatible advisory fixes prepared without source mutation'
+      - name: Upload full regenerated locks for code review
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-transitive-security-lock-review
+          path: |
+            electron/package-lock.json
+            node-operator/runtime/package-lock.json
+          if-no-files-found: error
+          retention-days: 7
