@@ -11,6 +11,8 @@ on:
       - electron/security/**
       - electron/test/renderer-security.test.js
       - scripts/tests/install-win-linux-pi-static.js
+      - scripts/crylo.js
+      - scripts/tests/signed-update-contract.test.js
       - electron/build/windows-installer-runtime.js
       - electron/build/installer.nsh
   workflow_dispatch:
@@ -92,3 +94,4 @@ jobs:
           node --check scripts/crylo.js
           node --check scripts/release/crylo-release.js
           node scripts/tests/install-win-linux-pi-static.js
+          node --test scripts/tests/signed-update-contract.test.js
