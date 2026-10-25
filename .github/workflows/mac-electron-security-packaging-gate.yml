@@ -1,0 +1,149 @@
+name: CryLo Mac Electron security packaging verification
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/mac-electron-security-packaging-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  mac-electron-security:
+    name: Unsigned Electron security packaging — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: intel
+            runner: macos-15-intel
+            arch: x64
+            mach: x86_64
+            old_run: '40167718146'
+            old_sha256: b0922cb5a353554247b0be3b77cc7ada66cf69bd753713b5c771bd7839f7ef20
+          - name: apple-silicon
+            runner: macos-15
+            arch: arm64
+            mach: arm64
+            old_run: '40210276882'
+            old_sha256: ea866eb037e857da15171846dbc4ac9965672b45c50462862dc36913edc99f7a
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Check out latest reviewed Electron source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Establish pinned Node and npm for the macOS packaging host
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+
+      - name: Verify pinned packaging dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v24.21.0
+          npm install --global --no-audit --no-fund --ignore-scripts npm@12.1.0
+          test "$(npm --version)" = 12.1.0
+          node --check electron/main.js
+          node --check electron/security/renderer-policy.js
+          node --test electron/test/release-packaging-security.test.js
+
+      - name: Download exact previously validated native Mac binaries
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ matrix.old_run }}
+          SOURCE_SHA: ${{ matrix.old_sha256 }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          TARGET_MACH: ${{ matrix.mach }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/crylo-mac-security-input"
+          mkdir -p "$root/old" "$root/extracted" "$root/component" "$root/native"
+          gh run download "$SOURCE_RUN" --repo Heff546/CryLo \
+            --name crylo-macos-intel-unsigned-pkg --dir "$root/old"
+          pkg="$root/old/CryLo-1.1.1-mac-$TARGET_ARCH-unsigned.pkg"
+          test -s "$pkg"
+          printf '%s  %s\n' "$SOURCE_SHA" "$pkg" | shasum -a 256 -c -
+          signature="$(pkgutil --check-signature "$pkg" 2>&1 || true)"
+          printf '%s\n' "$signature" | grep -F 'Status: no signature'
+          pkgutil --expand "$pkg" "$root/component/expanded"
+          payload="$(find "$root/component/expanded" -type f -name Payload -print -quit)"
+          test -n "$payload"
+          /usr/bin/ditto -x "$payload" "$root/extracted"
+          app="$root/extracted/Applications/CryLo Wallet.app"
+          test -d "$app"
+          native="$app/Contents/Resources/bin/mac"
+          for name in CryLo-daemon CryLo-wallet-rpc BINARY-MANIFEST.txt; do
+            test -s "$native/$name"
+            cp "$native/$name" "$root/native/$name"
+          done
+          for name in CryLo-daemon CryLo-wallet-rpc; do
+            test "$(lipo -archs "$root/native/$name")" = "$TARGET_MACH"
+          done
+          echo "CRYLO_RELEASE_BIN=$root/native" >> "$GITHUB_ENV"
+          echo 'PASS: independently verified original unsigned Mac executables'
+
+      - name: Build only the updated Electron GUI and unsigned installer
+        shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          node electron/scripts/release-native.js mac "$TARGET_ARCH"
+          test -s "electron/dist/CryLo-1.1.1-mac-$TARGET_ARCH-unsigned.pkg"
+          echo 'PASS: GUI packaged with previously tested native binary inputs'
+
+      - name: Inspect actual Electron app.asar and resulting PKG
+        shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          TARGET_MACH: ${{ matrix.mach }}
+        run: |
+          set -euo pipefail
+          dir=electron/dist/mac
+          if [ "$TARGET_ARCH" = arm64 ]; then dir=electron/dist/mac-arm64; fi
+          app="$dir/CryLo Wallet.app"
+          asar="$app/Contents/Resources/app.asar"
+          test -s "$asar"
+          export ASAR_SOURCE="$asar"
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const asar = require('./electron/node_modules/@electron/asar');
+          const file = process.env.ASAR_SOURCE;
+          const policy = asar.extractFile(file, 'security/renderer-policy.js').toString('utf8');
+          const entry = asar.extractFile(file, 'main.js').toString('utf8');
+          assert.match(entry, /require\('\.\/security\/renderer-policy'\)/);
+          assert.match(entry, /sandbox: true/);
+          assert.match(entry, /secureIpcHandle/);
+          assert.match(policy, /trustedIpcSender/);
+          assert.match(policy, /safeExternalHttpsUrl/);
+          console.log('PASS: actual app.asar includes IPC security policy and renderer sandbox');
+          NODE
+          test "$(lipo -archs "$app/Contents/MacOS/CryLo Wallet")" = "$TARGET_MACH"
+          for name in CryLo-daemon CryLo-wallet-rpc; do
+            cmp "$CRYLO_RELEASE_BIN/$name" "$app/Contents/Resources/bin/mac/$name"
+          done
+          pkg="electron/dist/CryLo-1.1.1-mac-$TARGET_ARCH-unsigned.pkg"
+          signature="$(pkgutil --check-signature "$pkg" 2>&1 || true)"
+          printf '%s\n' "$signature" | grep -F 'Status: no signature'
+          shasum -a 256 "$pkg"
+          echo 'PASS: original ARM binaries preserved; Electron security module packaged'
+
+      - name: Upload unsigned security validation candidate only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-macos-${{ matrix.arch }}-electron-security-validation
+          path: electron/dist/CryLo-1.1.1-mac-${{ matrix.arch }}-unsigned.pkg
+          if-no-files-found: error
+          retention-days: 7
