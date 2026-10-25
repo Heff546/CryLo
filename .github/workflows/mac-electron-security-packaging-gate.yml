@@ -6,6 +6,12 @@ on:
       - feature/mac-first-build-gate
     paths:
       - .github/workflows/mac-electron-security-packaging-gate.yml
+      - electron/main.js
+      - electron/preload.js
+      - electron/security/**
+      - electron/package.json
+      - electron/package-lock.json
+      - electron/test/release-packaging-security.test.js
   workflow_dispatch:
 
 permissions:
