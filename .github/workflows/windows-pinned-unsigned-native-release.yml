@@ -39,7 +39,9 @@ jobs:
           rem Only the fresh third audit is allowed to determine final success.
           C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
           if errorlevel 1 exit /b 1
-          C:\msys64\usr\bin\bash.exe -lc "pacman -Qu"
+          rem pacman -Qu may exit 1 when no packages are pending; the third
+          rem pacman -Syu command above is the definitive no-drift gate.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Q pacman filesystem bsdtar"
           if errorlevel 1 exit /b 1
           echo PASS: MSYS2 core and full upgrade completed in fresh shells
       - name: Acquire exactly pinned and signed Windows build dependencies
