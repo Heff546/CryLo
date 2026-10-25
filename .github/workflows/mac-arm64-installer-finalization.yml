@@ -1,0 +1,147 @@
+name: CryLo Apple Silicon verified installer hardening
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/mac-arm64-installer-finalization.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: crylo-mac-arm64-installer-finalization-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  repack-verified-arm64:
+    name: Repackage verified arm64 payload without recompiling or signing
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact installer hardening source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 3054a8f17c5dc680b6bfde8ff65cfb6918b2589e
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Verify source identity and staging isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          test "$(git rev-parse HEAD)" = 3054a8f17c5dc680b6bfde8ff65cfb6918b2589e
+          test -z "$(git status --porcelain)"
+          node --check electron/scripts/build-mac-installer.js
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync('electron/scripts/build-mac-installer.js', 'utf8');
+          for (const required of [
+            "const iconWorkspace = fs.mkdtempSync(",
+            "const workspace = fs.mkdtempSync(",
+            "const scriptDir = path.join(workspace, 'scripts');",
+            'fs.rmSync(iconWorkspace, { recursive: true, force: true });',
+            'fs.rmSync(workspace, { recursive: true, force: true });'
+          ]) {
+            if (!source.includes(required)) throw new Error('Missing private staging guard: ' + required);
+          }
+          if (source.includes("path.join(stage, '..', 'crylo-installer-scripts')")) {
+            throw new Error('Shared temporary installer scripts must not be used');
+          }
+          console.log('PASS: isolated temporary workspace guards');
+          NODE
+
+      - name: Download and authenticate exact successful native installer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/crylo-arm64-original"
+          mkdir -p "$dir"
+          gh run download 40210276882 \
+            --repo Heff546/CryLo \
+            --name crylo-macos-intel-unsigned-pkg \
+            --dir "$dir"
+          pkg="$dir/CryLo-1.1.1-mac-arm64-unsigned.pkg"
+          test -s "$pkg"
+          echo 'ea866eb037e857da15171846dbc4ac9965672b45c50462862dc36913edc99f7a  '"$pkg" | shasum -a 256 -c
+          pkgutil --check-signature "$pkg" | grep -F 'Status: no signature'
+          pkgutil --expand-full "$pkg" "$RUNNER_TEMP/crylo-arm64-original-expanded"
+          echo 'PASS: verified provenance, exact package SHA256 and unpacking'
+
+      - name: Restore verified application into isolated ARM64 packaging inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          expanded="$RUNNER_TEMP/crylo-arm64-original-expanded"
+          wallet="$(find "$expanded" -type d -name 'CryLo Wallet.app' -print -quit)"
+          test -n "$wallet"
+          test -x "$wallet/Contents/MacOS/CryLo Wallet"
+          mkdir -p electron/dist/mac-arm64
+          ditto "$wallet" 'electron/dist/mac-arm64/CryLo Wallet.app'
+          app='electron/dist/mac-arm64/CryLo Wallet.app'
+          for name in CryLo-daemon CryLo-wallet-rpc; do
+            orig="$wallet/Contents/Resources/bin/mac/$name"
+            staged="$app/Contents/Resources/bin/mac/$name"
+            test -s "$staged"
+            cmp "$orig" "$staged"
+            test "$(lipo -archs "$staged")" = arm64
+            xcrun vtool -show-build "$staged" | grep -F 'minos 11.0'
+          done
+          test "$(lipo -archs "$app/Contents/MacOS/CryLo Wallet")" = arm64
+          framework="$app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework"
+          test "$(lipo -archs "$framework")" = arm64
+          echo 'PASS: recovered exact tested native binaries and native Electron app'
+
+      - name: Rebuild only the installer from verified binaries and hardened staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e electron/dist/CryLo-1.1.1-mac-arm64-unsigned.pkg
+          mkdir -p "$RUNNER_TEMP/crylo-private-temp" "$RUNNER_TEMP/sentinel"
+          echo 'leave unchanged' > "$RUNNER_TEMP/sentinel/sentinel.txt"
+          ln -s "$RUNNER_TEMP/sentinel" "$RUNNER_TEMP/crylo-private-temp/crylo-installer-scripts"
+          export TMPDIR="$RUNNER_TEMP/crylo-private-temp/"
+          node electron/scripts/build-mac-installer.js arm64
+          test "$(cat "$RUNNER_TEMP/sentinel/sentinel.txt")" = 'leave unchanged'
+          test "$(find "$RUNNER_TEMP/sentinel" -type f | wc -l | tr -d ' ')" = 1
+          test -z "$(find "$TMPDIR" -mindepth 1 -maxdepth 1 -type d \
+            \( -name 'crylo-iconset-*' -o -name 'crylo-mac-pkg-*' \) -print)"
+          echo 'PASS: shared temp-dir symlink cannot redirect installer scripts or iconset'
+
+      - name: Compare PKG payload and validate unsigned security requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          old="$RUNNER_TEMP/crylo-arm64-original/CryLo-1.1.1-mac-arm64-unsigned.pkg"
+          pkg='electron/dist/CryLo-1.1.1-mac-arm64-unsigned.pkg'
+          test -s "$pkg"
+          pkgutil --check-signature "$pkg" | grep -F 'Status: no signature'
+          pkgutil --payload-files "$old" | LC_ALL=C sort > "$RUNNER_TEMP/old-payload.txt"
+          pkgutil --payload-files "$pkg" | LC_ALL=C sort > "$RUNNER_TEMP/new-payload.txt"
+          cmp "$RUNNER_TEMP/old-payload.txt" "$RUNNER_TEMP/new-payload.txt"
+          pkgutil --expand "$old" "$RUNNER_TEMP/old-mac-pkg-scripts"
+          pkgutil --expand "$pkg" "$RUNNER_TEMP/new-mac-pkg-scripts"
+          old_scripts="$(find "$RUNNER_TEMP/old-mac-pkg-scripts" -name Scripts -type d -print -quit)"
+          new_scripts="$(find "$RUNNER_TEMP/new-mac-pkg-scripts" -name Scripts -type d -print -quit)"
+          test -n "$old_scripts"
+          test -n "$new_scripts"
+          cmp "$old_scripts/postinstall" "$new_scripts/postinstall"
+          test -z "$(find "$RUNNER_TEMP/new-mac-pkg-scripts" -name preinstall -print)"
+          sh -n "$new_scripts/postinstall"
+          test "$(lipo -archs 'electron/dist/mac-arm64/CryLo Daemon.app/Contents/Resources/CryLo-daemon')" = arm64
+          shasum -a 256 "$pkg"
+          echo 'PASS: payload file list unchanged, postinstall identical, no preinstall, no signing'
+
+      - name: Upload hardened unsigned ARM64 PKG only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-macos-arm64-unsigned-pkg-hardened
+          path: electron/dist/CryLo-1.1.1-mac-arm64-unsigned.pkg
+          if-no-files-found: error
+          retention-days: 14
