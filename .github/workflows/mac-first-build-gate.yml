@@ -228,6 +228,37 @@ jobs:
           done
           echo "===== MACH-O DIAGNOSTICS COMPLETE; NO FILES OR LINK FLAGS MODIFIED ====="
 
+      - name: Gate native LMDB Mach-O executable sections
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== MACOS LMDB SECTION REGRESSION GATE ====="
+          archive="build/mac-x64/external/db_drivers/liblmdb/liblmdb.a"
+          test -s "$archive"
+          if otool -l "$archive" | grep -Eq 'sectname[[:space:]]+text_env([[:space:]]|$)'; then
+            echo "ERROR: LMDB still emits legacy text_env section"
+            exit 1
+          fi
+          for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+            binary="build/mac-x64/bin/$name"
+            test -x "$binary"
+            sections="$(mktemp)"
+            otool -l "$binary" > "$sections"
+            if grep -Eq 'sectname[[:space:]]+text_env([[:space:]]|$)' "$sections"; then
+              echo "ERROR: unexpected text_env section in $name"
+              rm -f "$sections"
+              exit 1
+            fi
+            if ! grep -Eq 'sectname[[:space:]]+__unwind_info([[:space:]]|$)' "$sections"; then
+              echo "ERROR: missing unwind information in $name"
+              rm -f "$sections"
+              exit 1
+            fi
+            rm -f "$sections"
+            echo "PASS: $name has no legacy section and retains unwind metadata"
+          done
+          echo "===== MACOS LMDB SECTION REGRESSION GATE PASSED ====="
+
       - name: Trace Mach-O text_env sections in static archives
         shell: bash
         run: |
