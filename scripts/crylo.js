@@ -3364,6 +3364,19 @@ function installAuthorizedReleaseBundle(
 function update() {
   console.log('===== CRYLO UPDATE =====');
 
+  // macOS native builds and unsigned CI installers do not yet have an
+  // authenticated, atomic platform-update format. Do not fall through to
+  // branch-based source updates, rebuilds, or incomplete OS installers.
+  // Existing applications and user-owned wallet/config data remain intact.
+  if (process.platform === 'darwin') {
+    fail(
+      'CryLo macOS signed install/update is not yet authorized. ' +
+      'Refusing the legacy Git-branch update path; existing data and ' +
+      'applications were not changed. Install only a verified official ' +
+      'macOS release after its signed installer gate is completed.'
+    );
+  }
+
   const insideWorkTree = git(
     ['rev-parse', '--is-inside-work-tree'],
     true
