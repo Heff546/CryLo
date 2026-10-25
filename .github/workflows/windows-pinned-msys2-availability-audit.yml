@@ -1,0 +1,44 @@
+name: CryLo Windows pinned MSYS2 dependency availability audit
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/windows-pinned-msys2-availability-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-package-availability:
+    name: Windows x64 exact pinned dependency availability (read-only)
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact CryLo release policy without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Provision CI-only Node interpreter for deterministic audit
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Initialize MSYS2 and refresh package index only
+        shell: cmd
+        run: |
+          if not exist C:\msys64\usr\bin\bash.exe exit /b 1
+          C:\msys64\usr\bin\bash.exe -lc "true"
+          C:\msys64\usr\bin\bash.exe -lc "pacman --version"
+          if errorlevel 1 exit /b 1
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm"
+          if errorlevel 1 exit /b 1
+          echo PASS: CI-only MSYS2 repository metadata refreshed without installing packages
+      - name: Compare repository package versions against CryLo's exact release pins
+        shell: cmd
+        run: |
+          node -e "const fs=require('fs'),cp=require('child_process');const s=fs.readFileSync('scripts/release/crylo-release.js','utf8');let mismatch=0;for(const key of ['windowsSharedDependencyVersions','windowsPlatformDependencyVersions']){const re=new RegExp('const '+key+' = Object.freeze\\(\\{([\\s\\S]*?)\\}\\);');const m=s.match(re);if(!m)throw Error('Missing pinned dependency map '+key);for(const x of m[1].matchAll(/'([^']+)'\s*:\s*'([^']+)'/g)){const name=x[1],expected=x[2];const p=cp.spawnSync('C:\\msys64\\usr\\bin\\bash.exe',['-lc','pacman -Si '+name],{encoding:'utf8'});if(p.status!==0){console.error('MISSING IN REPO',name);mismatch++;continue;}const v=p.stdout.match(/^Version\s*:\s*(\S+)/m);const actual=v?v[1].replace(/-[0-9]+$/,''):'UNKNOWN';console.log(name,'expected',expected,'available',actual);if(actual!==expected)mismatch++;}}if(mismatch){console.error('STOP: '+mismatch+' CryLo Windows dependency pins unavailable in current MSYS2 repo. Do not substitute unpinned packages.');process.exit(2);}console.log('PASS: all pinned MSYS2 dependencies available.');"
+          if errorlevel 1 exit /b 1
+          echo NO native build, host package installation, signing or publishing occurred
