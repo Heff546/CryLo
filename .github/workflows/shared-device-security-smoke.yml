@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 12
     steps:
       - name: Check out exact source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
       - name: Compile and exercise actual shared logging function
@@ -81,7 +81,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out exact source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
       - name: Verify production graph and pinned lockfile integrity
