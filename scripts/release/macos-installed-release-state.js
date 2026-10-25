@@ -49,9 +49,12 @@ function compareInstalled(pkg,installationRoot='/'){
    const expanded=path.join(temporary,'expanded'),payload=path.join(temporary,'files');
    fs.mkdirSync(payload);
    checked('/usr/sbin/pkgutil',['--expand',pkg,expanded]);
-   const sources=fs.readdirSync(expanded,{withFileTypes:true})
-     .filter(d=>d.isDirectory()).map(d=>path.join(expanded,d.name,'Payload'))
-     .filter(f=>fs.existsSync(f));
+   // Component PKGs may store Payload at the expansion root;
+   // distribution packages may nest it in one component directory.
+   const sources=[path.join(expanded,'Payload'),
+     ...fs.readdirSync(expanded,{withFileTypes:true})
+       .filter(d=>d.isDirectory()).map(d=>path.join(expanded,d.name,'Payload'))]
+     .filter(f=>fs.existsSync(f)&&fs.lstatSync(f).isFile());
    if(sources.length!==1)throw new Error('Unrecognized macOS CryLo package payload.');
    checked('/usr/bin/ditto',['-x',sources[0],payload]);
    for(const name of REQUIRED)
