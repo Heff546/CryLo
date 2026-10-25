@@ -1,0 +1,51 @@
+name: CryLo pinned OpenSSL 3.5.9 build-only patch security audit
+
+on:
+  push:
+    branches: [feature/mac-first-build-gate]
+    paths: [.github/workflows/windows-openssl-patch-pin-gate.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verified-patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Confirm exact OpenSSL recipe, patch and upstream source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          patchfile="$GITHUB_WORKSPACE/contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch"
+          recipe="$GITHUB_WORKSPACE/contrib/depends/packages/openssl.mk"
+          test -s "$patchfile"
+          test -s "$recipe"
+          echo '1699117451ee2454fa3a72e478d59999594a6551303c71bf26bc0074e890d9ab  '"$patchfile" | sha256sum -c -
+          test "$(grep -c '^diff --git ' "$patchfile")" = 3
+          grep '^diff --git ' "$patchfile"
+          actual="$(grep '^diff --git ' "$patchfile" | sed -E 's#^diff --git a/([^ ]+) b/([^ ]+)$#\1 \2#')"
+          printf '%s\n' "$actual" | grep -Fx 'build.info build.info'
+          printf '%s\n' "$actual" | grep -Fx 'exporters/build.info exporters/build.info'
+          printf '%s\n' "$actual" | grep -Fx 'util/mkinstallvars.pl util/mkinstallvars.pl'
+          test "$(printf '%s\n' "$actual" | wc -l)" = 3
+          grep -F '$(package)_version=3.5.9' "$recipe"
+          grep -F '$(package)_sha256_hash=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a' "$recipe"
+          tmp="$RUNNER_TEMP/crylo-openssl-audit"
+          mkdir -p "$tmp"
+          url='https://www.openssl.org/source/openssl-3.5.9.tar.gz'
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+            --silent --show-error "$url" -o "$tmp/openssl-3.5.9.tar.gz"
+          echo '603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a  '"$tmp/openssl-3.5.9.tar.gz" | sha256sum -c -
+          tar -xzf "$tmp/openssl-3.5.9.tar.gz" -C "$tmp"
+          cd "$tmp/openssl-3.5.9"
+          patch --dry-run --batch --forward -p1 < "$patchfile"
+          patch --batch --forward -p1 < "$patchfile"
+          test "$(grep -c 'OPENSSL_MKINSTALLVARS_DEBUG' util/mkinstallvars.pl)" -ge 1
+          echo 'PASS: exact hash-pinned build-only patch applies cleanly to exact hash-pinned OpenSSL 3.5.9'
+          echo 'No Windows release code was modified or official artifact signed'
