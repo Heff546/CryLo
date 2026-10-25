@@ -149,7 +149,7 @@ jobs:
           # match the patched, audited Nexus runtime lock as well.
           operator_fast_uri="$app/Contents/Resources/operator-runtime/node_modules/fast-uri/package.json"
           test -s "$operator_fast_uri"
-          OPERATOR_FAST_URI="$operator_fast_uri" node -e "const p=require(process.env.OPERATOR_FAST_URI);if(p.version!=='3.1.9')process.exit(1)"
+          OPERATOR_FAST_URI="$operator_fast_uri" node -e "const fs=require('node:fs');const p=JSON.parse(fs.readFileSync(process.env.OPERATOR_FAST_URI,'utf8'));if(p.version!=='3.1.9')process.exit(1)"
           echo 'PASS: bundled Nexus operator uses fast-uri 3.1.9'
           echo 'PASS: original native binaries preserved; Electron security module packaged'
 
