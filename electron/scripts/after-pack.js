@@ -178,7 +178,8 @@ module.exports = async function afterPack(context) {
       ['scripts/release/keys/crylo-testnet-release-ed25519-public.pem',
         'crylo-testnet-release-ed25519-public.pem'],
       ['electron/security/macos-update-client.js', 'macos-update-client.js'],
-      ['scripts/release/macos-installed-update.js', 'macos-installed-update.js']
+      ['scripts/release/macos-installed-update.js', 'macos-installed-update.js'],
+      ['scripts/release/macos-installed-release-state.js', 'macos-installed-release-state.js']
     ];
     for (const [sourceName, fileName] of macTrustInputs) {
       const sourceFile = path.join(root, sourceName);

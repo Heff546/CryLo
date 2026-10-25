@@ -13,7 +13,7 @@ esac
 
 RESOURCES='/Applications/CryLo Wallet.app/Contents/Resources/macos-update'
 CLIENT="$RESOURCES/macos-installed-update.js"
-for NAME in macos-installed-update.js macos-update-client.js macos-package-trust.js macos-unsigned-update-stage.js crylo-testnet-release-ed25519-public.pem; do
+for NAME in macos-installed-update.js macos-update-client.js macos-package-trust.js macos-unsigned-update-stage.js macos-installed-release-state.js crylo-testnet-release-ed25519-public.pem; do
   [ -f "$RESOURCES/$NAME" ] || { echo "ERROR: Installed CryLo Mac updater missing: $NAME" >&2; exit 1; }
 done
 

@@ -170,6 +170,10 @@
         {
           "from": "../scripts/release/macos-installed-update.js",
           "to": "macos-update/macos-installed-update.js"
+        },
+        {
+          "from": "../scripts/release/macos-installed-release-state.js",
+          "to": "macos-update/macos-installed-release-state.js"
         }
       ]
     },
