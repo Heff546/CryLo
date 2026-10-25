@@ -1,0 +1,100 @@
+name: CryLo Linux x64 ARM64 unsigned unified release candidate builds
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/unified-linux-native-candidate-build.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-release-candidate:
+    name: Native unsigned release candidate — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, runner: ubuntu-24.04, arch: x64, machine: x86_64, jobs: '2' }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, arch: arm64, machine: aarch64, jobs: '1' }
+    steps:
+      - name: Checkout approved CryLo source and submodules without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+          submodules: recursive
+      - name: Confirm exact platform and build inputs
+        shell: bash
+        env:
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          git rev-parse HEAD
+          test -z "$(git status --porcelain --untracked-files=all)"
+          sh -n ./crylo
+          node --check scripts/release/crylo-release.js
+          test -s contrib/depends/packages/boost.mk
+          test -s contrib/depends/packages/openssl.mk
+          test -s contrib/depends/packages/hidapi.mk
+          test -s contrib/depends/packages/protobuf.mk
+          test -s contrib/depends/packages/zeromq.mk
+          echo 'PASS: clean exact branch source for mainnet-targeted Linux build'
+      - name: Provision host-only compilation utilities on disposable runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config python3 perl make \
+            autoconf automake libtool bison flex gettext \
+            curl wget tar patch unzip file
+          cmake --version | head -1
+          make --version | head -1
+          gcc --version | head -1
+          python3 --version
+          df -h .
+          echo 'Only host build utilities are provisioned; CryLo native libraries must come from hash-pinned contrib/depends'
+      - name: Build CryLo native binaries and matching Electron output without signing
+        shell: bash
+        env:
+          CRYLO_JOBS: ${{ matrix.jobs }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          sh ./crylo release
+          test -s "build/linux-${{ matrix.arch }}/bin/CryLo-daemon"
+          test -s "build/linux-${{ matrix.arch }}/bin/CryLo-wallet"
+          test -s "build/linux-${{ matrix.arch }}/bin/CryLo-wallet-rpc"
+          test -n "$(find electron/dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          echo 'PASS: Linux native compilation and Electron release candidate from exact source'
+      - name: Record unsigned native output checksums and source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/crylo-linux-release-validation"
+          mkdir -p "$out"
+          git rev-parse HEAD > "$out/SOURCE-COMMIT.txt"
+          find "build/linux-${{ matrix.arch }}/bin" -maxdepth 1 -type f -name 'CryLo-*' -print0 | \
+            LC_ALL=C sort -z | xargs -0 sha256sum > "$out/NATIVE-SHA256SUMS.txt"
+          test -s "$out/NATIVE-SHA256SUMS.txt"
+          echo 'CI only. No official Pi1 manifest signature or release publication.' > "$out/UNSIGNED-VALIDATION-NOTICE.txt"
+      - name: Upload unsigned CI artifacts only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-unified-${{ matrix.name }}-unsigned-build
+          path: |
+            build/linux-${{ matrix.arch }}/bin/CryLo-daemon
+            build/linux-${{ matrix.arch }}/bin/CryLo-wallet
+            build/linux-${{ matrix.arch }}/bin/CryLo-wallet-rpc
+            electron/dist/*.AppImage
+            electron/dist/*.deb
+            ${{ runner.temp }}/crylo-linux-release-validation/*
+          if-no-files-found: error
+          retention-days: 30
