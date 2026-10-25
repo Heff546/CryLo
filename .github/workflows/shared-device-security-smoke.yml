@@ -12,6 +12,9 @@ on:
       - electron/package-lock.json
       - node-operator/runtime/package.json
       - node-operator/runtime/package-lock.json
+      - contrib/depends/packages/boost.mk
+      - src/daemon/CMakeLists.txt
+      - src/wallet/CMakeLists.txt
   workflow_dispatch:
 permissions:
   contents: read
@@ -112,4 +115,43 @@ jobs:
                      r.get('to') == 'operator-runtime/node_modules' for r in resources):
               raise SystemExit('ERROR: operator runtime packaging mapping changed')
           print('PASS: production dependency scope and operator packaging mapping verified')
+          PY
+
+  static-link-audit:
+    name: Read-only Boost and CMake link declaration audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Report Boost install targets and overlapping link declarations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, re
+          recipe = pathlib.Path('contrib/depends/packages/boost.mk').read_text()
+          lines = recipe.splitlines()
+          print('===== BOOST 1.92 PINNED RECIPE =====')
+          for n, line in enumerate(lines, 1):
+              if any(word in line for word in ('_version=', '_sha256_hash=', '_config_libraries=', './b2 ', '_config_opts_darwin=')):
+                  print(f'{n}: {line.strip()}')
+          if not re.search(r'^\$\(package\)_version=1\.92\.0$', recipe, re.M):
+              raise SystemExit('Unexpected Boost version; review required')
+          build = re.findall(r'^\s*\./b2[^\n]*$', recipe, re.M)
+          if len(build) != 2:
+              raise SystemExit('Expected exactly two Boost b2 invocations')
+          print('===== EXPLICIT BUILD AND INSTALL COMMANDS =====')
+          for line in build: print(line.strip())
+          print('===== SHARED BOOST LINK DECLARATIONS =====')
+          for target in ('src/daemon/CMakeLists.txt', 'src/wallet/CMakeLists.txt'):
+              source = pathlib.Path(target).read_text()
+              found = re.findall(r'\$\{Boost_[A-Z_]+_LIBRARY\}', source)
+              counts = {item: found.count(item) for item in sorted(set(found))}
+              print(f'{target}: {counts}')
+              if not counts:
+                  raise SystemExit(f'No Boost link variables located in {target}')
+          print('AUDIT ONLY: no link flags, recipes, or binaries changed')
           PY
