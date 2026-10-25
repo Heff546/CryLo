@@ -135,6 +135,26 @@ jobs:
           ls -l contrib/depends/x86_64-apple-darwin11/share/toolchain.cmake
           df -h .
 
+      - name: Audit required pinned Boost static libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          libdir="contrib/depends/x86_64-apple-darwin11/lib"
+          echo "===== BOOST 1.92 STATIC ARCHIVE AUDIT ====="
+          for component in chrono filesystem program_options thread date_time regex serialization locale; do
+            archive="$libdir/libboost_$component.a"
+            if [ ! -s "$archive" ]; then
+              echo "ERROR: missing or empty required Boost archive: $archive"
+              exit 1
+            fi
+            if ! /usr/bin/ar -t "$archive" | grep -q .; then
+              echo "ERROR: Boost archive has no members: $archive"
+              exit 1
+            fi
+            echo "PASS: $archive"
+          done
+          echo "===== REQUIRED BOOST ARCHIVES VERIFIED ====="
+
       - name: Configure native CryLo with full Trezor support
         shell: bash
         run: |
