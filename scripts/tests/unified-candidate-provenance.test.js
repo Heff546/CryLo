@@ -38,6 +38,24 @@ test('only exact non-shipped provenance audit files are exempt from rebuild',()=
  f.compare.files.push({filename:'scripts/release/create-release-manifest.js'});
  assert.equal(analyzeCandidate(def,f.run,f.artifacts,f.compare,HEAD).reusableAsUnsignedCandidate,false);
 });
+test('Mac reuse accepts only reviewed non-shipped Linux packaging and LF attribute changes',()=>{
+ const f=fixture();
+ f.compare.files=[
+  {filename:'electron/scripts/release-linux.sh'},
+  {filename:'.gitattributes'},
+  {filename:'scripts/release/unified-unsigned-assemble.js'},
+  {filename:'scripts/tests/unified-unsigned-assemble.test.js'}
+ ];
+ assert.equal(analyzeCandidate(def,f.run,f.artifacts,f.compare,HEAD).reusableAsUnsignedCandidate,true);
+ const win=CANDIDATES[0];
+ const winFixture=fixture();
+ winFixture.run.id=win.runId;
+ winFixture.artifacts.artifacts[0].name=win.name;
+ winFixture.compare.files=[{filename:'electron/scripts/release-linux.sh'}];
+ assert.equal(analyzeCandidate(win,winFixture.run,winFixture.artifacts,winFixture.compare,HEAD).reusableAsUnsignedCandidate,false);
+ f.compare.files=[{filename:'electron/scripts/release-native.js'}];
+ assert.equal(analyzeCandidate(def,f.run,f.artifacts,f.compare,HEAD).reusableAsUnsignedCandidate,false);
+});
 test('expiration, missing artifacts, incorrect ancestry and failed CI are fail-closed',()=>{
  const mutations=[
   f=>{f.artifacts.artifacts[0].expired=true;},

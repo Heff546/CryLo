@@ -68,10 +68,29 @@ function analyzeCandidate(definition,run,artifactData,comparison,targetSha){
  const modified=(comparison&&comparison.files||[]).map(x=>x.filename);
  const nonShippedAuditFiles=new Set([
   'scripts/release/unified-candidate-provenance.js',
-  'scripts/tests/unified-candidate-provenance.test.js'
+  'scripts/tests/unified-candidate-provenance.test.js',
+  'scripts/release/unified-unsigned-assemble.js',
+  'scripts/tests/unified-unsigned-assemble.test.js'
  ]);
+ const repoRoot=path.resolve(__dirname,'../..');
+ function reviewedUnshippedChange(file){
+  if(file==='.gitattributes'){
+   const attrs=fs.readFileSync(path.join(repoRoot,file),'utf8');
+   const rules=attrs.split(/\\r?\\n/).filter(line=>line.trim()&&!line.startsWith('#'));
+   if(rules.length!==1||rules[0]!==
+    '/contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch text eol=lf')return false;
+   const patch=path.join(repoRoot,'contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch');
+   return sha256(patch)==='5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088';
+  }
+  if(file==='electron/scripts/release-linux.sh'&&definition.platform==='mac'){
+   const bytes=fs.readFileSync(path.join(repoRoot,file));
+   const gitBlob=crypto.createHash('sha1').update('blob '+bytes.length+'\\0').update(bytes).digest('hex');
+   return gitBlob==='28206b146f3ad1998e5ee27e419a666c2acebbd0';
+  }
+  return false;
+ }
  const affecting=modified.filter(f=>typeof f!=='string'||
-   !(f.startsWith('.github/workflows/')||nonShippedAuditFiles.has(f)));
+   !(f.startsWith('.github/workflows/')||nonShippedAuditFiles.has(f)||reviewedUnshippedChange(f)));
  if(affecting.length)failures.push('release-affecting source changed after artifact build');
  return {
   target:definition.platform+'/'+definition.architecture,
