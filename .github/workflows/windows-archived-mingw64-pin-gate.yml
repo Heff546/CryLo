@@ -60,7 +60,16 @@ jobs:
               echo "BLOCKED: upstream package signature missing: $pkg"
               exit 1
             fi
-            pacman-key --verify "$pkg.sig" "$pkg"
+            # pacman-key --verify requires administrative control of the system
+            # keyring. CI only needs read-only detached-signature verification.
+            test -s /etc/pacman.d/gnupg/pubring.gpg
+            gpgv --keyring /etc/pacman.d/gnupg/pubring.gpg "$pkg.sig" "$pkg"
+            case "$pkg" in
+              mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst)
+                echo '89fb61549a437d65076a092a367fcb264fc7045ee9ebef48cd81f5a76a5588f8  '"$pkg" | sha256sum -c - ;;
+              mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst)
+                echo '124edc26b009678a4c5e759481a364abf63ed7f2f49a53092e8bd0a47c0c0740  '"$pkg" | sha256sum -c - ;;
+            esac
             sha256sum "$pkg"
             pacman -Qp "$pkg"
             rm -f -- "$pkg" "$pkg.sig"
