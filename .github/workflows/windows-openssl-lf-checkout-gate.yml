@@ -1,0 +1,52 @@
+name: CryLo cross-platform OpenSSL patch exact checkout bytes
+
+on:
+  push:
+    branches: [feature/mac-first-build-gate]
+    paths:
+      - .gitattributes
+      - .github/workflows/windows-openssl-lf-checkout-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-patch-bytes:
+    name: Enforce original authenticated LF patch on ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, runner: windows-2022 }
+          - { name: linux-x64, runner: ubuntu-24.04 }
+          - { name: macos-arm64, runner: macos-15 }
+    steps:
+      - name: Checkout with OS-native Git defaults and no persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Use pinned audit runtime only
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Verify checkout's exact security patch bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git check-attr text eol -- contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch
+          node - <<'NODE'
+          const fs=require('node:fs'),crypto=require('node:crypto'),cp=require('node:child_process');
+          const p='contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch';
+          const a=fs.readFileSync(p);
+          const b=cp.execFileSync('git',['show','HEAD:'+p],{encoding:'buffer'});
+          const expected='5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088';
+          const digest=crypto.createHash('sha256').update(a).digest('hex');
+          if(digest!==expected)throw Error('Verified OpenSSL patch checkout SHA mismatch: '+digest);
+          if(!a.equals(b))throw Error('Working OpenSSL patch differs from source Git blob');
+          if(a.includes(Buffer.from([13,10])))throw Error('CRLF detected in pinned patch');
+          console.log('PASS: same trusted OpenSSL LF bytes on '+process.platform);
+          NODE

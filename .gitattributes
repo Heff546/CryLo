@@ -1,0 +1,4 @@
+# Preserve the verified OpenSSL 3.5.9 release patch as exact LF bytes
+# on all platforms, including Windows checkouts configured with core.autocrlf.
+# Its SHA256 is pinned in scripts/release/crylo-release.js.
+/contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch text eol=lf
