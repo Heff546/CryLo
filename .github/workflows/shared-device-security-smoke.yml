@@ -8,6 +8,10 @@ on:
       - src/device/log.hpp
       - .github/workflows/shared-device-security-smoke.yml
       - .github/workflows/mac-first-build-gate.yml
+      - electron/package.json
+      - electron/package-lock.json
+      - node-operator/runtime/package.json
+      - node-operator/runtime/package-lock.json
   workflow_dispatch:
 permissions:
   contents: read
@@ -70,3 +74,42 @@ jobs:
           c++ -std=c++11 -Wall -Wextra -Werror device-log-smoke.cpp -o device-log-smoke
           ./device-log-smoke
           echo "PASS: Linux/macOS shared logging tests"
+
+  dependency-scope:
+    name: Dependency lockfile production-scope audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify production graph and pinned lockfile integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib
+          banned = {'rimraf', 'glob', 'inflight', 'boolean'}
+          for directory in ('electron', 'node-operator/runtime'):
+              base = pathlib.Path(directory)
+              manifest = json.loads((base / 'package.json').read_text())
+              lock = json.loads((base / 'package-lock.json').read_text())
+              assert lock['lockfileVersion'] == 3
+              root = lock['packages']['']
+              assert root['dependencies'] == manifest.get('dependencies', {}), directory
+              assert root.get('devDependencies', {}) == manifest.get('devDependencies', {}), directory
+              hits = []
+              for name, meta in lock['packages'].items():
+                  if not name or name.split('/')[-1] not in banned: continue
+                  hits.append((name, meta.get('version'), meta.get('dev', False)))
+                  if not meta.get('dev', False):
+                      raise SystemExit(f'ERROR: {directory} production package: {name}')
+              print(f'{directory}: {len(lock["packages"])-1} pinned packages; deprecated dependency hits: {hits}')
+          electron = json.loads(pathlib.Path('electron/package.json').read_text())
+          resources = electron['build']['extraResources']
+          if not any(r.get('from') == '../node-operator/runtime/node_modules' and
+                     r.get('to') == 'operator-runtime/node_modules' for r in resources):
+              raise SystemExit('ERROR: operator runtime packaging mapping changed')
+          print('PASS: production dependency scope and operator packaging mapping verified')
+          PY
