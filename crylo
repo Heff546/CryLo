@@ -44,18 +44,44 @@ if [ "$(uname -s)" = "Linux" ]; then
   NODE_ARCHIVE="$NODE_NAME.tar.gz"
   NODE_URL="https://nodejs.org/dist/v$NODE_VERSION/$NODE_ARCHIVE"
 
-  install_crylo_node_runtime() {
-    echo "Installing isolated CryLo Node.js $NODE_VERSION runtime for Linux/$NODE_ARCH..."
+  # Never destroy an existing isolated Node/npm runtime to repair it.
+  # Download, checksum, install pinned npm and verify in a private staging
+  # directory. Replace the active runtime only after all gates succeed.
+  NODE_BACKUP="$NODE_BASE/$NODE_NAME.pre-crylo-bootstrap"
 
+  verify_crylo_node_runtime() {
+    directory="$1"
+    [ -x "$directory/bin/node" ] || return 1
+    [ -x "$directory/bin/npm" ] || return 1
+
+    actual_node=$("$directory/bin/node" --version 2>/dev/null || true)
+    [ "$actual_node" = "v$NODE_VERSION" ] || return 1
+
+    actual_arch=$("$directory/bin/node" -p 'process.arch' 2>/dev/null || true)
+    [ "$actual_arch" = "$NODE_ARCH" ] || return 1
+
+    actual_npm=$(PATH="$directory/bin:$PATH" "$directory/bin/npm" --version 2>/dev/null || true)
+    [ "$actual_npm" = "$NPM_VERSION" ] || return 1
+  }
+
+  install_crylo_node_runtime() (
+    set -eu
+
+    echo "Installing isolated CryLo Node.js $NODE_VERSION and npm $NPM_VERSION for Linux/$NODE_ARCH..."
     mkdir -p "$NODE_BASE"
 
-    TEMP_DIRECTORY=$(mktemp -d "$NODE_BASE/.node-install.XXXXXX")
+    if [ -e "$NODE_BACKUP" ] || [ -L "$NODE_BACKUP" ]; then
+      echo "ERROR: A CryLo Node.js recovery backup already exists:" >&2
+      echo "$NODE_BACKUP" >&2
+      echo "Resolve the preserved recovery state before retrying." >&2
+      exit 1
+    fi
 
-    cleanup_node_download() {
-      rm -rf "$TEMP_DIRECTORY"
-    }
-
-    trap cleanup_node_download EXIT HUP INT TERM
+    temp_directory=$(mktemp -d "$NODE_BASE/.node-install.XXXXXX")
+    trap 'rm -rf "$temp_directory"' EXIT
+    trap 'exit 1' HUP INT TERM
+    archive="$temp_directory/$NODE_ARCHIVE"
+    staged="$temp_directory/$NODE_NAME"
 
     if command -v curl >/dev/null 2>&1; then
       curl \
@@ -66,96 +92,89 @@ if [ "$(uname -s)" = "Linux" ]; then
         --proto '=https' \
         --tlsv1.2 \
         "$NODE_URL" \
-        --output "$TEMP_DIRECTORY/$NODE_ARCHIVE"
+        --output "$archive"
     elif command -v wget >/dev/null 2>&1; then
-      wget -q \
-        "$NODE_URL" \
-        -O "$TEMP_DIRECTORY/$NODE_ARCHIVE"
+      wget -q "$NODE_URL" -O "$archive"
     else
       echo "ERROR: curl or wget is required to install the CryLo Node.js runtime." >&2
       exit 1
     fi
 
     (
-      cd "$TEMP_DIRECTORY"
+      cd "$temp_directory"
       printf '%s  %s\n' "$NODE_SHA256" "$NODE_ARCHIVE" |
         sha256sum --check -
     )
-
-    tar \
-      -xzf "$TEMP_DIRECTORY/$NODE_ARCHIVE" \
-      -C "$TEMP_DIRECTORY"
-
-    if [ ! -x "$TEMP_DIRECTORY/$NODE_NAME/bin/node" ] ||
-       [ ! -x "$TEMP_DIRECTORY/$NODE_NAME/bin/npm" ]; then
+    tar -xzf "$archive" -C "$temp_directory"
+    [ -x "$staged/bin/node" ] || {
       echo "ERROR: Downloaded CryLo Node.js runtime is incomplete." >&2
       exit 1
-    fi
+    }
 
-    INSTALLED_VERSION=$(
-      "$TEMP_DIRECTORY/$NODE_NAME/bin/node" --version
-    )
-
-    if [ "$INSTALLED_VERSION" != "v$NODE_VERSION" ]; then
-      echo "ERROR: Downloaded CryLo Node.js runtime version mismatch." >&2
-      exit 1
-    fi
-
-    rm -rf "$NODE_DIRECTORY"
-
-    mv \
-      "$TEMP_DIRECTORY/$NODE_NAME" \
-      "$NODE_DIRECTORY"
-
-    trap - EXIT HUP INT TERM
-    cleanup_node_download
-  }
-
-  if [ ! -x "$NODE_DIRECTORY/bin/node" ] ||
-     [ ! -x "$NODE_DIRECTORY/bin/npm" ]; then
-    install_crylo_node_runtime
-  fi
-
-  CURRENT_NODE_VERSION=$(
-    "$NODE_DIRECTORY/bin/node" --version 2>/dev/null || true
-  )
-
-  if [ "$CURRENT_NODE_VERSION" != "v$NODE_VERSION" ]; then
-    echo "Existing CryLo Node.js runtime is invalid; reinstalling..."
-    rm -rf "$NODE_DIRECTORY"
-    install_crylo_node_runtime
-  fi
-
-  PATH="$NODE_DIRECTORY/bin:$PATH"
-  export PATH
-
-  CURRENT_NPM_VERSION=$(
-    "$NODE_DIRECTORY/bin/npm" --version 2>/dev/null || true
-  )
-
-  if [ "$CURRENT_NPM_VERSION" != "$NPM_VERSION" ]; then
-    echo "Preparing isolated CryLo npm $NPM_VERSION runtime..."
-
-    "$NODE_DIRECTORY/bin/npm" \
-      install \
+    # Use the just-downloaded Node.js executable and npm CLI, never a
+    # possibly incompatible system-managed Node.js/npm installation.
+    PATH="$staged/bin:$PATH"
+    export PATH
+    "$staged/bin/npm" install \
       --global \
-      --prefix "$NODE_DIRECTORY" \
+      --prefix "$staged" \
       --no-audit \
       --no-fund \
       --ignore-scripts \
       "npm@$NPM_VERSION"
 
-    CURRENT_NPM_VERSION=$(
-      "$NODE_DIRECTORY/bin/npm" --version 2>/dev/null || true
-    )
+    if ! verify_crylo_node_runtime "$staged"; then
+      echo "ERROR: Staged CryLo Node.js/npm verification failed. Existing runtime preserved." >&2
+      exit 1
+    fi
+
+    backed_up=false
+    if [ -e "$NODE_DIRECTORY" ] || [ -L "$NODE_DIRECTORY" ]; then
+      mv "$NODE_DIRECTORY" "$NODE_BACKUP"
+      backed_up=true
+    fi
+
+    if ! mv "$staged" "$NODE_DIRECTORY"; then
+      if [ "$backed_up" = true ]; then
+        mv "$NODE_BACKUP" "$NODE_DIRECTORY" || {
+          echo "ERROR: CryLo runtime rollback failed; preserved backup: $NODE_BACKUP" >&2
+          exit 1
+        }
+      fi
+      echo "ERROR: Unable to activate verified CryLo Node.js runtime." >&2
+      exit 1
+    fi
+
+    if ! verify_crylo_node_runtime "$NODE_DIRECTORY"; then
+      # This path contains only the newly staged runtime, never user data.
+      rm -rf "$NODE_DIRECTORY"
+      if [ "$backed_up" = true ]; then
+        mv "$NODE_BACKUP" "$NODE_DIRECTORY" || {
+          echo "ERROR: CryLo runtime rollback failed; preserved backup: $NODE_BACKUP" >&2
+          exit 1
+        }
+      fi
+      echo "ERROR: Installed CryLo Node.js/npm verification failed; previous runtime restored." >&2
+      exit 1
+    fi
+
+    if [ "$backed_up" = true ]; then
+      rm -rf "$NODE_BACKUP"
+    fi
+    echo "Verified isolated CryLo Node.js $NODE_VERSION / npm $NPM_VERSION [Linux/$NODE_ARCH]."
+  )
+
+  if ! verify_crylo_node_runtime "$NODE_DIRECTORY"; then
+    install_crylo_node_runtime
   fi
 
-  if [ "$CURRENT_NPM_VERSION" != "$NPM_VERSION" ]; then
-    echo "ERROR: CryLo isolated npm version verification failed." >&2
-    echo "Expected: $NPM_VERSION" >&2
-    echo "Actual:   ${CURRENT_NPM_VERSION:-unavailable}" >&2
+  if ! verify_crylo_node_runtime "$NODE_DIRECTORY"; then
+    echo "ERROR: CryLo isolated Node.js/npm runtime verification failed." >&2
     exit 1
   fi
+
+  PATH="$NODE_DIRECTORY/bin:$PATH"
+  export PATH
 
   CRYLO_NODE_RUNTIME="$NODE_DIRECTORY"
   export CRYLO_NODE_RUNTIME
