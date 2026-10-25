@@ -34,6 +34,10 @@ jobs:
           rem shell with exit 1. Never suppress failure of the second fresh run.
           C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
           C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          rem After the first core phase, a second archive-tool upgrade may also
+          rem exit 1 even though its packages were installed successfully.
+          rem Only the fresh third audit is allowed to determine final success.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
           if errorlevel 1 exit /b 1
           C:\msys64\usr\bin\bash.exe -lc "pacman -Qu"
           if errorlevel 1 exit /b 1
