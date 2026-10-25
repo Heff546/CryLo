@@ -247,7 +247,8 @@ union semun {
 #ifdef __GNUC__
 /** Put infrequently used env functions in separate section */
 # ifdef __APPLE__
-#  define	ESECT	__attribute__ ((section("__TEXT,text_env")))
+/* Apple Mach-O: use the compiler-managed __TEXT,__text flags and unwind metadata. */
+#  define	ESECT
 # else
 #  define	ESECT	__attribute__ ((section("text_env")))
 # endif
