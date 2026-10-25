@@ -25,6 +25,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+          set-safe-directory: false
 
       - name: Verify ARM64 runner and host toolchain inventory
         shell: bash
@@ -99,13 +100,13 @@ jobs:
           printf '%b\n' \
             '.PHONY: crylo-arm64-triplet-check' \
             'crylo-arm64-triplet-check:' \
-            '\\t@echo "host=$(host) host_arch=$(host_arch) host_os=$(host_os)"' \
-            '\\t@echo "build=$(build) build_arch=$(build_arch) build_os=$(build_os)"' \
-            '\\t@echo "host_prefix=$(host_prefix)"' \
-            '\\t@test "$(host_arch)" = aarch64' \
-            '\\t@test "$(host_os)" = darwin' \
-            '\\t@test "$(build_os)" = darwin' \
-            '\\t@test "$(host)" = aarch64-apple-darwin11' > "$scratch/probe.mk"
+            '\t@echo "host=$(host) host_arch=$(host_arch) host_os=$(host_os)"' \
+            '\t@echo "build=$(build) build_arch=$(build_arch) build_os=$(build_os)"' \
+            '\t@echo "host_prefix=$(host_prefix)"' \
+            '\t@test "$(host_arch)" = aarch64' \
+            '\t@test "$(host_os)" = darwin' \
+            '\t@test "$(build_os)" = darwin' \
+            '\t@test "$(host)" = aarch64-apple-darwin11' > "$scratch/probe.mk"
           make --no-print-directory -s -f Makefile -f "$scratch/probe.mk" \
             HOST=aarch64-apple-darwin11 crylo-arm64-triplet-check
           echo "===== EXPECTED NATIVE CMAKE SETTINGS ====="
