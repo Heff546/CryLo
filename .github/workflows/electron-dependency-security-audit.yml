@@ -1,0 +1,92 @@
+name: CryLo Electron and Nexus runtime dependency vulnerability audit
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/electron-dependency-security-audit.yml
+      - electron/package.json
+      - electron/package-lock.json
+      - node-operator/runtime/package.json
+      - node-operator/runtime/package-lock.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-dependency-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out reviewed pinned dependency locks
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Use release Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Select exact release npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global --no-fund --no-audit --ignore-scripts npm@12.1.0
+          test "$(npm --version)" = '12.1.0'
+      - name: Audit Electron production runtime and Nexus operator runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix electron audit --omit=dev --json > electron-production.json || true
+          npm --prefix node-operator/runtime audit --omit=dev --json > nexus-production.json || true
+          node - <<'NODE'
+          const fs = require('node:fs');
+          for (const [name, file] of [
+            ['electron-runtime', 'electron-production.json'],
+            ['nexus-operator-runtime', 'nexus-production.json']
+          ]) {
+            const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (data.error) throw Error(name + ' registry audit error: ' + JSON.stringify(data.error));
+            if (!data.metadata?.vulnerabilities) throw Error(name + ' security report is missing');
+            console.log(name + ' vulnerabilities:', JSON.stringify(data.metadata.vulnerabilities));
+            const blocking = Object.entries(data.vulnerabilities || {})
+              .filter(([, info]) => ['high', 'critical'].includes(info.severity));
+            if (blocking.length > 0) {
+              for (const [pkg, details] of blocking) {
+                console.error('BLOCK: ' + pkg + ' (' + details.severity + ')');
+              }
+              process.exitCode = 1;
+            }
+          }
+          NODE
+      - name: Report developer tooling advisories for explicit triage
+        if: always()
+        shell: bash
+        run: |
+          npm --prefix electron audit --json > electron-all-dependencies.json || true
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const p = 'electron-all-dependencies.json';
+          if (!fs.existsSync(p)) process.exit(0);
+          const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+          if (data.error) {
+            console.error('Registry audit unavailable:', data.error);
+            process.exit(0);
+          }
+          for (const [name, item] of Object.entries(data.vulnerabilities || {})) {
+            console.log(name + ': severity=' + item.severity + ', isDirect=' + item.isDirect);
+          }
+          NODE
+      - name: Upload dependency advisory evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-electron-dependency-security-audit
+          path: |
+            electron-production.json
+            nexus-production.json
+            electron-all-dependencies.json
+          if-no-files-found: warn
+          retention-days: 7
