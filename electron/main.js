@@ -5082,13 +5082,96 @@ function createWindow() {
 }
 
 
-// ─── macOS Edit menu (enables Cmd+C/V/X/A in text fields) ────────────────────
+// ─── macOS edit menu and authenticated, user-approved release checking ────────
+let macUpdateCheckInProgress = false;
+
+async function macUpdateMessage(options) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return dialog.showMessageBox(mainWindow, options);
+  }
+  return dialog.showMessageBox(options);
+}
+
+async function prepareInstalledMacWalletUpdate() {
+  if (process.platform !== 'darwin' || macUpdateCheckInProgress) return;
+  macUpdateCheckInProgress = true;
+  try {
+    if (!app.isPackaged) {
+      await macUpdateMessage({
+        type: 'info', buttons: ['OK'], message: 'CryLo development mode',
+        detail: 'Official verified updates are available only in installed CryLo applications.'
+      });
+      return;
+    }
+
+    const updater = require('./security/macos-update-client');
+    const context = {
+      resourcesPath: process.resourcesPath,
+      userData: app.getPath('userData'),
+      home: os.homedir()
+    };
+    const candidate = await updater.discoverVerifiedMacRelease(context);
+    if (!candidate) {
+      await macUpdateMessage({
+        type: 'info', buttons: ['OK'],
+        message: 'No authorized CryLo macOS update is available',
+        detail: 'Only official Pi1-signed releases matching this Mac are considered.'
+      });
+      return;
+    }
+
+    const answer = await macUpdateMessage({
+      type: 'question',
+      buttons: ['Cancel', 'Download Verified Installer'],
+      cancelId: 0, defaultId: 0,
+      message: 'Prepare verified CryLo ' + candidate.version + ' update?',
+      detail: 'Release: ' + candidate.tag + '\n' +
+        'The unsigned PKG will be authenticated using CryLo’s official Pi1 ' +
+        'release key and SHA-256. macOS will require your separate approval ' +
+        'for installation. The existing wallet and configuration will not be changed.'
+    });
+    if (answer.response !== 1) return;
+
+    const staged = await updater.downloadAndStageMacUpdate(context, candidate);
+    await macUpdateMessage({
+      type: 'info',
+      buttons: ['Reveal in Finder', 'Done'], cancelId: 1, defaultId: 0,
+      message: 'Verified CryLo installer prepared',
+      detail: 'Release: ' + staged.releaseTag + '\n' +
+        'SHA-256: ' + staged.sha256 + '\n' +
+        'Installer: ' + staged.stagedPath + '\n\n' +
+        'CryLo has not opened the PKG, bypassed Gatekeeper, installed software, ' +
+        'or advanced the accepted release sequence.'
+    }).then(result => {
+      if (result.response === 0) {
+        // Finder reveals the file; it does not execute it or bypass Gatekeeper.
+        shell.showItemInFolder(staged.stagedPath);
+      }
+    });
+  } catch (error) {
+    console.error('CryLo verified macOS update preparation failed:', error);
+    await macUpdateMessage({
+      type: 'error', buttons: ['OK'],
+      message: 'CryLo could not authenticate the update',
+      detail: 'No installer was executed or wallet data modified.\n' +
+        String(error?.message || error)
+    });
+  } finally {
+    macUpdateCheckInProgress = false;
+  }
+}
+
 if (process.platform === 'darwin') {
   const template = [
     {
       label: 'CryLo Wallet',
       submenu: [
         { role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Check for Verified Updates…',
+          click: () => { void prepareInstalledMacWalletUpdate(); }
+        },
         { type: 'separator' },
         { role: 'hide' },
         { role: 'hideOthers' },
