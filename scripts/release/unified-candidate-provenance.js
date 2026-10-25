@@ -66,7 +66,12 @@ function analyzeCandidate(definition,run,artifactData,comparison,targetSha){
  if(!comparison||!Array.isArray(comparison.files))
   failures.push('source-diff file list unavailable');
  const modified=(comparison&&comparison.files||[]).map(x=>x.filename);
- const affecting=modified.filter(f=>typeof f!=='string'||!f.startsWith('.github/workflows/'));
+ const nonShippedAuditFiles=new Set([
+  'scripts/release/unified-candidate-provenance.js',
+  'scripts/tests/unified-candidate-provenance.test.js'
+ ]);
+ const affecting=modified.filter(f=>typeof f!=='string'||
+   !(f.startsWith('.github/workflows/')||nonShippedAuditFiles.has(f)));
  if(affecting.length)failures.push('release-affecting source changed after artifact build');
  return {
   target:definition.platform+'/'+definition.architecture,

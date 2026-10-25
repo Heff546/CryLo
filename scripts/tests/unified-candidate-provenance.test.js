@@ -27,6 +27,17 @@ test('native, Electron, dependency or security changes block reuse',()=>{
   assert.deepEqual(x.sourceAffectingFiles,[filename]);
  }
 });
+test('only exact non-shipped provenance audit files are exempt from rebuild',()=>{
+ const f=fixture();
+ f.compare.files=[
+  {filename:'scripts/release/unified-candidate-provenance.js'},
+  {filename:'scripts/tests/unified-candidate-provenance.test.js'},
+  {filename:'.github/workflows/unified-release-candidate-provenance.yml'}
+ ];
+ assert.equal(analyzeCandidate(def,f.run,f.artifacts,f.compare,HEAD).reusableAsUnsignedCandidate,true);
+ f.compare.files.push({filename:'scripts/release/create-release-manifest.js'});
+ assert.equal(analyzeCandidate(def,f.run,f.artifacts,f.compare,HEAD).reusableAsUnsignedCandidate,false);
+});
 test('expiration, missing artifacts, incorrect ancestry and failed CI are fail-closed',()=>{
  const mutations=[
   f=>{f.artifacts.artifacts[0].expired=true;},
