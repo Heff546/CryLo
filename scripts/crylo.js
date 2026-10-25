@@ -46,6 +46,9 @@ const {
   detectPeArchitecture,
   isolatedWindowsPath
 } = require('../electron/scripts/windows-runtime-dlls');
+const {
+  stageVerifiedMacPackage
+} = require('./release/macos-unsigned-update-stage');
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -933,6 +936,19 @@ function releaseTarget() {
     };
   }
 
+  if (process.platform === 'darwin') {
+    if (!['x64', 'arm64'].includes(process.arch)) {
+      fail(
+        `Signed CryLo macOS updates do not support architecture ` +
+        `${process.arch}.`
+      );
+    }
+    return {
+      platform: 'mac',
+      architecture: process.arch
+    };
+  }
+
   return null;
 }
 
@@ -955,6 +971,13 @@ function expectedSignedBundleName(
       `CryLo-Release-${version}-win-` +
       `${target.architecture}.zip`
     );
+  }
+
+  if (
+    target.platform === 'mac' &&
+    ['x64', 'arm64'].includes(target.architecture)
+  ) {
+    return `CryLo-${version}-mac-${target.architecture}-unsigned.pkg`;
   }
 
   fail(
@@ -3286,20 +3309,82 @@ function installAuthorizedReleaseBundle(
   );
 }
 
+function prepareAuthorizedMacUpdate() {
+  // An installed Mac application does not yet have a GUI updater.
+  // This CLI path works for a local CryLo source checkout only. It stages
+  // verified, unsigned PKGs for explicit user approval and MUST NOT
+  // silently install apps, change source or advance rollback state.
+  if (git(['rev-parse', '--is-inside-work-tree'], true) !== 'true') {
+    fail('CryLo macOS update preparation requires a CryLo source checkout.');
+  }
+
+  if (git(['status', '--porcelain'], true)) {
+    fail(
+      'CryLo macOS source has local changes. ' +
+      'Update preparation stopped without modifying application data.'
+    );
+  }
+
+  const before = git(['rev-parse', 'HEAD'], true);
+  const state = readReleaseSecurityState();
+  const minimumSequence = state
+    ? state.highestAcceptedReleaseSequence
+    : network.bootstrapReleaseSequence;
+  const authorization = authenticateSignedRelease(before);
+
+  if (!authorization) {
+    fail('No authenticated CryLo macOS release was found.');
+  }
+
+  const download = downloadAuthorizedReleaseBundle(authorization);
+  try {
+    const manifestPath = path.join(
+      download.temporaryRoot, 'crylo-release-manifest.json');
+    const publicKeyPath = path.join(
+      root, 'scripts', 'release', 'keys',
+      `crylo-${network.mode}-release-ed25519-public.pem`
+    );
+    const staged = stageVerifiedMacPackage({
+      packagePath: download.bundlePath,
+      manifestPath,
+      signaturePath: manifestPath + '.sig',
+      publicKeyPath,
+      architecture: process.arch,
+      network: network.mode,
+      minimumSequence,
+      home: process.env.HOME
+    });
+
+    console.log();
+    console.log('CryLo macOS installer securely prepared.');
+    console.log(`Authorized release: ${staged.releaseTag}`);
+    console.log(`Native architecture: ${staged.architecture}`);
+    console.log(`SHA-256: ${staged.sha256}`);
+    console.log(`Installer: ${staged.stagedPath}`);
+    console.log(
+      'Open this verified PKG manually in Finder and approve installation ' +
+      'under your macOS security settings.'
+    );
+    console.log(
+      'CryLo did not run Installer, bypass Gatekeeper, modify ' +
+      'application/wallet data, or advance the accepted release sequence.'
+    );
+  } finally {
+    fs.rmSync(download.temporaryRoot, {
+      recursive: true,
+      force: true
+    });
+  }
+}
+
 function update() {
   console.log('===== CRYLO UPDATE =====');
 
-  // macOS native builds and unsigned CI installers do not yet have an
-  // authenticated, atomic platform-update format. Do not fall through to
-  // branch-based source updates, rebuilds, or incomplete OS installers.
-  // Existing applications and user-owned wallet/config data remain intact.
+  // The Mac launch channel uses Pi1-signed manifests with unsigned PKGs.
+  // Never fall through to branch merges or an unapproved installer.
   if (process.platform === 'darwin') {
-    fail(
-      'CryLo macOS signed install/update is not yet authorized. ' +
-      'Refusing the legacy Git-branch update path; existing data and ' +
-      'applications were not changed. Install only a verified official ' +
-      'macOS release after its signed installer gate is completed.'
-    );
+    prepareAuthorizedMacUpdate();
+    return;
   }
 
   const insideWorkTree = git(
