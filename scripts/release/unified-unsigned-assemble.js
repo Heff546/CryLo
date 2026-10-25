@@ -46,17 +46,24 @@ function expectHash(file,expected){
  if(!SHA.test(expected)||hash(file)!==expected)fail('SHA-256 differs from pinned source record: '+path.basename(file));
 }
 function machine(file,format){
- const buf=Buffer.alloc(512),fd=fs.openSync(file,'r');let n;
- try{n=fs.readSync(fd,buf,0,buf.length,0);}finally{fs.closeSync(fd);}
- if(format==='win'){
-  if(n<64||buf.toString('ascii',0,2)!=='MZ')fail('Not a Windows PE binary: '+path.basename(file));
-  const off=buf.readUInt32LE(0x3c);
-  if(off+6>n||buf.toString('ascii',off,off+4)!=='PE\u0000\u0000')fail('Invalid PE header');
-  return buf.readUInt16LE(off+4);
- }
- if(n<64||buf[0]!==127||buf.toString('ascii',1,4)!=='ELF'||buf[4]!==2||buf[5]!==1)
-  fail('Not a little-endian ELF64 binary');
- return buf.readUInt16LE(18);
+ const fd=fs.openSync(file,'r');
+ try{
+  const buf=Buffer.alloc(64);
+  if(fs.readSync(fd,buf,0,buf.length,0)!==buf.length)fail('Native executable header is truncated');
+  if(format==='win'){
+   if(buf.toString('ascii',0,2)!=='MZ')fail('Not a Windows PE binary: '+path.basename(file));
+   const off=buf.readUInt32LE(0x3c);
+   if(off<64||off>1024*1024)fail('Invalid Windows PE offset');
+   const header=Buffer.alloc(6);
+   if(fs.readSync(fd,header,0,header.length,off)!==header.length||
+      header.toString('ascii',0,4)!=='PE\u0000\u0000')
+    fail('Invalid PE header');
+   return header.readUInt16LE(4);
+  }
+  if(format!=='elf'||buf[0]!==127||buf.toString('ascii',1,4)!=='ELF'||
+      buf[4]!==2||buf[5]!==1)fail('Not a little-endian ELF64 binary');
+  return buf.readUInt16LE(18);
+ }finally{fs.closeSync(fd);}
 }
 function safeCopy(src,dst){
  if(fs.existsSync(dst))fail('Duplicate staging output '+path.basename(dst));
@@ -252,5 +259,5 @@ function main(){
 }
 if(require.main===module){try{main();}catch(e){console.error('FAIL CLOSED: '+e.message);process.exitCode=1;}}
 module.exports=Object.freeze({machine,validateProvenance,shaFromCertutil,exact,verifyCheckLine,
- safeCopy,packageZip,PINS});
+ safeCopy,packageZip,packageTar,winPackage,linuxPackage,stageMac,PINS});
 

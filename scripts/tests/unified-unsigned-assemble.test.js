@@ -65,3 +65,68 @@ test('deterministic Windows ZIP staging normalizes timestamps and file order',()
   assert.deepEqual(fs.readFileSync(z1),fs.readFileSync(z2));
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+test('simulated five-target release assembly validates hashes and rejects tampering',()=>{
+ const crypto=require('node:crypto');
+ const {winPackage,linuxPackage,stageMac,packageTar,packageZip}=require('../release/unified-unsigned-assemble');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'crylo-unsigned-integration-'));
+ const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
+ const write=(name,content)=>{fs.mkdirSync(path.dirname(name),{recursive:true});fs.writeFileSync(name,content);return name;};
+ const pe=()=>{
+  const b=Buffer.alloc(384);b.write('MZ',0);b.writeUInt32LE(128,0x3c);
+  b.write('PE\u0000\u0000',128);b.writeUInt16LE(0x8664,132);return b;
+ };
+ const elf=arch=>{
+  const b=Buffer.alloc(128);b[0]=127;b.write('ELF',1);b[4]=2;b[5]=1;b.writeUInt16LE(arch==='x64'?0x3e:0xb7,18);return b;
+ };
+ const run={id:123,head_sha:'a'.repeat(40)};
+ try{
+  const wd=path.join(root,'win'),wo=path.join(root,'winout');
+  fs.mkdirSync(wd);fs.mkdirSync(wo);
+  const names=['CryLo-daemon.exe','CryLo-wallet.exe','CryLo-wallet-rpc.exe'];
+  const roots=names.map(name=>{const bytes=pe();write(path.join(wd,name),bytes);return {file:name,size:bytes.length,sha256:sha(bytes)};});
+  const dllbytes=pe();
+  write(path.join(wd,'libtest.dll'),dllbytes);
+  const manifest={schema:1,product:'CryLo',network:'testnet',gitCommit:run.head_sha,
+   architecture:'x64',roots,runtime:[{file:'libtest.dll',size:dllbytes.length,sha256:sha(dllbytes)}]};
+  const metadata=Buffer.from(JSON.stringify(manifest));
+  write(path.join(wd,'WINDOWS-BUILD-RUNTIME-MANIFEST.json'),metadata);
+  write(path.join(wd,'BINARY-MANIFEST.txt'),'Runtime-Manifest-SHA256: '+sha(metadata)+'\n');
+  write(path.join(wd,'SOURCE-COMMIT.txt'),run.head_sha+'\n');
+  for(const [i,label] of ['DAEMON','WALLET','RPC'].entries())
+   write(path.join(wd,label+'-SHA256.txt'),'SHA256 hash\n'+roots[i].sha+'\nCertUtil: completed');
+  write(path.join(wd,'CryLo Wallet Setup 1.1.1.exe'),pe());
+  assert.equal(winPackage(wd,wo,run,'1.1.1').runtimeDLLs,1);
+  const winZip=path.join(root,'Windows.zip');packageZip(wo,winZip);assert.ok(fs.statSync(winZip).size>0);
+  fs.appendFileSync(path.join(wd,'libtest.dll'),Buffer.from('tamper'));
+  assert.throws(()=>winPackage(wd,path.join(root,'winfail'),run,'1.1.1'));
+  for(const arch of ['x64','arm64']){
+   const d=path.join(root,'linux-'+arch),o=path.join(root,'out-'+arch);
+   fs.mkdirSync(d);fs.mkdirSync(o);
+   const binaries=['CryLo-daemon','CryLo-wallet','CryLo-wallet-rpc'];
+   const lines=[];
+   for(const name of binaries){
+    const content=elf(arch);write(path.join(d,name),content);
+    lines.push(sha(content)+'  build/linux-'+arch+'/bin/'+name);
+   }
+   write(path.join(d,'SOURCE-COMMIT.txt'),run.head_sha+'\n');
+   write(path.join(d,'NATIVE-SHA256SUMS.txt'),lines.join('\n')+'\n');
+   const app=arch==='x64'?'CryLo Wallet-1.1.1.AppImage':'CryLo Wallet-1.1.1-arm64.AppImage';
+   write(path.join(d,app),elf(arch));
+   linuxPackage(d,o,run,arch,'1.1.1');
+   const tarFile=path.join(root,arch+'.tar');packageTar(o,tarFile);assert.ok(fs.statSync(tarFile).size>0);
+   fs.appendFileSync(path.join(d,'CryLo-daemon'),Buffer.from('modified'));
+   assert.throws(()=>linuxPackage(d,path.join(root,'broken-'+arch),run,arch,'1.1.1'));
+  }
+  for(const arch of ['x64','arm64']){
+   const d=path.join(root,'mac-'+arch),o=path.join(root,'mac-out-'+arch);fs.mkdirSync(d);fs.mkdirSync(o);
+   const name='CryLo-1.1.1-mac-'+arch+'-unsigned.pkg';
+   const data=Buffer.from('CI-only fake PKG; NEVER publish');
+   write(path.join(d,name),data);write(path.join(d,'SHA256SUMS-CI-ONLY.txt'),sha(data)+'  '+name+'\n');
+   stageMac(d,o,arch);
+   assert.equal(sha(fs.readFileSync(path.join(o,name))),sha(data));
+   fs.appendFileSync(path.join(d,name),'changed');
+   assert.throws(()=>stageMac(d,path.join(root,'badmac-'+arch),arch));
+  }
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
