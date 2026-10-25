@@ -1,0 +1,52 @@
+name: CryLo macOS verified installation sequence and rollback
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/mac-installation-sequence-gate.yml
+      - scripts/release/macos-installed-release-state.js
+      - scripts/tests/macos-installed-release-state.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  two-version-upgrade:
+    name: Actual CI signed v20 to v21 Mac upgrade — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: intel
+            runner: macos-15-intel
+            arch: x64
+          - name: apple-silicon
+            runner: macos-15
+            arch: arm64
+    steps:
+      - name: Check out reviewed source without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Validate native architecture and source
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          node -e 'if(process.platform!=="darwin"||process.arch!==process.env.ARCH)process.exit(1)'
+          node --check scripts/release/macos-installed-release-state.js
+          node --check scripts/release/macos-installed-update.js
+          node --check scripts/tests/macos-installed-release-state.test.js
+      - name: Execute real PKG installation twice using temporary CI-only Ed25519 key
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/tests/macos-installed-release-state.test.js
+          echo 'PASS: both release states were authenticated and wallet data preserved'
