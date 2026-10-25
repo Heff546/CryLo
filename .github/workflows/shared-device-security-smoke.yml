@@ -1,0 +1,72 @@
+name: CryLo shared C++ security smoke gate
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - src/device/log.cpp
+      - src/device/log.hpp
+      - .github/workflows/shared-device-security-smoke.yml
+      - .github/workflows/mac-first-build-gate.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  device-logging:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Compile and exercise actual shared logging function
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, re
+          text = pathlib.Path("src/device/log.cpp").read_text()
+          match = re.search(r"  void buffer_to_str\(.*?\n  \}", text, re.S)
+          if not match: raise SystemExit("Missing shared buffer_to_str")
+          header = """#include <cstddef>
+          #include <cstdio>
+          #include <cstring>
+          #include <limits>
+          #include <stdexcept>
+          #define CHECK_AND_ASSERT_THROW_MES(c, m) do { if (!(c)) throw std::runtime_error("bounds"); } while (0)
+          namespace hw {
+          """
+          tests = """
+          }
+          int main() {
+            char out[8] = {};
+            hw::buffer_to_str(out, sizeof(out), "", 0);
+            if (std::strcmp(out, "") != 0) return 1;
+            const char raw[] = {char(0), char(0xaf), char(0xff)};
+            hw::buffer_to_str(out, 7, raw, 3);
+            if (std::strcmp(out, "00afff") != 0) return 2;
+            bool rejected = false;
+            try { hw::buffer_to_str(out, 6, raw, 3); }
+            catch (const std::runtime_error&) { rejected = true; }
+            if (!rejected) return 3;
+            rejected = false;
+            try { hw::buffer_to_str(out, 0, raw, 0); }
+            catch (const std::runtime_error&) { rejected = true; }
+            if (!rejected) return 4;
+            rejected = false;
+            try { hw::buffer_to_str(out, sizeof(out), raw, std::numeric_limits<size_t>::max()); }
+            catch (const std::runtime_error&) { rejected = true; }
+            if (!rejected) return 5;
+            return 0;
+          }
+          """
+          pathlib.Path("device-log-smoke.cpp").write_text(header + match.group(0) + tests)
+          PY
+          c++ -std=c++11 -Wall -Wextra -Werror device-log-smoke.cpp -o device-log-smoke
+          ./device-log-smoke
+          echo "PASS: Linux/macOS shared logging tests"

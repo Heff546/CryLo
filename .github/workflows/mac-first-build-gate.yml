@@ -1,9 +1,6 @@
 name: CryLo macOS Intel native first-build gate
 
 on:
-  push:
-    branches:
-      - feature/mac-first-build-gate
   workflow_dispatch:
 
 permissions:
