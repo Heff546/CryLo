@@ -68,14 +68,25 @@ jobs:
         run: |
           set "LOCALAPPDATA=%RUNNER_TEMP%\CryLo isolated standard-user test"
           set "CRYLO_RUNTIME=%LOCALAPPDATA%\CryLo\runtime"
-          call crylo.cmd help > "%RUNNER_TEMP%\crylo-second-launch.txt"
-          if errorlevel 1 exit /b 1
+          echo ===== REPEAT LAUNCH DIAGNOSTIC =====
+          call crylo.cmd help > "%RUNNER_TEMP%\crylo-second-launch.txt" 2>&1
+          set "SECOND_RC=%ERRORLEVEL%"
+          type "%RUNNER_TEMP%\crylo-second-launch.txt"
+          echo SECOND_RC=%SECOND_RC%
+          if not "%SECOND_RC%"=="0" exit /b 1
           findstr /C:"Preparing authenticated CryLo" "%RUNNER_TEMP%\crylo-second-launch.txt" >nul
-          if not errorlevel 1 exit /b 1
+          if not errorlevel 1 (
+            echo ERROR: authenticated runtime unexpectedly reinstalled during second invocation
+            exit /b 1
+          )
+          echo ===== REPEATED RUN WAS OFFLINE =====
           mkdir "%CRYLO_RUNTIME%\node-v24.21.0-win-x64.pre-crylo-bootstrap"
           if errorlevel 1 exit /b 1
           call crylo.cmd help > "%RUNNER_TEMP%\crylo-forced-rollback.txt" 2>&1
-          if not errorlevel 1 exit /b 1
+          set "ROLLBACK_RC=%ERRORLEVEL%"
+          type "%RUNNER_TEMP%\crylo-forced-rollback.txt"
+          echo ROLLBACK_RC=%ROLLBACK_RC%
+          if "%ROLLBACK_RC%"=="0" exit /b 1
           if not exist "%CRYLO_RUNTIME%\node-v24.21.0-win-x64.pre-crylo-bootstrap" exit /b 1
           if not exist "%CRYLO_RUNTIME%\node-v24.21.0-win-x64\node.exe" exit /b 1
           if not exist "%CRYLO_RUNTIME%\mingit-2.56.0.windows.1-x64\cmd\git.exe" exit /b 1
