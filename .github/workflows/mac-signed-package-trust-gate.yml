@@ -1,4 +1,4 @@
-name: CryLo signed macOS PKG trust and no-install rejection gate
+name: CryLo Pi1 manifest trust for unsigned macOS launch PKGs
 
 on:
   push:
@@ -14,8 +14,8 @@ permissions:
   contents: read
 
 jobs:
-  trust-preflight:
-    name: macOS signed installer trust — ${{ matrix.name }}
+  unsigned-launch-trust:
+    name: Pi1-style Ed25519 unsigned-PKG trust — ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
@@ -34,7 +34,7 @@ jobs:
         with:
           persist-credentials: false
           set-safe-directory: false
-      - name: Verify native Mac trust-module syntax and system utilities
+      - name: Check source syntax and trust-boundary unit tests
         shell: bash
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
@@ -42,45 +42,68 @@ jobs:
           set -euo pipefail
           node --check scripts/release/macos-package-trust.js
           node --check scripts/tests/macos-package-trust.test.js
-          node -e "if(process.arch!==process.env.EXPECTED_ARCH)process.exit(1)"
-          test -x /usr/sbin/pkgutil
-          test -x /usr/sbin/spctl
-          test -x /usr/bin/xcrun
+          node -e "if (process.arch !== process.env.EXPECTED_ARCH) process.exit(1)"
           node --test scripts/tests/macos-package-trust.test.js
 
-      - name: Build a synthetic unsigned PKG and prove fail-closed behavior
+      - name: Exercise real unsigned PKG with ephemeral test-only signing key
         shell: bash
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           test -z "$(git status --porcelain)"
-          root="$RUNNER_TEMP/crylo-unsigned-rejection"
+          root="$RUNNER_TEMP/crylo-mac-unsigned-trust"
           mkdir -p "$root/payload" "$root/wallet"
-          echo wallet-private-sentinel > "$root/wallet/seed"
-          echo no-install > "$root/payload/marker"
-          pkg="$root/CryLo-1.1.1-mac-$EXPECTED_ARCH.pkg"
+          echo preserve-wallet-file > "$root/wallet/sentinel"
+          echo synthetic-installer-data > "$root/payload/payload-sentinel"
+          pkg="$root/CryLo-1.1.1-mac-$EXPECTED_ARCH-unsigned.pkg"
           /usr/bin/pkgbuild --root "$root/payload" \
-            --identifier com.crylo.unsigned-ci-fixture \
+            --identifier com.crylo.ci-unsigned-fixture \
             --version 1.1.1 --install-location /Applications "$pkg"
-          export PKG_TO_REJECT="$pkg"
+          test -s "$pkg"
+          # This is intentionally unsigned. No Apple Developer ID is required.
+          signature_output="$(/usr/sbin/pkgutil --check-signature "$pkg" 2>&1 || true)"
+          printf '%s\n' "$signature_output" | grep -Fi 'no signature'
+          export CI_UNSIGNED_PKG="$pkg"
           node - <<'NODE'
           const assert=require('node:assert/strict');
           const fs=require('node:fs');
+          const path=require('node:path');
           const crypto=require('node:crypto');
           const {verifyMacPackage}=require('./scripts/release/macos-package-trust');
-          const file=process.env.PKG_TO_REJECT;
-          const data=fs.readFileSync(file);
+          const file=process.env.CI_UNSIGNED_PKG;
+          const dir=path.dirname(file);
+          const payload=fs.readFileSync(file);
+          const keys=crypto.generateKeyPairSync('ed25519');
           const manifest={
-            product:'CryLo',network:'testnet',version:'1.1.1',releaseSequence:20,
+            schema:1,product:'CryLo',network:'testnet',version:'1.1.1',
+            releaseTag:'v1.1.1-testnet.20',releaseSequence:20,
+            createdUtc:'2026-10-25T00:00:00Z',gitCommit:'a'.repeat(40),
+            signatureAlgorithm:'Ed25519',hashAlgorithm:'SHA-256',
             artifacts:[{platform:'mac',architecture:process.arch,
-              file:require('node:path').basename(file),size:data.length,
-              sha256:crypto.createHash('sha256').update(data).digest('hex')}]
+              file:path.basename(file),size:payload.length,
+              sha256:crypto.createHash('sha256').update(payload).digest('hex')}]
           };
-          assert.throws(()=>verifyMacPackage({packagePath:file,manifest,
-            architecture:process.arch,trustedTeamId:'AB12CD34EF'}));
-          console.log('PASS: unsigned installer rejected by actual macOS signature utilities');
+          const manifestPath=path.join(dir,'crylo-release-manifest.json');
+          const signaturePath=manifestPath+'.sig';
+          const publicKeyPath=path.join(dir,'ephemeral-CI-ONLY-public.pem');
+          const bytes=Buffer.from(JSON.stringify(manifest)+'\n');
+          fs.writeFileSync(manifestPath,bytes);
+          fs.writeFileSync(signaturePath,crypto.sign(null,bytes,keys.privateKey).toString('base64')+'\n');
+          fs.writeFileSync(publicKeyPath,keys.publicKey.export({type:'spki',format:'pem'}));
+          const args={
+            packagePath:file,manifestPath,signaturePath,publicKeyPath,
+            architecture:process.arch,network:'testnet',minimumSequence:20
+          };
+          const verified=verifyMacPackage(args);
+          assert.equal(verified.appleDeveloperIdRequired,false);
+          assert.equal(verified.installation,'requires-user-approval');
+          assert.throws(()=>verifyMacPackage({...args,minimumSequence:21}),/rollback floor/);
+          fs.appendFileSync(file,'tampered');
+          assert.throws(()=>verifyMacPackage(args),/SHA-256|size/);
+          console.log('PASS: real unsigned PKG requires test Ed25519 signature, exact size/hash and rollback floor');
+          console.log('NOTE: ephemeral CI key is never a CryLo production release authority');
           NODE
-          test "$(cat "$root/wallet/seed")" = wallet-private-sentinel
+          test "$(cat "$root/wallet/sentinel")" = preserve-wallet-file
           test -z "$(git status --porcelain)"
-          echo 'PASS: rejection preserved wallet data and source tree'
+          echo 'PASS: no application installation, Gatekeeper bypass or wallet mutation'
