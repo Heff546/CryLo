@@ -10,6 +10,7 @@ on:
       - scripts/windows-runtime-bootstrap.js
       - scripts/crylo.js
       - scripts/tests/install-win-linux-pi-static.js
+      - scripts/tests/signed-update-contract.test.js
   workflow_dispatch:
 
 permissions:
