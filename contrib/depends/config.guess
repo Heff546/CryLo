@@ -1297,6 +1297,11 @@ EOF
 	exit ;;
     *:Darwin:*:*)
 	UNAME_PROCESSOR=`uname -p` || UNAME_PROCESSOR=unknown
+	# Native Apple Silicon reports arm64 via uname -m, but uname -p may
+	# report arm. Canonicalize only 64-bit Darwin ARM to GNU aarch64.
+	case "$UNAME_MACHINE" in
+	    arm64|aarch64) UNAME_PROCESSOR=aarch64 ;;
+	esac
 	eval $set_cc_for_build
 	if test "$UNAME_PROCESSOR" = unknown ; then
 	    UNAME_PROCESSOR=powerpc
