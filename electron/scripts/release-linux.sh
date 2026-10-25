@@ -67,11 +67,13 @@ if [[ "$TARGET_ARCH" == "arm64" ]]; then
   # ARM64 AppImage is the supported native release artifact.
   ./node_modules/.bin/electron-builder \
     --linux AppImage \
-    --arm64
+    --arm64 \
+    --publish never
 else
   ./node_modules/.bin/electron-builder \
     --linux AppImage deb \
-    --x64
+    --x64 \
+    --publish never
 fi
 
 echo

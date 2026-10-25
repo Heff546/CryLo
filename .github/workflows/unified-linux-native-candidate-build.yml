@@ -6,6 +6,7 @@ on:
       - feature/mac-first-build-gate
     paths:
       - .github/workflows/unified-linux-native-candidate-build.yml
+      - electron/scripts/release-linux.sh
   workflow_dispatch:
 
 permissions:
