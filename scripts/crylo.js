@@ -708,23 +708,20 @@ function sha256File(file) {
   return hash.digest('hex');
 }
 
-function windowsPowerShellExecutable() {
-  if (process.platform !== 'win32') {
-    return null;
+function downloadCurlExecutable() {
+  if (process.platform !== 'win32') return 'curl';
+
+  // Normal Windows users enter through CMD. Use the OS-provided curl.exe
+  // by absolute path; never invoke PowerShell or an untrusted PATH entry.
+  const systemRoot = process.env.SystemRoot || process.env.WINDIR;
+  if (!systemRoot) {
+    fail('Windows SystemRoot is required for authenticated HTTPS requests.');
   }
-
-  const systemRoot =
-    process.env.SystemRoot ||
-    process.env.WINDIR ||
-    'C:\\Windows';
-
-  return path.join(
-    systemRoot,
-    'System32',
-    'WindowsPowerShell',
-    'v1.0',
-    'powershell.exe'
-  );
+  const executable = path.join(systemRoot, 'System32', 'curl.exe');
+  if (!fs.existsSync(executable)) {
+    fail('Windows system curl.exe is unavailable; refusing insecure download fallback.');
+  }
+  return executable;
 }
 
 function httpsDownload(url, output) {
@@ -744,53 +741,17 @@ function httpsDownload(url, output) {
     );
   }
 
-  if (process.platform === 'win32') {
-    const result = spawnSync(
-      windowsPowerShellExecutable(),
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        [
-          "$ErrorActionPreference = 'Stop'",
-          "$ProgressPreference = 'SilentlyContinue'",
-          "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
-          "Invoke-WebRequest -UseBasicParsing -Uri $env:CRYLO_HTTPS_URL -OutFile $env:CRYLO_HTTPS_OUTPUT"
-        ].join('; ')
-      ],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          CRYLO_HTTPS_URL: url,
-          CRYLO_HTTPS_OUTPUT: output
-        },
-        encoding: 'utf8',
-        shell: false
-      }
-    );
-
-    if (result.error) {
-      throw result.error;
-    }
-
-    if (result.status !== 0) {
-      throw new Error(
-        `HTTPS download failed with code ${result.status}: ${url}`
-      );
-    }
-
-    return;
-  }
 
   const result = spawnSync(
-    'curl',
+    downloadCurlExecutable(),
     [
       '--fail',
       '--silent',
       '--show-error',
       '--location',
       '--proto', '=https',
+      '--proto-redir', '=https',
+      '--max-redirs', '5',
       '--tlsv1.2',
       '--connect-timeout', '15',
       '--max-time', '120',
@@ -833,54 +794,17 @@ function httpsText(url) {
     );
   }
 
-  if (process.platform === 'win32') {
-    const result = spawnSync(
-      windowsPowerShellExecutable(),
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        [
-          "$ErrorActionPreference = 'Stop'",
-          "$ProgressPreference = 'SilentlyContinue'",
-          "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
-          "$headers = @{ Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }",
-          "$response = Invoke-WebRequest -UseBasicParsing -Headers $headers -Uri $env:CRYLO_HTTPS_URL",
-          "[Console]::Out.Write($response.Content)"
-        ].join('; ')
-      ],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          CRYLO_HTTPS_URL: url
-        },
-        encoding: 'utf8',
-        shell: false
-      }
-    );
-
-    if (result.error) {
-      throw result.error;
-    }
-
-    if (result.status !== 0) {
-      throw new Error(
-        `HTTPS request failed with code ${result.status}: ${url}`
-      );
-    }
-
-    return String(result.stdout || '');
-  }
 
   const result = spawnSync(
-    'curl',
+    downloadCurlExecutable(),
     [
       '--fail',
       '--silent',
       '--show-error',
       '--location',
       '--proto', '=https',
+      '--proto-redir', '=https',
+      '--max-redirs', '5',
       '--tlsv1.2',
       '--connect-timeout', '15',
       '--max-time', '60',
@@ -892,6 +816,7 @@ function httpsText(url) {
       cwd: root,
       env: process.env,
       encoding: 'utf8',
+      maxBuffer: 12 * 1024 * 1024,
       shell: false
     }
   );
