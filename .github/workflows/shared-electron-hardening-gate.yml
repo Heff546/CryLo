@@ -10,6 +10,9 @@ on:
       - electron/preload.js
       - electron/security/**
       - electron/test/renderer-security.test.js
+      - scripts/tests/install-win-linux-pi-static.js
+      - electron/build/windows-installer-runtime.js
+      - electron/build/installer.nsh
   workflow_dispatch:
 
 permissions:
