@@ -2,6 +2,7 @@
 // Read-only, deterministic release-candidate provenance audit.
 // This is not an official release builder, signer, publisher, or tagger.
 const https=require('node:https');
+const crypto=require('node:crypto');
 const fs=require('node:fs');
 const path=require('node:path');
 const assert=require('node:assert/strict');
