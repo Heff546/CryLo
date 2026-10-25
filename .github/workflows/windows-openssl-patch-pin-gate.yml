@@ -26,7 +26,20 @@ jobs:
           recipe="$GITHUB_WORKSPACE/contrib/depends/packages/openssl.mk"
           test -s "$patchfile"
           test -s "$recipe"
-          echo '1699117451ee2454fa3a72e478d59999594a6551303c71bf26bc0074e890d9ab  '"$patchfile" | sha256sum -c -
+          # The checked-in LF bytes are immutable. Windows Git may convert them
+          # to CRLF if an explicit Git attribute is not applied.
+          echo '5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088  '"$patchfile" | sha256sum -c -
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          p=Path('contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch').read_bytes()
+          assert b'\\r\\n' not in p
+          converted=p.replace(b'\\n', b'\\r\\n')
+          actual=hashlib.sha256(converted).hexdigest()
+          expected='1699117451ee2454fa3a72e478d59999594a6551303c71bf26bc0074e890d9ab'
+          if actual!=expected: raise SystemExit('Windows mismatch is NOT explained by newline conversion')
+          print('PASS: recorded Windows mismatch is precisely LF-to-CRLF conversion')
+          PY
           test "$(grep -c '^diff --git ' "$patchfile")" = 3
           grep '^diff --git ' "$patchfile"
           actual="$(grep '^diff --git ' "$patchfile" | sed -E 's#^diff --git a/([^ ]+) b/([^ ]+)$#\1 \2#')"
