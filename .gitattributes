@@ -2,3 +2,4 @@
 # on all platforms, including Windows checkouts configured with core.autocrlf.
 # Its SHA256 is pinned in scripts/release/crylo-release.js.
 /contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch text eol=lf
+/contrib/depends/patches/openssl/openssl-3.5.9-mingw-warning-compat.patch text eol=lf

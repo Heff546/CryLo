@@ -31,6 +31,9 @@ jobs:
           node -e "const fs=require('fs'),c=require('crypto');const p='contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch';const b=fs.readFileSync(p);const d=c.createHash('sha256').update(b).digest('hex');if(d!=='5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088')throw Error('Windows OpenSSL patch bytes have changed: '+d);"
           if errorlevel 1 exit /b 1
           echo PASS: trusted original LF OpenSSL patch on Windows checkout
+          node -e "const fs=require('fs'),c=require('crypto');const p='contrib/depends/patches/openssl/openssl-3.5.9-mingw-warning-compat.patch';const d=c.createHash('sha256').update(fs.readFileSync(p)).digest('hex');if(d!=='fc55415905380d6cb7ccb81c6b3c722142e7668b67f77d024f29d531f34f4700')throw Error('Windows OpenSSL MinGW patch bytes have changed: '+d);"
+          if errorlevel 1 exit /b 1
+          echo PASS: trusted LF MinGW OpenSSL patch on Windows checkout
       - name: Initialize MSYS2
         shell: cmd
         run: |
