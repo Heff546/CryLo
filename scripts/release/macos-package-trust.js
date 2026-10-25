@@ -1,130 +1,182 @@
 'use strict';
 
-// Security boundary for future authorized macOS installation.
-// Caller MUST independently verify the Ed25519-signed CryLo manifest and
-// sequence floor before calling this function. This module never installs,
-// deletes, modifies application bundles, or updates security state.
+// CryLo launch policy: Apple Developer ID and notarization are optional.
+// Authentication is mandatory: only a Pi1 Ed25519-signed release manifest
+// and its exact SHA-256/size-bound macOS installer can pass this check.
+// This module does not invoke Installer, open an app, alter quarantine,
+// disable Gatekeeper, install software, or modify wallet/configuration data.
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 
 const ARCHITECTURES = Object.freeze({ x64: 'x86_64', arm64: 'arm64' });
+const SHA256 = /^[a-f0-9]{64}$/i;
+const COMMIT = /^[a-f0-9]{40}$/i;
+const VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
+const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
-function requireMacArtifactIdentity(manifest, architecture) {
-  if (!manifest || manifest.product !== 'CryLo' ||
-      !['testnet', 'mainnet'].includes(manifest.network) ||
-      !Number.isSafeInteger(manifest.releaseSequence) ||
-      manifest.releaseSequence < 1 ||
-      typeof manifest.version !== 'string' ||
-      !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(manifest.version) ||
-      !Object.hasOwn(ARCHITECTURES, architecture)) {
-    throw new Error('Invalid signed manifest identity or macOS architecture.');
+function regularUnlinkedFile(file, description) {
+  if (typeof file !== 'string' || !path.isAbsolute(file)) {
+    throw new Error(description + ' path must be absolute.');
   }
-  const matches = (Array.isArray(manifest.artifacts) ? manifest.artifacts : [])
-    .filter(a => a && a.platform === 'mac' && a.architecture === architecture);
-  if (matches.length !== 1) {
-    throw new Error('Signed manifest must select exactly one macOS architecture artifact.');
-  }
-  const artifact = matches[0];
-  const expected = 'CryLo-' + manifest.version + '-mac-' + architecture + '.pkg';
-  if (artifact.file !== expected ||
-      typeof artifact.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(artifact.sha256) ||
-      !Number.isSafeInteger(artifact.size) || artifact.size <= 0) {
-    throw new Error('Unsigned or malformed macOS PKG artifact identity.');
-  }
-  return artifact;
-}
-
-function sha256File(file) {
-  const hash = crypto.createHash('sha256');
-  const fd = fs.openSync(file, 'r');
-  const buffer = Buffer.allocUnsafe(1024 * 1024);
-  try {
-    for (;;) {
-      const n = fs.readSync(fd, buffer, 0, buffer.length, null);
-      if (n === 0) break;
-      hash.update(buffer.subarray(0, n));
-    }
-  } finally {
-    fs.closeSync(fd);
-  }
-  return hash.digest('hex');
-}
-
-function assertRegularNoLink(file) {
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) {
-    throw new Error('macOS release artifact must be an ordinary unlinked file.');
+    throw new Error(description + ' must be an ordinary unlinked file.');
   }
   return stat;
 }
 
-function execute(file, args, options = {}) {
-  const result = spawnSync(file, args, {
-    encoding: 'utf8',
-    shell: false,
-    timeout: 60000,
-    maxBuffer: 1024 * 1024,
-    ...options
-  });
-  if (result.error || result.status !== 0 || result.signal) {
-    throw new Error('macOS installer trust check failed: ' +
-      path.basename(file) + ' ' + args[0]);
+function sha256File(file) {
+  const digest = crypto.createHash('sha256');
+  const fd = fs.openSync(file, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    for (;;) {
+      const bytes = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (bytes === 0) break;
+      digest.update(buffer.subarray(0, bytes));
+    }
+  } finally {
+    fs.closeSync(fd);
   }
-  return String(result.stdout || '') + '\n' + String(result.stderr || '');
+  return digest.digest('hex');
 }
 
-function verifyMacPackage({ packagePath, manifest, architecture, trustedTeamId, run = execute }) {
+function authenticatedManifest(manifestPath, signaturePath, publicKeyPath) {
+  for (const [file, name] of [
+    [manifestPath, 'CryLo release manifest'],
+    [signaturePath, 'CryLo manifest signature'],
+    [publicKeyPath, 'CryLo trusted public key']
+  ]) regularUnlinkedFile(file, name);
+
+  const key = crypto.createPublicKey(fs.readFileSync(publicKeyPath));
+  if (key.asymmetricKeyType !== 'ed25519') {
+    throw new Error('CryLo release key must be Ed25519.');
+  }
+  const signatureText = fs.readFileSync(signaturePath, 'utf8').trim();
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(signatureText)) {
+    throw new Error('CryLo release signature is not canonical base64.');
+  }
+  const signature = Buffer.from(signatureText, 'base64');
+  if (signature.length !== 64 ||
+      signature.toString('base64') !== signatureText) {
+    throw new Error('CryLo release signature is invalid or noncanonical.');
+  }
+
+  const manifestBytes = fs.readFileSync(manifestPath);
+  if (!crypto.verify(null, manifestBytes, key, signature)) {
+    throw new Error('CryLo Ed25519 release manifest signature failed.');
+  }
+  let manifest;
+  try { manifest = JSON.parse(manifestBytes.toString('utf8')); }
+  catch { throw new Error('CryLo signed release manifest is not valid JSON.'); }
+  return {
+    manifest,
+    signerFingerprint: crypto.createHash('sha256').update(
+      key.export({ type: 'spki', format: 'der' })
+    ).digest('hex')
+  };
+}
+
+function requireMacArtifactIdentity(manifest, architecture, network, minimumSequence) {
+  if (typeof network !== 'string' || !['testnet', 'mainnet'].includes(network) ||
+      !Object.hasOwn(ARCHITECTURES, architecture) ||
+      !Number.isSafeInteger(minimumSequence) || minimumSequence < 1 ||
+      !manifest || manifest.schema !== 1 ||
+      manifest.product !== 'CryLo' || manifest.network !== network ||
+      manifest.signatureAlgorithm !== 'Ed25519' ||
+      manifest.hashAlgorithm !== 'SHA-256' ||
+      typeof manifest.version !== 'string' || !VERSION.test(manifest.version) ||
+      !Number.isSafeInteger(manifest.releaseSequence) ||
+      manifest.releaseSequence < minimumSequence ||
+      typeof manifest.gitCommit !== 'string' || !COMMIT.test(manifest.gitCommit)) {
+    throw new Error('Signed CryLo release identity, network, architecture or rollback floor invalid.');
+  }
+
+  const expectedTag = network === 'testnet'
+    ? 'v' + manifest.version + '-testnet.' + manifest.releaseSequence
+    : 'v' + manifest.version;
+  if (manifest.releaseTag !== expectedTag ||
+      typeof manifest.createdUtc !== 'string' ||
+      !Number.isFinite(Date.parse(manifest.createdUtc)) ||
+      Date.parse(manifest.createdUtc) > Date.now() + MAX_CLOCK_SKEW_MS) {
+    throw new Error('Signed CryLo release tag or timestamp mismatch.');
+  }
+
+  const artifacts = Array.isArray(manifest.artifacts) ? manifest.artifacts : [];
+  const names = new Set();
+  for (const item of artifacts) {
+    if (!item || typeof item.file !== 'string' ||
+        item.file !== path.basename(item.file) || item.file === '.' ||
+        item.file === '..' || item.file.includes('\\') || names.has(item.file)) {
+      throw new Error('Signed CryLo manifest contains invalid or duplicate filenames.');
+    }
+    names.add(item.file);
+  }
+
+  const matches = artifacts.filter(a =>
+    a.platform === 'mac' && a.architecture === architecture);
+  if (matches.length !== 1) {
+    throw new Error('Signed manifest must contain exactly one matching macOS artifact.');
+  }
+  const artifact = matches[0];
+  // Launch packages intentionally have NO Apple Developer ID signature.
+  // Pi1's authenticated manifest is the distribution trust anchor.
+  const expected = 'CryLo-' + manifest.version + '-mac-' + architecture + '-unsigned.pkg';
+  if (artifact.file !== expected ||
+      typeof artifact.sha256 !== 'string' || !SHA256.test(artifact.sha256) ||
+      !Number.isSafeInteger(artifact.size) || artifact.size <= 0) {
+    throw new Error('Signed CryLo macOS unsigned PKG identity or hash invalid.');
+  }
+  return artifact;
+}
+
+function verifyMacPackage({
+  packagePath, manifestPath, signaturePath, publicKeyPath,
+  architecture, network, minimumSequence
+}) {
   if (process.platform !== 'darwin') {
-    throw new Error('macOS installer trust verification requires a real macOS host.');
+    throw new Error('CryLo macOS package verification requires a real macOS host.');
   }
-  // The Team ID must come from currently installed trusted CryLo configuration,
-  // never from the downloaded manifest, package output, or an environment override.
-  if (typeof trustedTeamId !== 'string' ||
-      !/^[A-Z0-9]{10}$/.test(trustedTeamId)) {
-    throw new Error('Trusted CryLo Apple Developer Team ID is not configured.');
+  if (architecture !== process.arch) {
+    throw new Error('CryLo macOS installer architecture does not match current Node runtime.');
   }
-  const artifact = requireMacArtifactIdentity(manifest, architecture);
-  if (typeof packagePath !== 'string' ||
-      path.basename(packagePath) !== artifact.file ||
-      !path.isAbsolute(packagePath)) {
-    throw new Error('macOS PKG path does not match signed manifest identity.');
+  const { manifest, signerFingerprint } = authenticatedManifest(
+    manifestPath, signaturePath, publicKeyPath);
+  const artifact = requireMacArtifactIdentity(
+    manifest, architecture, network, minimumSequence);
+
+  if (typeof packagePath !== 'string' || !path.isAbsolute(packagePath) ||
+      path.basename(packagePath) !== artifact.file) {
+    throw new Error('CryLo package path does not match the signed release manifest.');
   }
-  const stat = assertRegularNoLink(packagePath);
+  const stat = regularUnlinkedFile(packagePath, 'CryLo macOS installer');
   if (stat.size !== artifact.size ||
       sha256File(packagePath).toLowerCase() !== artifact.sha256.toLowerCase()) {
-    throw new Error('Signed CryLo macOS package size or SHA-256 mismatch.');
+    throw new Error('CryLo PKG size or SHA-256 does not match Pi1 signed manifest.');
   }
 
-  const pkgutil = run('/usr/sbin/pkgutil', ['--check-signature', packagePath]);
-  if (!pkgutil.includes('Signed with a trusted timestamp') ||
-      !pkgutil.includes('Developer ID Installer:') ||
-      !pkgutil.includes('(' + trustedTeamId + ')') ||
-      /Status:\s+no signature/i.test(pkgutil)) {
-    throw new Error('macOS PKG is not signed by the trusted Developer ID Installer team.');
-  }
-
-  // The notary ticket MUST be stapled: offline users must be able to verify it.
-  run('/usr/bin/xcrun', ['stapler', 'validate', packagePath]);
-  // Gatekeeper must accept the package as an installer under current policy.
-  const assessment = run('/usr/sbin/spctl',
-    ['--assess', '--type', 'install', '--verbose=2', packagePath]);
-  if (!/accepted/i.test(assessment)) {
-    throw new Error('macOS Gatekeeper did not explicitly accept the installer.');
-  }
-
+  // Do not infer Apple Developer ID, notarization, or Gatekeeper approval.
+  // The user must explicitly open the verified PKG and approve installation
+  // under their current macOS system-security policy.
   return Object.freeze({
-    architecture,
     file: artifact.file,
     sha256: artifact.sha256.toLowerCase(),
+    architecture,
+    network,
     version: manifest.version,
-    releaseSequence: manifest.releaseSequence
+    releaseTag: manifest.releaseTag,
+    releaseSequence: manifest.releaseSequence,
+    gitCommit: manifest.gitCommit,
+    signerFingerprint,
+    installation: 'requires-user-approval',
+    appleDeveloperIdRequired: false
   });
 }
 
 module.exports = Object.freeze({
-  requireMacArtifactIdentity,
   sha256File,
+  authenticatedManifest,
+  requireMacArtifactIdentity,
   verifyMacPackage
 });
