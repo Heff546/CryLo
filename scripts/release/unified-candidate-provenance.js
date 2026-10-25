@@ -83,7 +83,8 @@ function analyzeCandidate(definition,run,artifactData,comparison,targetSha){
    if(rules.length!==1||rules[0]!==
     '/contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch text eol=lf')return false;
    const patch=path.join(repoRoot,'contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch');
-   return sha256(patch)==='5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088';
+   return crypto.createHash('sha256').update(fs.readFileSync(patch)).digest('hex')===
+    '5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088';
   }
   if(file==='electron/scripts/release-linux.sh'&&definition.platform==='mac'){
    const bytes=fs.readFileSync(path.join(repoRoot,file));
