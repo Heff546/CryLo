@@ -32,6 +32,11 @@ const installerNsh = readText(
   'build',
   'installer.nsh'
 );
+const installerRuntime = readText(
+  'electron',
+  'build',
+  'windows-installer-runtime.js'
+);
 
 assert(
   cryloJs.includes(
@@ -130,29 +135,46 @@ assert(
 );
 
 assert(
-  installerNsh.includes('MinGit-2.56.0-64-bit.zip') &&
-  installerNsh.includes('mingit-2.56.0.windows.1-x64') &&
-  installerNsh.includes(
-    '064b440ff870ed5198527e8f3a92cdf5bd2fd0fedf5e718af95e3fdaddeff718'
+  installerNsh.includes('windows-installer-runtime.js') &&
+  installerNsh.includes('node-v24.21.0-win-x64.zip') &&
+  installerNsh.includes('nsExec::ExecToStack') &&
+  installerRuntime.includes("const GIT_VERSION = '2.56.0';") &&
+  installerRuntime.includes("const GIT_BUILD = '2.56.0.windows.1';") &&
+  installerRuntime.includes("const GIT_DIR_NAME = 'mingit-2.56.0.windows.1-x64';") &&
+  installerRuntime.includes(
+    "const GIT_ARCHIVE_SHA256 = '064b440ff870ed5198527e8f3a92cdf5bd2fd0fedf5e718af95e3fdaddeff718';"
   ) &&
-  installerNsh.includes('git version 2.56.0.windows.1'),
-  'Windows installer must provision and verify the exact managed MinGit runtime.'
+  installerRuntime.includes('function installGitRuntime(') &&
+  installerRuntime.includes('verifyGitRuntime(finalGit)') &&
+  installerRuntime.includes('fs.renameSync(backup, final)'),
+  'Windows NSIS and Node helper must provision authenticated MinGit with transactional rollback.'
 );
 
 assert(
-  installerNsh.includes("$$repo='https://github.com/Heff546/CryLo.git'") &&
-  installerNsh.includes("$$final=Join-Path $$env:USERPROFILE 'CryLo'") &&
-  installerNsh.includes("$$branch='crylo-managed'") &&
-  installerNsh.includes('$$manifest.gitCommit') &&
-  installerNsh.includes('checkout -B $$branch $$commit'),
-  'Windows installer must bootstrap %USERPROFILE%\\CryLo at the packaged release commit.'
+  installerRuntime.includes(
+    "const CRYLO_REPOSITORY = 'https://github.com/Heff546/CryLo.git';"
+  ) &&
+  installerRuntime.includes(
+    "const CRYLO_MANAGED_BRANCH = 'crylo-managed';"
+  ) &&
+  installerRuntime.includes("const stage = path.join(userProfile, 'CryLo.pre-crylo-install');") &&
+  installerRuntime.includes('manifest.gitCommit') &&
+  installerRuntime.includes("['checkout', '-B', CRYLO_MANAGED_BRANCH, commit]") &&
+  installerRuntime.includes('assertGitCheckoutTreeSafe('),
+  'Windows installer must verify its source commit and checkout tree before installation.'
 );
 
 assert(
-  installerNsh.includes("$$marker=':: CryLo managed launcher'") &&
-  installerNsh.includes("Join-Path $$env:LOCALAPPDATA 'CryLo\\bin'") &&
-  installerNsh.includes("[Environment]::SetEnvironmentVariable('Path',$$updated,'User')"),
-  'Windows installer must register the managed per-user CryLo lifecycle command.'
+  installerRuntime.includes(
+    "const CRYLO_LAUNCHER_MARKER = ':: CryLo managed launcher';"
+  ) &&
+  installerRuntime.includes("path.join(localAppData, 'CryLo', 'bin')") &&
+  installerRuntime.includes("const regExe = options.regExe || path.join(systemRoot, 'System32', 'reg.exe');") &&
+  installerRuntime.includes("'HKCU\\\\Environment'") &&
+  installerRuntime.includes("'Path'") &&
+  installerRuntime.includes('previousWrapper') &&
+  installerRuntime.includes('registryRun(regExe, ['),
+  'Windows installer must register its CMD launcher using reg.exe and restore prior state on failure.'
 );
 
 assert(
