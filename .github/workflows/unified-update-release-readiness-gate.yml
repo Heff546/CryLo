@@ -1,0 +1,74 @@
+name: CryLo unified five-platform update release-readiness gate
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/unified-update-release-readiness-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-contract:
+    name: Verified updater contract — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, runner: windows-2022, os_family: win }
+          - { name: linux-x64, runner: ubuntu-24.04, os_family: linux }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, os_family: linux }
+          - { name: macos-intel, runner: macos-15-intel, os_family: mac }
+          - { name: macos-arm64, runner: macos-15, os_family: mac }
+    steps:
+      - name: Checkout exact branch without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Pin common Node.js verification runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Verify updater source syntax and common release contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = 'v24.21.0'
+          node --check scripts/crylo.js
+          node --check scripts/release/crylo-release.js
+          node --check scripts/release/macos-package-trust.js
+          node --check scripts/release/macos-installed-release-state.js
+          node --check scripts/release/macos-installed-update.js
+          node --check electron/security/macos-update-client.js
+          node --test scripts/tests/signed-update-contract.test.js
+          node scripts/tests/install-win-linux-pi-static.js
+          node --test electron/test/renderer-security.test.js
+          echo 'PASS: common Pi1 release verification and protected updater contracts'
+      - name: Linux and macOS one-command shell grammar
+        if: matrix.os_family != 'win'
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/sh -n ./crylo
+          /bin/sh -n scripts/release/macos-installed-command.sh
+          echo 'PASS: native shell command syntax'
+      - name: Validate installed macOS CLI interface
+        if: matrix.os_family == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/tests/macos-installed-command.test.js
+          echo 'PASS: one command and pinned trust contracts'
+      - name: Validate Windows CMD-only entry point without PowerShell
+        if: matrix.os_family == 'win'
+        shell: cmd
+        run: |
+          call crylo.cmd help
+          if errorlevel 1 exit /b 1
+          echo PASS: CryLo Windows CMD-only launcher help
