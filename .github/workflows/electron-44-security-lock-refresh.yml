@@ -1,0 +1,63 @@
+name: CryLo Electron 44 patched dependency lock validation
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/electron-44-security-lock-refresh.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-reviewable-lock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source without modifying remote
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Use exact host Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Recalculate Electron 44 patched lock only, no package scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global --ignore-scripts --no-audit --no-fund npm@12.1.0
+          test "$(npm --version)" = 12.1.0
+          npm --prefix electron install --package-lock-only --ignore-scripts \
+            --save-exact --save-dev --no-audit --no-fund electron@44.9.3
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync('electron/package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('electron/package-lock.json', 'utf8'));
+          if (p.devDependencies.electron !== '44.9.3' ||
+              lock.packages[''].devDependencies.electron !== '44.9.3' ||
+              lock.packages['node_modules/electron'].version !== '44.9.3') {
+            throw new Error('Patched Electron runtime and lockfile do not match');
+          }
+          if (!lock.packages['node_modules/electron'].integrity?.startsWith('sha512-')) {
+            throw new Error('Patched Electron registry integrity is not pinned');
+          }
+          if (!p.build.files.includes('security/**/*')) {
+            throw new Error('Patched Electron release omitted critical IPC policy');
+          }
+          console.log('PASS: exact Electron 44.9.3 package and SHA-512 lock');
+          NODE
+          git diff --stat -- electron/package.json electron/package-lock.json
+          git diff -- electron/package.json | head -60
+      - name: Upload changed manifests for full-file review only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-electron-44-9-3-reviewable-lock
+          path: |
+            electron/package.json
+            electron/package-lock.json
+          if-no-files-found: error
+          retention-days: 7
