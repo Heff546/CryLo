@@ -1,0 +1,103 @@
+name: CryLo Mac final installed updater PKG audit
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/mac-final-installed-updater-pkg-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate-installed-artifact:
+    name: Fresh-installed final Mac updater — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: intel, runner: macos-15-intel, arch: x64, macho: x86_64 }
+          - { name: apple-silicon, runner: macos-15, arch: arm64, macho: arm64 }
+    steps:
+      - name: Checkout exact reviewed updater source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Wait for exact final unsigned packaging validation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run watch 40230632249 --repo Heff546/CryLo --exit-status
+          test "$(gh api repos/Heff546/CryLo/actions/runs/40230632249 --jq '.conclusion')" = success
+          test "$(gh api repos/Heff546/CryLo/actions/runs/40230632249 --jq '.head_sha')" = 48fe46e64e94c4c599ef61a7306cef30c88ee55a
+      - name: Download and inspect actual final Mac PKG
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+          MACHO: ${{ matrix.macho }}
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/crylo-final-mac-pkg"
+          mkdir -p "$d"
+          gh run download 40230632249 --repo Heff546/CryLo \
+            --name "crylo-macos-$ARCH-electron-security-validation" --dir "$d"
+          pkg="$d/CryLo-1.1.1-mac-$ARCH-unsigned.pkg"
+          test -s "$pkg"
+          test "$(uname -m)" = "$MACHO"
+          signature="$(pkgutil --check-signature "$pkg" 2>&1 || true)"
+          printf '%s\n' "$signature" | grep -Fi 'no signature'
+          pkgutil --payload-files "$pkg" | grep -F 'usr/local/bin/crylo'
+          shasum -a 256 "$pkg"
+          echo "CRYLO_FINAL_PKG=$pkg" >> "$GITHUB_ENV"
+      - name: Install unsigned validation PKG on disposable runner and compare exact code
+        shell: bash
+        env:
+          EXPECTED_MACHO: ${{ matrix.macho }}
+        run: |
+          set -euo pipefail
+          test ! -e '/Applications/CryLo Wallet.app'
+          test ! -e /usr/local/bin/crylo
+          mkdir -p "$HOME/Library/Application Support/CryLo/wallets"
+          mkdir -p "$HOME/Library/Application Support/CryLo Wallet"
+          echo 'preserve secret wallet bytes' > "$HOME/Library/Application Support/CryLo/wallets/seed-sentinel"
+          echo 'preserve wallet preferences' > "$HOME/Library/Application Support/CryLo Wallet/prefs-sentinel"
+          # Only ephemeral hosted CI uses the privileged installer CLI.
+          # Real users always approve the verified PKG through macOS Installer.
+          sudo /usr/sbin/installer -pkg "$CRYLO_FINAL_PKG" -target /
+          test -x /usr/local/bin/crylo
+          cmp /usr/local/bin/crylo scripts/release/macos-installed-command.sh
+          export PATH="/usr/local/bin:$PATH"
+          crylo help | grep -F 'crylo update'
+          app='/Applications/CryLo Wallet.app'
+          test "$(lipo -archs "$app/Contents/MacOS/CryLo Wallet")" = "$EXPECTED_MACHO"
+          resource="$app/Contents/Resources/macos-update"
+          for file in macos-installed-update.js macos-installed-release-state.js macos-update-client.js macos-package-trust.js macos-unsigned-update-stage.js crylo-testnet-release-ed25519-public.pem; do
+            test -s "$resource/$file"
+          done
+          cmp "$resource/macos-installed-update.js" scripts/release/macos-installed-update.js
+          cmp "$resource/macos-installed-release-state.js" scripts/release/macos-installed-release-state.js
+          cmp "$resource/macos-update-client.js" electron/security/macos-update-client.js
+          node --check "$resource/macos-installed-release-state.js"
+          node - <<'NODE'
+          const fs=require('node:fs'),crypto=require('node:crypto');
+          const key=fs.readFileSync('/Applications/CryLo Wallet.app/Contents/Resources/macos-update/crylo-testnet-release-ed25519-public.pem');
+          const spki=crypto.createPublicKey(key).export({type:'spki',format:'der'});
+          const digest=crypto.createHash('sha256').update(spki).digest('hex');
+          if(digest!=='86f4b72805393b1bb71a58d982a274b156c8b69e11fcba2739cba598901a7385')
+            throw Error('Incorrect Pi1 release public key');
+          console.log('PASS: installed pinned Pi1 key');
+          NODE
+          test "$(cat "$HOME/Library/Application Support/CryLo/wallets/seed-sentinel")" = 'preserve secret wallet bytes'
+          test "$(cat "$HOME/Library/Application Support/CryLo Wallet/prefs-sentinel")" = 'preserve wallet preferences'
+          test ! -e "$HOME/.config/crylo-wallet/release-security.json"
+          test ! -e "$HOME/Library/Application Support/CryLo Wallet/release-security.json"
+          echo 'PASS: final installed Mac cli, native architecture, pinned key, exact receipt-verifier code, wallet preservation'
