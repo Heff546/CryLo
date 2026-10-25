@@ -97,6 +97,35 @@ jobs:
           if errorlevel 1 exit /b 1
           echo PASS: repeated launch and crash-state refusal preserved runtime and wallet
 
+      - name: Repair an outdated or damaged npm runtime transactionally
+        shell: cmd
+        run: |
+          set "LOCALAPPDATA=%RUNNER_TEMP%\CryLo isolated standard-user test"
+          set "CRYLO_RUNTIME=%LOCALAPPDATA%\CryLo\runtime"
+          set "NODE_HOME=%CRYLO_RUNTIME%\node-v24.21.0-win-x64"
+          set "NPM_CLI=%NODE_HOME%\node_modules\npm\bin\npm-cli.js"
+          if not exist "%NPM_CLI%" exit /b 1
+          move /y "%NPM_CLI%" "%NPM_CLI%.damaged-for-test" >nul
+          if errorlevel 1 exit /b 1
+          call crylo.cmd help > "%RUNNER_TEMP%\crylo-npm-repair.txt" 2>&1
+          set "REPAIR_RC=%ERRORLEVEL%"
+          type "%RUNNER_TEMP%\crylo-npm-repair.txt"
+          if not "%REPAIR_RC%"=="0" exit /b 1
+          findstr /C:"Preparing authenticated CryLo" "%RUNNER_TEMP%\crylo-npm-repair.txt" >nul
+          if errorlevel 1 (
+            echo ERROR: automatic npm repair was skipped
+            exit /b 1
+          )
+          if not exist "%NPM_CLI%" exit /b 1
+          if exist "%NPM_CLI%.damaged-for-test" exit /b 1
+          if exist "%NODE_HOME%.pre-crylo-bootstrap" exit /b 1
+          if exist "%CRYLO_RUNTIME%\mingit-2.56.0.windows.1-x64.pre-crylo-bootstrap" exit /b 1
+          if not exist "%LOCALAPPDATA%\CryLo\wallets\wallet-sentinel" exit /b 1
+          "%NODE_HOME%\node.exe" "%CD%\scripts\windows-runtime-bootstrap.js" verify
+          if errorlevel 1 exit /b 1
+          echo PASS: CMD-only transactional npm repair retained existing wallet data
+          exit /b 0
+
       - name: Reject tampered staged Node archive without runtime changes
         shell: cmd
         run: |
