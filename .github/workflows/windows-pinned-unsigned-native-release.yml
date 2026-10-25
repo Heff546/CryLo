@@ -3,7 +3,10 @@ name: CryLo Windows pinned unsigned release build
 on:
   push:
     branches: [feature/mac-first-build-gate]
-    paths: [.github/workflows/windows-pinned-unsigned-native-release.yml]
+    paths:
+      - .github/workflows/windows-pinned-unsigned-native-release.yml
+      - .gitattributes
+      - contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch
   workflow_dispatch:
 
 permissions:
@@ -20,6 +23,12 @@ jobs:
           persist-credentials: false
           set-safe-directory: false
           submodules: recursive
+      - name: Verify exact trusted OpenSSL patch bytes on Windows checkout
+        shell: cmd
+        run: |
+          node -e "const fs=require('fs'),c=require('crypto');const p='contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch';const b=fs.readFileSync(p);const d=c.createHash('sha256').update(b).digest('hex');if(d!=='5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088')throw Error('Windows OpenSSL patch bytes have changed: '+d);"
+          if errorlevel 1 exit /b 1
+          echo PASS: trusted original LF OpenSSL patch on Windows checkout
       - name: Initialize MSYS2
         shell: cmd
         run: |
@@ -127,6 +136,11 @@ jobs:
           if not exist build\win-x64\bin\CryLo-wallet-rpc.exe exit /b 1
           if not exist build\electron-runtime\win\WINDOWS-BUILD-RUNTIME-MANIFEST.json exit /b 1
           echo PASS: Windows native and Electron unsigned release candidate
+      - name: Audit complete Windows standalone runtime closure
+        shell: cmd
+        run: |
+          node -e "const fs=require('fs'),path=require('path'),c=require('crypto');const dir='build/electron-runtime/win';const v=JSON.parse(fs.readFileSync(path.join(dir,'WINDOWS-BUILD-RUNTIME-MANIFEST.json'),'utf8'));if(!Array.isArray(v.runtime)||v.runtime.length===0)throw Error('No Windows DLL closure');for(const x of v.runtime){const p=path.join(dir,x.file);const b=fs.readFileSync(p);const h=c.createHash('sha256').update(b).digest('hex');if(b.length!==x.size||h!==x.sha256)throw Error('Runtime DLL mismatch '+x.file);}console.log('PASS: exact '+v.runtime.length+' Windows DLLs retained for signable standalone bundle');"
+          if errorlevel 1 exit /b 1
       - name: Record artifact hashes and source revision
         shell: cmd
         run: |
@@ -149,6 +163,7 @@ jobs:
             build/win-x64/bin/CryLo-wallet-rpc.exe
             build/electron-runtime/win/BINARY-MANIFEST.txt
             build/electron-runtime/win/WINDOWS-BUILD-RUNTIME-MANIFEST.json
+            build/electron-runtime/win/*.dll
             electron/dist/*.exe
             ${{ runner.temp }}/crylo-windows-unsigned-audit/*
           if-no-files-found: error
