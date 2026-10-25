@@ -1,0 +1,41 @@
+name: CryLo Windows Warning Baseline Audit — Release Frozen
+on:
+  push:
+    branches: [feature/mac-first-build-gate]
+    paths:
+      - .github/workflows/windows-warning-diff-gate.yml
+      - scripts/release/windows-warning-diff.js
+      - scripts/tests/windows-warning-diff.test.js
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - run: node --test scripts/tests/windows-warning-diff.test.js
+      - name: Compare historical Windows CI job logs without building or publishing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/crylo-win-warning"
+          gh api repos/Heff546/CryLo/actions/jobs/112575712128/logs > "$RUNNER_TEMP/crylo-win-warning/old.log"
+          gh api repos/Heff546/CryLo/actions/jobs/121294855214/logs > "$RUNNER_TEMP/crylo-win-warning/new.log"
+          node scripts/release/windows-warning-diff.js "$RUNNER_TEMP/crylo-win-warning/old.log" "$RUNNER_TEMP/crylo-win-warning/new.log" "$RUNNER_TEMP/crylo-win-warning/summary.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-windows-warning-audit-only
+          path: ${{ runner.temp }}/crylo-win-warning/summary.json
+          if-no-files-found: error
+          retention-days: 30
