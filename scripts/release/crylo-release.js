@@ -16,10 +16,15 @@ const windowsOpenSSLSha256 =
 const windowsOpenSSLPatch = 'openssl-3.5.9-build-cleanup.patch';
 const windowsOpenSSLPatchSha256 =
   '5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088';
+const windowsOpenSSLMinGWCompatPatch =
+  'openssl-3.5.9-mingw-warning-compat.patch';
+const windowsOpenSSLMinGWCompatSha256 =
+  'fc55415905380d6cb7ccb81c6b3c722142e7668b67f77d024f29d531f34f4700';
 const windowsOpenSSLBuildStampBase = [
   `version=${windowsOpenSSLVersion}`,
   `source_sha256=${windowsOpenSSLSha256}`,
   `patch_sha256=${windowsOpenSSLPatchSha256}`,
+  `mingw_compat_sha256=${windowsOpenSSLMinGWCompatSha256}`,
   'target=mingw64',
   'cflags=-pipe -O2',
   'arflags=cr',
@@ -853,6 +858,14 @@ function windowsOpenSSLContext() {
       'openssl',
       windowsOpenSSLPatch
     ),
+    mingwCompatPatch: path.join(
+      root,
+      'contrib',
+      'depends',
+      'patches',
+      'openssl',
+      windowsOpenSSLMinGWCompatPatch
+    ),
     recipe: path.join(
       root,
       'contrib',
@@ -943,6 +956,10 @@ function verifyWindowsOpenSSLRecipe(context) {
     fail(`CryLo OpenSSL patch is missing: ${context.patch}`);
   }
 
+  if (!fs.existsSync(context.mingwCompatPatch)) {
+    fail(`CryLo Windows OpenSSL compatibility patch is missing: ${context.mingwCompatPatch}`);
+  }
+
   const recipe = fs.readFileSync(context.recipe, 'utf8');
   const requiredRecipeLines = [
     `$(package)_version=${windowsOpenSSLVersion}`,
@@ -989,6 +1006,12 @@ function verifyWindowsOpenSSLRecipe(context) {
       `Expected: ${windowsOpenSSLPatchSha256}\n` +
       `Actual:   ${patchHash}`
     );
+  }
+  const mingwCompatHash = sha256File(context.mingwCompatPatch);
+  if (mingwCompatHash !== windowsOpenSSLMinGWCompatSha256) {
+    fail('CryLo Windows OpenSSL compatibility patch SHA256 mismatch.\n' +
+      `Expected: ${windowsOpenSSLMinGWCompatSha256}\n` +
+      `Actual:   ${mingwCompatHash}`);
   }
 }
 
@@ -1125,6 +1148,7 @@ function buildWindowsPinnedOpenSSL(jobs) {
   const sourceMsys = toMsysPath(context.source);
   const workMsys = toMsysPath(context.work);
   const patchMsys = toMsysPath(context.patch);
+  const mingwCompatPatchMsys = toMsysPath(context.mingwCompatPatch);
   const sourceDirMsys = toMsysPath(path.dirname(context.source));
   const partMsys = `${sourceMsys}.part`;
 
@@ -1214,6 +1238,9 @@ tar -xzf "${sourceMsys}" -C "${workMsys}" --strip-components=1
 cd "${workMsys}"
 
 patch -p1 < "${patchMsys}"
+# Windows-only ABI/type correction, separately SHA256 pinned. Linux/ARM/macOS
+# depends builds are unchanged.
+patch --batch --forward -p1 < "${mingwCompatPatchMsys}"
 
 sed -i.old \\
   's|crypto ssl apps util tools fuzz providers doc|crypto ssl util tools providers|' \\
