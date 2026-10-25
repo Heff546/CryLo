@@ -1,0 +1,63 @@
+name: CryLo installed macOS wallet authenticated update security
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/mac-installed-wallet-updater-gate.yml
+      - electron/main.js
+      - electron/security/macos-update-client.js
+      - electron/test/macos-installed-updater.test.js
+      - electron/package.json
+      - electron/scripts/after-pack.js
+      - scripts/release/macos-package-trust.js
+      - scripts/release/macos-unsigned-update-stage.js
+      - scripts/release/keys/crylo-testnet-release-ed25519-public.pem
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac-installed-wallet:
+    name: Installed Mac update security — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: intel
+            runner: macos-15-intel
+            arch: x64
+          - name: apple-silicon
+            runner: macos-15
+            arch: arm64
+    steps:
+      - name: Check out reviewed branch with no persisted token
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Confirm exact Mac host and source syntax
+        shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          node -e "if(process.arch!==process.env.TARGET_ARCH)process.exit(1)"
+          node --check electron/main.js
+          node --check electron/security/macos-update-client.js
+          node --check electron/test/macos-installed-updater.test.js
+          node --check electron/scripts/after-pack.js
+          node --check scripts/release/macos-package-trust.js
+          node --check scripts/release/macos-unsigned-update-stage.js
+      - name: Test installed wallet Pi1 trust and user-approved update boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test electron/test/macos-installed-updater.test.js
+          node --test scripts/tests/macos-package-trust.test.js scripts/tests/macos-update-staging.test.js
+          node --test electron/test/release-packaging-security.test.js
+          echo 'PASS: verified Mac update preparation has no Git, Installer, Gatekeeper override or wallet mutation'
