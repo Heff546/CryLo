@@ -1,0 +1,91 @@
+name: CryLo shared Electron hardening regression
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/shared-electron-hardening-gate.yml
+      - electron/main.js
+      - electron/preload.js
+      - electron/security/**
+      - electron/test/renderer-security.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  electron-security:
+    name: Electron IPC and sandbox safety on ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            runner: windows-2022
+          - name: linux-x64
+            runner: ubuntu-24.04
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+          - name: macos-intel
+            runner: macos-15-intel
+          - name: macos-arm64
+            runner: macos-15
+    steps:
+      - name: Check out exact source for cross-platform audit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Provision identical Node.js 24 security-test runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+
+      - name: Verify Electron source syntax and authorization contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          node --check electron/main.js
+          node --check electron/preload.js
+          node --check electron/security/renderer-policy.js
+          node --check electron/test/renderer-security.test.js
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const main = fs.readFileSync('electron/main.js', 'utf8');
+          const preload = fs.readFileSync('electron/preload.js', 'utf8');
+          assert.equal((main.match(/secureIpcHandle\(/g) || []).length, 43);
+          assert.equal((main.match(/ipcMain\.handle\(/g) || []).length, 1);
+          assert.match(main, /sandbox: true/);
+          assert.doesNotMatch(main, /sandbox: false/);
+          assert.match(main, /contextIsolation: true/);
+          assert.match(main, /nodeIntegration: false/);
+          assert.match(main, /webSecurity: true/);
+          assert.match(main, /webviewTag: false/);
+          assert.match(main, /setPermissionRequestHandler/);
+          assert.match(main, /safeExternalHttpsUrl/);
+          assert.doesNotMatch(main, /shell\.openExternal\(url\)/);
+          assert.match(preload, /contextBridge\.exposeInMainWorld/);
+          console.log('PASS: all 42 privileged IPC handlers use the authorization gate');
+          NODE
+
+      - name: Exercise trust-boundary and navigation tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test electron/test/renderer-security.test.js
+          node --test electron/test/node-center-facts.test.js electron/test/node-center-state.test.js electron/test/node-center-renderer.test.js
+
+      - name: Verify existing install/update source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/crylo.js
+          node --check scripts/release/crylo-release.js
+          node scripts/tests/install-win-linux-pi-static.js
