@@ -27,6 +27,17 @@ jobs:
           C:\msys64\usr\bin\bash.exe -lc "true"
           C:\msys64\usr\bin\bash.exe -lc "pacman --version"
           if errorlevel 1 exit /b 1
+      - name: Finish MSYS2 core upgrade across fresh Windows CMD processes
+        shell: cmd
+        run: |
+          rem A first MSYS2 core update can replace pacman and terminate its own
+          rem shell with exit 1. Never suppress failure of the second fresh run.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          if errorlevel 1 exit /b 1
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Qu"
+          if errorlevel 1 exit /b 1
+          echo PASS: MSYS2 core and full upgrade completed in fresh shells
       - name: Acquire exactly pinned and signed Windows build dependencies
         shell: bash
         run: |
@@ -36,8 +47,6 @@ jobs:
           set -euo pipefail
           export MSYSTEM=MINGW64
           export PATH=/mingw64/bin:/usr/bin
-          pacman -Syu --noconfirm
-          pacman -Syu --noconfirm
           pacman -S --needed --noconfirm \
             mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
             mingw-w64-x86_64-pkgconf make python python-pip perl \
