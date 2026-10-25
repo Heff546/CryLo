@@ -1,0 +1,89 @@
+name: CryLo Linux managed Node/npm transactional lifecycle
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - crylo
+      - .github/workflows/linux-transactional-runtime-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  managed-runtime:
+    name: Runtime bootstrap and rollback on ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-24.04
+            node_arch: x64
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            node_arch: arm64
+    steps:
+      - name: Fetch reviewed CryLo source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Check launcher and update-source syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n ./crylo
+          node --check scripts/crylo.js
+          node scripts/tests/install-win-linux-pi-static.js
+
+      - name: First-run managed toolchain provision
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.node_arch }}
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/crylo-clean-user"
+          mkdir -p "$HOME/.config/crylo"
+          echo 'preserve user config' > "$HOME/.config/crylo/private-user-settings"
+          sh ./crylo help
+          directory="$HOME/.local/share/crylo/runtime/node-v24.21.0-linux-$EXPECTED_ARCH"
+          test -x "$directory/bin/node"
+          test -x "$directory/bin/npm"
+          test "$("$directory/bin/node" --version)" = v24.21.0
+          test "$("$directory/bin/node" -p 'process.arch')" = "$EXPECTED_ARCH"
+          test "$(PATH="$directory/bin:$PATH" "$directory/bin/npm" --version)" = 12.1.0
+          test ! -e "$directory.pre-crylo-bootstrap"
+          echo 'Verified source' > "$directory/crylo-source-preservation-sentinel"
+          echo 'PASS: clean first-user managed-runtime installation'
+
+      - name: Forced failure preserves old runtime and user files
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.node_arch }}
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/crylo-clean-user"
+          directory="$HOME/.local/share/crylo/runtime/node-v24.21.0-linux-$EXPECTED_ARCH"
+          mv "$directory/bin/npm" "$directory/bin/npm.saved"
+          mock="$RUNNER_TEMP/crylo-forced-failure-bin"
+          mkdir -p "$mock"
+          printf '#!/bin/sh\nexit 77\n' > "$mock/curl"
+          chmod +x "$mock/curl"
+          if PATH="$mock:$PATH" sh ./crylo help > "$RUNNER_TEMP/crylo-forced-failure.log" 2>&1; then
+            echo 'ERROR: unexpected success of forced download failure' >&2
+            exit 1
+          fi
+          test -f "$directory/crylo-source-preservation-sentinel"
+          test -e "$directory/bin/npm.saved"
+          test ! -e "$directory.pre-crylo-bootstrap"
+          test "$(cat "$HOME/.config/crylo/private-user-settings")" = 'preserve user config'
+          mv "$directory/bin/npm.saved" "$directory/bin/npm"
+          sh ./crylo help
+          test "$(PATH="$directory/bin:$PATH" "$directory/bin/npm" --version)" = 12.1.0
+          echo 'PASS: failure preserved original runtime and user-owned data'
