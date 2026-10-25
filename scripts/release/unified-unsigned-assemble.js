@@ -8,7 +8,7 @@ const crypto=require('node:crypto');
 const cp=require('node:child_process');
 
 const PINS=Object.freeze({
-  mac:{run:40232358622,source:'48fe46e64e94c4c599ef61a7306cef30c88ee55a'},
+  mac:{run:40230632249,source:'48fe46e64e94c4c599ef61a7306cef30c88ee55a'},
   win:{run:40235096809,source:'bf049390517b97af382e3426099addcff1e59c55a'},
   linux:{run:40235385178,source:'801abc7abbad9718f9ab92b63ce473a102603623'}
 });
