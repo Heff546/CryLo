@@ -11,6 +11,11 @@ on:
       - electron/security/**
       - electron/package.json
       - electron/package-lock.json
+      - electron/scripts/after-pack.js
+      - electron/scripts/build-mac-installer.js
+      - scripts/release/macos-installed-command.sh
+      - scripts/release/macos-installed-update.js
+      - scripts/release/macos-installed-release-state.js
       - node-operator/runtime/package-lock.json
       - electron/test/release-packaging-security.test.js
   workflow_dispatch:
