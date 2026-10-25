@@ -76,7 +76,9 @@ function analyzeCandidate(definition,run,artifactData,comparison,targetSha){
  function reviewedUnshippedChange(file){
   if(file==='.gitattributes'){
    const attrs=fs.readFileSync(path.join(repoRoot,file),'utf8');
-   const rules=attrs.split(/\\r?\\n/).filter(line=>line.trim()&&!line.startsWith('#'));
+   const rules=attrs.split(String.fromCharCode(10))
+    .map(line=>line.endsWith(String.fromCharCode(13))?line.slice(0,-1):line)
+    .filter(line=>line.trim()&&!line.startsWith('#'));
    if(rules.length!==1||rules[0]!==
     '/contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch text eol=lf')return false;
    const patch=path.join(repoRoot,'contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch');
@@ -84,7 +86,7 @@ function analyzeCandidate(definition,run,artifactData,comparison,targetSha){
   }
   if(file==='electron/scripts/release-linux.sh'&&definition.platform==='mac'){
    const bytes=fs.readFileSync(path.join(repoRoot,file));
-   const gitBlob=crypto.createHash('sha1').update('blob '+bytes.length+'\\0').update(bytes).digest('hex');
+   const gitBlob=crypto.createHash('sha1').update('blob '+bytes.length).update(Buffer.alloc(1)).update(bytes).digest('hex');
    return gitBlob==='28206b146f3ad1998e5ee27e419a666c2acebbd0';
   }
   return false;
