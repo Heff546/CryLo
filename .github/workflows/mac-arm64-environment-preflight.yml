@@ -1,0 +1,174 @@
+name: CryLo Apple Silicon native environment preflight
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/mac-arm64-environment-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crylo-mac-arm64-preflight-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-arm64-environment:
+    name: macOS 15 Apple Silicon toolchain and triplet (no dependencies)
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact CryLo commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Verify ARM64 runner and host toolchain inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== SOURCE ====="
+          git rev-parse HEAD
+          git status --short
+          echo "===== NATIVE HOST ====="
+          sw_vers
+          uname -a
+          arch
+          processor="$(uname -m)"
+          test "$processor" = arm64 || { echo "ERROR: native ARM64 runner required; got $processor"; exit 1; }
+          sysctl -n hw.ncpu
+          sysctl -n hw.memsize
+          df -h .
+          echo "===== APPLE TOOLCHAIN ====="
+          xcode-select -p
+          xcodebuild -version
+          xcrun --find clang
+          xcrun --find clang++
+          xcrun --sdk macosx --show-sdk-path
+          xcrun --sdk macosx --show-sdk-version
+          xcrun clang --version
+          echo "===== REQUIRED HOST UTILITIES ====="
+          for tool in git cmake make python3 perl xcrun clang clang++ ar ranlib otool lipo pkgbuild node npm shasum tar patch; do
+            command -v "$tool" || { echo "ERROR: missing required utility $tool"; exit 1; }
+          done
+          echo "===== PROVISIONABLE BUILD UTILITIES (INVENTORY ONLY) ====="
+          for tool in pkg-config autoconf automake glibtoolize brew ninja; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "$tool: $(command -v "$tool")"
+            else
+              echo "NOT INSTALLED: $tool (review provisioning before full build)"
+            fi
+          done
+          cmake --version
+          make --version | head -2
+          node --version
+          npm --version
+          echo "===== RESOURCES ====="
+          available_kb="$(df -Pk . | awk 'NR==2 {print $4}')"
+          test "$available_kb" -ge 6291456 || { echo "ERROR: less than 6 GiB disk free"; exit 1; }
+          echo "PASS: native Apple Silicon runner; available disk $available_kb KiB"
+
+      - name: Audit repository host triplets without building dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd contrib/depends
+          echo "===== BUNDLED CONFIG SCRIPT VERSIONS ====="
+          ./config.guess --time-stamp
+          ./config.sub --time-stamp
+          echo "===== DETECTED BUILD TRIPLET ====="
+          guessed="$(./config.guess)"
+          canonical_build="$(./config.sub "$guessed")"
+          echo "config.guess: $guessed"
+          echo "config.sub:   $canonical_build"
+          case "$canonical_build" in
+            aarch64-apple-darwin*) ;;
+            *) echo "ERROR: bundled config.guess/config.sub did not recognize Apple Silicon as aarch64"; exit 1 ;;
+          esac
+          echo "===== PINNED DEPENDS TARGET ====="
+          target="$(./config.sub aarch64-apple-darwin11)"
+          echo "Requested: aarch64-apple-darwin11"
+          echo "Canonical: $target"
+          test "$target" = aarch64-apple-darwin11
+          echo "===== READ-ONLY DEPENDS MAKE VARIABLE EVALUATION ====="
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          printf '%b\n' \
+            '.PHONY: crylo-arm64-triplet-check' \
+            'crylo-arm64-triplet-check:' \
+            '\\t@echo "host=$(host) host_arch=$(host_arch) host_os=$(host_os)"' \
+            '\\t@echo "build=$(build) build_arch=$(build_arch) build_os=$(build_os)"' \
+            '\\t@echo "host_prefix=$(host_prefix)"' \
+            '\\t@test "$(host_arch)" = aarch64' \
+            '\\t@test "$(host_os)" = darwin' \
+            '\\t@test "$(build_os)" = darwin' \
+            '\\t@test "$(host)" = aarch64-apple-darwin11' > "$scratch/probe.mk"
+          make --no-print-directory -s -f Makefile -f "$scratch/probe.mk" \
+            HOST=aarch64-apple-darwin11 crylo-arm64-triplet-check
+          echo "===== EXPECTED NATIVE CMAKE SETTINGS ====="
+          grep -Fq 'SET(CMAKE_OSX_ARCHITECTURES "arm64")' toolchain.cmake.in
+          grep -Fq 'SET(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")' toolchain.cmake.in
+          grep -Fq 'set(ARCH "armv8-a")' toolchain.cmake.in
+          echo "PASS: depends target and Darwin CMake ARM64 declarations"
+
+      - name: Compile link and run tiny native ARM64 C and C++ programs
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          test -d "$SDKROOT"
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          printf '%s\n' 'int main(void) { return 0; }' > "$scratch/probe.c"
+          cat > "$scratch/probe.cpp" <<'CPP'
+          #include <cstdint>
+          #include <iostream>
+          int main() {
+            static_assert(sizeof(void*) == 8, "ARM64 requires 64-bit pointers");
+            std::cout << "CryLo ARM64 compiler smoke PASS" << std::endl;
+            return 0;
+          }
+          CPP
+          xcrun clang -arch arm64 -mmacosx-version-min=11.0 -isysroot "$SDKROOT" \
+            -Wall -Wextra -Werror "$scratch/probe.c" -o "$scratch/probe-c"
+          xcrun clang++ -arch arm64 -mmacosx-version-min=11.0 -isysroot "$SDKROOT" \
+            -std=c++17 -stdlib=libc++ -Wall -Wextra -Werror \
+            "$scratch/probe.cpp" -o "$scratch/probe-cxx"
+          for binary in "$scratch/probe-c" "$scratch/probe-cxx"; do
+            file "$binary"
+            test "$(lipo -archs "$binary")" = arm64
+            otool -hv "$binary"
+            otool -L "$binary"
+            xcrun vtool -show-build "$binary"
+            "$binary"
+          done
+          echo "===== CMAKE NATIVE ARM64 LINK CHECK ====="
+          mkdir -p "$scratch/cmake"
+          cp "$scratch/probe.cpp" "$scratch/cmake/main.cpp"
+          cat > "$scratch/cmake/CMakeLists.txt" <<'CMAKE'
+          cmake_minimum_required(VERSION 3.20)
+          project(CryLoAppleSiliconPreflight LANGUAGES CXX)
+          add_executable(crylo-arm64-preflight main.cpp)
+          target_compile_features(crylo-arm64-preflight PRIVATE cxx_std_17)
+          CMAKE
+          cmake -S "$scratch/cmake" -B "$scratch/cmake-build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DCMAKE_OSX_SYSROOT="$SDKROOT"
+          cmake --build "$scratch/cmake-build" --parallel 2
+          cmake_binary="$scratch/cmake-build/crylo-arm64-preflight"
+          test "$(lipo -archs "$cmake_binary")" = arm64
+          "$cmake_binary"
+          xcrun vtool -show-build "$cmake_binary"
+          echo "PASS: native ARM64 C, C++, CMake, linking, and execution"
+
+      - name: Confirm preflight did not mutate tracked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "PASS: no dependency compilation, wallet installation, source changes, or signing"
