@@ -1,0 +1,127 @@
+diff --git a/crypto/bio/bio_sock.c b/crypto/bio/bio_sock.c
+--- a/crypto/bio/bio_sock.c
++++ b/crypto/bio/bio_sock.c
+@@ -253,12 +253,12 @@
+ #ifndef OPENSSL_NO_DEPRECATED_1_1_0
+ int BIO_get_accept_socket(char *host, int bind_mode)
+ {
+-    int s = INVALID_SOCKET;
++    int s = -1;
+     char *h = NULL, *p = NULL;
+     BIO_ADDRINFO *res = NULL;
+ 
+     if (!BIO_parse_hostserv(host, &h, &p, BIO_PARSE_PRIO_SERV))
+-        return INVALID_SOCKET;
++        return -1;
+ 
+     if (BIO_sock_init() != 1)
+         goto err;
+@@ -269,14 +269,14 @@
+     if ((s = BIO_socket(BIO_ADDRINFO_family(res), BIO_ADDRINFO_socktype(res),
+              BIO_ADDRINFO_protocol(res), 0))
+         == INVALID_SOCKET) {
+-        s = INVALID_SOCKET;
++        s = -1;
+         goto err;
+     }
+ 
+     if (!BIO_listen(s, BIO_ADDRINFO_address(res),
+             bind_mode ? BIO_SOCK_REUSEADDR : 0)) {
+         BIO_closesocket(s);
+-        s = INVALID_SOCKET;
++        s = -1;
+     }
+ 
+ err:
+diff --git a/crypto/bio/bio_sock2.c b/crypto/bio/bio_sock2.c
+--- a/crypto/bio/bio_sock2.c
++++ b/crypto/bio/bio_sock2.c
+@@ -44,14 +44,14 @@
+     int sock = -1;
+ 
+     if (BIO_sock_init() != 1)
+-        return INVALID_SOCKET;
++        return -1;
+ 
+     sock = socket(domain, socktype, protocol);
+     if (sock == -1) {
+         ERR_raise_data(ERR_LIB_SYS, get_last_socket_error(),
+             "calling socket()");
+         ERR_raise(ERR_LIB_BIO, BIO_R_UNABLE_TO_CREATE_SOCKET);
+-        return INVALID_SOCKET;
++        return -1;
+     }
+ 
+     return sock;
+@@ -431,12 +431,12 @@
+                 "calling accept()");
+             ERR_raise(ERR_LIB_BIO, BIO_R_ACCEPT_ERROR);
+         }
+-        return INVALID_SOCKET;
++        return -1;
+     }
+ 
+     if (!BIO_socket_nbio(accepted_sock, (options & BIO_SOCK_NONBLOCK) != 0)) {
+         closesocket(accepted_sock);
+-        return INVALID_SOCKET;
++        return -1;
+     }
+ 
+     return accepted_sock;
+diff --git a/ssl/quic/quic_reactor.c b/ssl/quic/quic_reactor.c
+--- a/ssl/quic/quic_reactor.c
++++ b/ssl/quic/quic_reactor.c
+@@ -403,7 +403,7 @@
+ static int poll_descriptor_to_fd(const BIO_POLL_DESCRIPTOR *d, int *fd)
+ {
+     if (d == NULL || d->type == BIO_POLL_DESCRIPTOR_TYPE_NONE) {
+-        *fd = INVALID_SOCKET;
++        *fd = -1;
+         return 1;
+     }
+ 
+diff --git a/ssl/rio/rio_notifier.c b/ssl/rio/rio_notifier.c
+--- a/ssl/rio/rio_notifier.c
++++ b/ssl/rio/rio_notifier.c
+@@ -93,7 +93,7 @@
+ 
+         ERR_raise_data(ERR_LIB_SYS, err,
+             "calling WSASocketA() = %d", err);
+-        return INVALID_SOCKET;
++        return -1;
+     }
+ 
+     /* Prevent interference with the socket from other processes on Windows. */
+@@ -101,7 +101,7 @@
+         ERR_raise_data(ERR_LIB_SYS, get_last_socket_error(),
+             "calling setsockopt()");
+         BIO_closesocket(fd);
+-        return INVALID_SOCKET;
++        return -1;
+     }
+ 
+ #else
+diff --git a/crypto/threads_win.c b/crypto/threads_win.c
+--- a/crypto/threads_win.c
++++ b/crypto/threads_win.c
+@@ -720,7 +720,7 @@
+ 
+     return 1;
+ #else
+-    InterlockedExchange64(dst, val);
++    InterlockedExchange64((volatile LONG64 *)dst, (LONG64)val);
+     return 1;
+ #endif
+ }
+diff --git a/crypto/x509/x509_def.c b/crypto/x509/x509_def.c
+--- a/crypto/x509/x509_def.c
++++ b/crypto/x509/x509_def.c
+@@ -30,7 +30,7 @@
+ 
+ static void get_windows_default_path(char *pathname, const char *suffix)
+ {
+-    char *ossldir;
++    const char *ossldir;
+ 
+     ossldir = ossl_get_openssldir();
+ 

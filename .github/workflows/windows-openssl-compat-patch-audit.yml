@@ -1,0 +1,42 @@
+name: CryLo isolated upstream OpenSSL MinGW warning correction validation
+on:
+  push:
+    branches: [feature/mac-first-build-gate]
+    paths:
+      - .github/workflows/windows-openssl-compat-patch-audit.yml
+      - contrib/depends/patches/openssl/openssl-3.5.9-mingw-warning-compat.patch
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-patch-verification:
+    name: Verify exact OpenSSL upstream and isolated source patch, no native builds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Audit upstream OpenSSL 3.5.9 SHA and isolated Win64 diagnostics patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_file="$GITHUB_WORKSPACE/contrib/depends/patches/openssl/openssl-3.5.9-mingw-warning-compat.patch"
+          echo '===== Isolated patch checksum ====='
+          sha256sum "$patch_file"
+          mkdir -p "$RUNNER_TEMP/crylo-openssl-compat"
+          cd "$RUNNER_TEMP/crylo-openssl-compat"
+          curl --fail --location --retry 3 --silent --show-error \
+            https://www.openssl.org/source/openssl-3.5.9.tar.gz -o src.tar.gz
+          echo '603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a  src.tar.gz' | sha256sum -c -
+          tar -xzf src.tar.gz
+          cd openssl-3.5.9
+          patch --batch --forward --dry-run -p1 < "$patch_file"
+          patch --batch --forward -p1 < "$patch_file"
+          echo '===== Checked Windows-only warning substitutions ====='
+          grep -n 'InterlockedExchange64((volatile LONG64 \*)dst, (LONG64)val);' crypto/threads_win.c
+          grep -n 'const char \*ossldir;' crypto/x509/x509_def.c
+          grep -n -E '(^|[[:space:]])(return|s =|\*fd =) -1;' crypto/bio/bio_sock.c crypto/bio/bio_sock2.c ssl/rio/rio_notifier.c ssl/quic/quic_reactor.c
+          echo 'PASS: exact upstream OpenSSL 3.5.9 Windows warning patch applies'
+          echo 'This is an isolated patch audit. CryLo releases remain frozen.'
