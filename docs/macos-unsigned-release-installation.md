@@ -23,15 +23,18 @@ the signed manifest. Never rename a mismatched package to make it pass.
 
 ## For users
 
-1. Obtain the official CryLo release and its Pi1-signed manifest through the
-   authenticated CryLo release channel. Do **not** install GitHub Actions'
-   unsigned CI test artifacts as official public releases.
-2. Verify the downloaded package using the currently trusted CryLo release key.
-   The source-checkout `crylo update` command may prepare a verified PKG
-   in the user's private CryLo application-support staging directory. This is
-   **preparation only**; the installed Electron wallet does not yet provide a
-   completed automatic-update experience.
-3. Open the verified PKG in Finder and review the macOS installer. If macOS
+1. Obtain an official CryLo release through the Pi1-authenticated release
+   channel. Do **not** install GitHub Actions' unsigned CI validation artifacts
+   as official public releases.
+2. From an installed Mac CryLo Wallet, choose **CryLo Wallet → Check for Verified
+   Updates…**. The wallet checks official release metadata, authenticates the
+   Pi1 Ed25519 signature against its bundled pinned public key, and selects
+   only the PKG matching Intel or Apple Silicon. It asks permission before
+   downloading and verifies the exact installer bytes. Users maintaining a
+   source checkout may alternatively use `crylo update` to prepare a verified
+   installer. Neither path automatically installs software.
+3. Choose **Reveal in Finder**, then open the verified PKG yourself and review
+   the macOS installer. If macOS
    blocks opening software from an unidentified developer, follow Apple's
    official **System Settings > Privacy & Security > Open Anyway** review flow
    *only if you independently trust and have verified this exact release*.
@@ -55,8 +58,13 @@ signing on Pi1 is a separate mandatory authenticity mechanism.
   `release-security.json` on download or staging.
 - Preserve wallet/config/app-data directories during fresh install, upgrade,
   interruption, rollback and removal of old app versions.
-- Actual Intel and Apple Silicon fresh-install/upgrade tests and installed
-  Electron GUI update integration remain required before the public launch.
+- The installed Electron GUI can discover and stage verified packages, but a
+  complete official Pi1-signed Mac release must be published before real
+  end-to-end update/download tests can pass.
+- Actual Intel and Apple Silicon fresh-install, upgrade, post-install version,
+  shutdown/startup and wallet-data preservation tests remain mandatory.
+- Package staging and Finder reveal do not prove installation succeeded. The
+  release-security sequence must not advance until installation is verified.
 
 Apple's macOS security guidance:
 https://support.apple.com/en-us/102445
