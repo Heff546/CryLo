@@ -62,6 +62,10 @@ function safeCopy(src,dst){
  if(fs.existsSync(dst))fail('Duplicate staging output '+path.basename(dst));
  fs.copyFileSync(src,dst,fs.constants.COPYFILE_EXCL);
  fs.chmodSync(dst,0o644);
+ // The DOS timestamp range begins in 1980; normalize ZIP members explicitly.
+ // TAR creation below uses its independent fixed 1970 header timestamp.
+ const epoch=new Date('1980-01-01T00:00:00Z');
+ fs.utimesSync(dst,epoch,epoch);
 }
 function readJSON(file){return JSON.parse(fs.readFileSync(file,'utf8'));}
 function verifyCheckLine(contents,file){
@@ -184,7 +188,9 @@ function packageTar(dir,out){
 function packageZip(dir,out){
  // No arbitrary host metadata paths inside the Windows release ZIP.
  const names=fs.readdirSync(dir).sort();
- const cmd=cp.spawnSync('zip',['-q','-X','-0',out,...names],{cwd:dir,encoding:'utf8',shell:false});
+ const cmd=cp.spawnSync('zip',['-q','-X','-0',out,...names],{
+  cwd:dir,encoding:'utf8',shell:false,env:{...process.env,TZ:'UTC'}
+ });
  if(cmd.status!==0||cmd.error)fail('Canonical Windows ZIP creation failed: '+(cmd.stderr||cmd.error?.message));
 }
 function stageMac(input,out,arch){
@@ -245,5 +251,6 @@ function main(){
  console.log('PASS: all five source-provenance-compatible candidates validated. No Pi1 signature or publication.');
 }
 if(require.main===module){try{main();}catch(e){console.error('FAIL CLOSED: '+e.message);process.exitCode=1;}}
-module.exports=Object.freeze({machine,validateProvenance,shaFromCertutil,exact,verifyCheckLine,PINS});
+module.exports=Object.freeze({machine,validateProvenance,shaFromCertutil,exact,verifyCheckLine,
+ safeCopy,packageZip,PINS});
 

@@ -44,3 +44,24 @@ test('native architecture guards reject non-ELF and non-PE files',()=>{
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
 
+
+test('deterministic Windows ZIP staging normalizes timestamps and file order',()=>{
+ const {safeCopy,packageZip}=require('../release/unified-unsigned-assemble');
+ const cp=require('node:child_process');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'crylo-zip-deterministic-'));
+ try{
+  const original=path.join(dir,'original'),one=path.join(dir,'one'),
+   two=path.join(dir,'two');
+  for(const p of [original,one,two])fs.mkdirSync(p);
+  for(const n of ['z.dll','a.exe'])fs.writeFileSync(path.join(original,n),'static '+n);
+  for(const target of [one,two]){
+   for(const n of ['z.dll','a.exe'])safeCopy(path.join(original,n),path.join(target,n));
+   for(const n of ['z.dll','a.exe']){
+    assert.equal(fs.statSync(path.join(target,n)).mtime.toISOString().slice(0,10),'1980-01-01');
+   }
+  }
+  const z1=path.join(dir,'1.zip'),z2=path.join(dir,'2.zip');
+  packageZip(one,z1);packageZip(two,z2);
+  assert.deepEqual(fs.readFileSync(z1),fs.readFileSync(z2));
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
