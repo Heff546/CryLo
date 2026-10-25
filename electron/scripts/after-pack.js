@@ -168,6 +168,26 @@ module.exports = async function afterPack(context) {
   }
 
   if (context.electronPlatformName === 'darwin') {
+    // The installed GUI must contain the exact reviewed release verification
+    // implementation and currently trusted Pi1 public key. Refuse to package
+    // a Mac wallet with missing or stale update-trust resources.
+    const packagedMacResources = path.dirname(packagedDir);
+    const macTrustInputs = [
+      ['scripts/release/macos-package-trust.js', 'macos-package-trust.js'],
+      ['scripts/release/macos-unsigned-update-stage.js', 'macos-unsigned-update-stage.js'],
+      ['scripts/release/keys/crylo-testnet-release-ed25519-public.pem',
+        'crylo-testnet-release-ed25519-public.pem']
+    ];
+    for (const [sourceName, fileName] of macTrustInputs) {
+      const sourceFile = path.join(root, sourceName);
+      const packagedFile = path.join(packagedMacResources, 'macos-update', fileName);
+      if (!fs.existsSync(sourceFile) || !fs.existsSync(packagedFile) ||
+          sha256(sourceFile) !== sha256(packagedFile)) {
+        throw new Error('CryLo packaged Mac update-trust resource mismatch: ' + fileName);
+      }
+      console.log('Verified packaged Pi1 Mac update resource: ' + fileName);
+    }
+
     const { spawnSync } = require('child_process');
     const nativeArch = context.appOutDir.endsWith('mac-arm64') ? 'arm64' : 'x64';
     const result = spawnSync(process.execPath, [
