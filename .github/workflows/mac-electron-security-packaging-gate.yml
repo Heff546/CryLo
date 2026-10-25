@@ -11,6 +11,7 @@ on:
       - electron/security/**
       - electron/package.json
       - electron/package-lock.json
+      - node-operator/runtime/package-lock.json
       - electron/test/release-packaging-security.test.js
   workflow_dispatch:
 
@@ -144,7 +145,13 @@ jobs:
           signature="$(pkgutil --check-signature "$pkg" 2>&1 || true)"
           printf '%s\n' "$signature" | grep -F 'Status: no signature'
           shasum -a 256 "$pkg"
-          echo 'PASS: original ARM binaries preserved; Electron security module packaged'
+          # Operator dependencies are shipped outside app.asar and must
+          # match the patched, audited Nexus runtime lock as well.
+          operator_fast_uri="$app/Contents/Resources/operator-runtime/node_modules/fast-uri/package.json"
+          test -s "$operator_fast_uri"
+          OPERATOR_FAST_URI="$operator_fast_uri" node -e "const p=require(process.env.OPERATOR_FAST_URI);if(p.version!=='3.1.9')process.exit(1)"
+          echo 'PASS: bundled Nexus operator uses fast-uri 3.1.9'
+          echo 'PASS: original native binaries preserved; Electron security module packaged'
 
       - name: Upload unsigned security validation candidate only
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
