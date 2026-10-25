@@ -1,0 +1,88 @@
+name: CryLo preserve verified unsigned Mac release candidates
+
+on:
+  push:
+    branches:
+      - feature/mac-first-build-gate
+    paths:
+      - .github/workflows/preserve-mac-unsigned-release-candidates.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  retained-mac-candidate:
+    name: Preserve exact unsigned ${{ matrix.arch }} Mac installer candidate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15-intel, arch: x64, mach: x86_64 }
+          - { runner: macos-15, arch: arm64, mach: arm64 }
+    steps:
+      - name: Checkout exact source without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Authenticate build-run and source-equivalence metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+          MACH: ${{ matrix.mach }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "$MACH"
+          dir="$RUNNER_TEMP/CryLo-Mac-Candidate-Provenance"
+          mkdir -p "$dir"
+          gh api repos/Heff546/CryLo/actions/runs/40230632249 > "$dir/run.json"
+          gh api 'repos/Heff546/CryLo/actions/runs/40230632249/artifacts?per_page=100' > "$dir/artifacts.json"
+          gh api "repos/Heff546/CryLo/compare/48fe46e64e94c4c599ef61a7306cef30c88ee55a...$GITHUB_SHA" > "$dir/compare.json"
+          ARCH="$ARCH" CRYLO_DIR="$dir" node - <<'NODE'
+          const fs=require('node:fs'),path=require('node:path');
+          const {analyzeCandidate,CANDIDATES}=require('./scripts/release/unified-candidate-provenance');
+          const dir=process.env.CRYLO_DIR;
+          const read=n=>JSON.parse(fs.readFileSync(path.join(dir,n),'utf8'));
+          const x=CANDIDATES.find(c=>c.platform==='mac'&&c.architecture===process.env.ARCH);
+          if(!x)throw Error('Missing exact Mac release-target definition');
+          const run=read('run.json');
+          if(run.head_sha!=='48fe46e64e94c4c599ef61a7306cef30c88ee55a')
+            throw Error('Unexpected Mac native-binary candidate provenance');
+          const status=analyzeCandidate(x,run,read('artifacts.json'),read('compare.json'),process.env.GITHUB_SHA);
+          if(!status.reusableAsUnsignedCandidate)
+            throw Error('Mac candidate cannot be retained as source-equivalent: '+status.failures.join('; '));
+          console.log('PASS: source-equivalent, non-expired, successfully tested unsigned Mac candidate');
+          NODE
+      - name: Download exact CI validation installer and save immutable checksum
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/crylo-retained-unsigned-$ARCH"
+          mkdir -p "$target"
+          gh run download 40230632249 --repo Heff546/CryLo \
+            --name "crylo-macos-$ARCH-electron-security-validation" --dir "$target"
+          pkg="$target/CryLo-1.1.1-mac-$ARCH-unsigned.pkg"
+          test -s "$pkg"
+          signature="$(pkgutil --check-signature "$pkg" 2>&1 || true)"
+          printf '%s\n' "$signature" | grep -F 'Status: no signature'
+          pkgutil --payload-files "$pkg" | grep -F 'usr/local/bin/crylo'
+          (cd "$target" && /usr/bin/shasum -a 256 "CryLo-1.1.1-mac-$ARCH-unsigned.pkg" > SHA256SUMS-CI-ONLY.txt)
+          (cd "$target" && /usr/bin/shasum -a 256 -c SHA256SUMS-CI-ONLY.txt)
+          echo "CRYLO_RETENTION_DIRECTORY=$target" >> "$GITHUB_ENV"
+          echo 'PASS: original unsigned PKG bytes and independently recomputed SHA-256'
+      - name: Retain CI-only validation candidate with extended expiry
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-mac-${{ matrix.arch }}-verified-unsigned-candidate-retained
+          path: ${{ env.CRYLO_RETENTION_DIRECTORY }}/*
+          if-no-files-found: error
+          retention-days: 60
+          compression-level: 0
