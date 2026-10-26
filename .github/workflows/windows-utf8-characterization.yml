@@ -21,16 +21,25 @@ jobs:
         with:
           persist-credentials: false
           set-safe-directory: false
+      - name: Install MinGW64 compiler for Windows probe
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\msys64\usr\bin\bash.exe')) { throw 'MSYS2 environment unavailable' }
+          C:\msys64\usr\bin\bash.exe -lc 'pacman -Sy --noconfirm mingw-w64-x86_64-gcc'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile behavior probe with native C++ compiler
         shell: bash
         run: |
           set -euo pipefail
           if [ "$RUNNER_OS" = Windows ]; then
             export PATH="/c/msys64/mingw64/bin:$PATH"
-            cxx="/c/msys64/mingw64/bin/g++.exe"
+            cxx="g++"
+            output="utf8-characterization.exe"
           else
             cxx="c++"
+            output="utf8-characterization"
           fi
           "$cxx" -std=c++17 -O0 -Wall -Wextra -I src \
-            scripts/tests/utf8-platform-characterization.cpp -o utf8-characterization
-          ./utf8-characterization
+            scripts/tests/utf8-platform-characterization.cpp -o "$output"
+          "./$output"
