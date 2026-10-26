@@ -31,17 +31,18 @@
 
 #include <cctype>
 #include <cwchar>
+#include <cstdint>
 #include <stdexcept>
 
 namespace tools
 {
   template<typename T, typename Transform>
-  inline T utf8canonical(const T &s, Transform t = [](wint_t c)->wint_t { return c; })
+  inline T utf8canonical(const T &s, Transform t = [](std::uint32_t c)->std::uint32_t { return c; })
   {
     T sc = "";
     size_t avail = s.size();
     const char *ptr = s.data();
-    wint_t cp = 0;
+    std::uint32_t cp = 0;
     int bytes = 1;
     char wbuf[8], *wptr;
     while (avail--)

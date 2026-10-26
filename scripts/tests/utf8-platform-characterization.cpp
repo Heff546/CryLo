@@ -9,7 +9,7 @@ int main() {
   const std::string two="\xC3\xA9";
   const std::string three="\xE2\x82\xAC";
   const std::string four="\xF0\x9F\x98\x80";
-  auto identity=[](wint_t cp)->wint_t{return cp;};
+  auto identity=[](std::uint32_t cp)->std::uint32_t{return cp;};
   if(tools::utf8canonical(ascii,identity)!=ascii) return 1;
   if(tools::utf8canonical(two,identity)!=two) return 2;
   if(tools::utf8canonical(three,identity)!=three) return 3;
