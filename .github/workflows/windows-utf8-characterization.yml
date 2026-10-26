@@ -1,0 +1,36 @@
+name: CryLo UTF8 cross-platform behavior characterization — no release
+on:
+  push:
+    branches: [feature/mac-first-build-gate]
+    paths:
+      - .github/workflows/windows-utf8-characterization.yml
+      - scripts/tests/utf8-platform-characterization.cpp
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  characterize:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04, macos-15-intel, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Compile behavior probe with native C++ compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ]; then
+            export PATH="/c/msys64/mingw64/bin:$PATH"
+            cxx="/c/msys64/mingw64/bin/g++.exe"
+          else
+            cxx="c++"
+          fi
+          "$cxx" -std=c++17 -O0 -Wall -Wextra -I src \
+            scripts/tests/utf8-platform-characterization.cpp -o utf8-characterization
+          ./utf8-characterization
