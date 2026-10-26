@@ -11,6 +11,7 @@ on:
       - contrib/depends/patches/openssl/openssl-3.5.9-mingw-unused-compat.patch
       - scripts/release/crylo-release.js
       - src/daemonizer/windows_service.cpp
+      - src/common/utf8.h
   workflow_dispatch:
 
 permissions:
