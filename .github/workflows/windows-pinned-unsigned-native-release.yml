@@ -148,6 +148,32 @@ jobs:
           if not exist build\win-x64\bin\CryLo-wallet-rpc.exe exit /b 1
           if not exist build\electron-runtime\win\WINDOWS-BUILD-RUNTIME-MANIFEST.json exit /b 1
           echo PASS: Windows native and Electron unsigned release candidate
+      - name: Compile and run real wallet storage roundtrip tests on Windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/crylo-windows-wallet-storage-tests.sh"
+          cat > "$script" <<'SH'
+          set -euo pipefail
+          export MSYSTEM=MINGW64
+          export PATH="/mingw64/bin:/usr/bin"
+          root="$(cygpath -u "$GITHUB_WORKSPACE")"
+          cd "$root/build/win-x64"
+          test -f CMakeCache.txt
+          grep -Fxq 'BUILD_TESTS:BOOL=OFF' CMakeCache.txt
+          # Reuse the already-compiled native libraries and pinned OpenSSL;
+          # enable only the unit_tests target, without repackaging Electron.
+          cmake -D BUILD_TESTS=ON -D MONERO_WALLET_CRYPTO_BENCH=cn .
+          grep -Fxq 'BUILD_TESTS:BOOL=ON' CMakeCache.txt
+          cmake --build . --parallel 1 --target unit_tests
+          executable="$(find . -type f -name unit_tests.exe -print -quit)"
+          test -n "$executable" || { echo 'ERROR: wallet unit test executable absent'; exit 1; }
+          "$executable" --gtest_list_tests | grep -Fq 'account_tags_survive_store_and_reload'
+          "$executable" --data-dir "$root/tests/data" --gtest_filter='wallet_storage.*'
+          echo 'PASS: Windows wallet storage unit tests, including account tags save and reload'
+          SH
+          tr -d '\r' < "$script" > "$script.unix"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
       - name: Audit complete Windows standalone runtime closure
         shell: cmd
         run: |
