@@ -12,6 +12,10 @@ on:
       - scripts/release/crylo-release.js
       - src/daemonizer/windows_service.cpp
       - src/common/utf8.h
+      - src/wallet/wallet2.h
+      - src/cryptonote_core/blockchain.cpp
+      - src/p2p/net_node.inl
+      - tests/unit_tests/wallet_storage.cpp
   workflow_dispatch:
 
 permissions:
