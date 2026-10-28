@@ -28,10 +28,16 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="/c/msys64/mingw64/bin:$PATH"
+          shopt -s nullglob
+          libs=(/c/msys64/mingw64/lib/libboost_serialization*.dll.a /c/msys64/mingw64/lib/libboost_serialization*.a)
+          if (( ${#libs[@]} == 0 )); then
+            echo 'ERROR: installed MinGW Boost serialization import/static library not found'
+            exit 1
+          fi
+          printf 'Using Boost serialization library: %s\n' "${libs[0]}"
           /c/msys64/mingw64/bin/g++.exe -std=c++17 -O0 -Wall -Wextra \
             -I src -I external \
             scripts/tests/windows-wallet-tags-archive-gate.cpp \
-            -L /c/msys64/mingw64/lib -lboost_serialization \
-            -o wallet-tags-archive-gate.exe
+            "${libs[0]}" -o wallet-tags-archive-gate.exe
           ./wallet-tags-archive-gate.exe
           echo 'PASS: account-tag archive Windows-only gate; no release build'
