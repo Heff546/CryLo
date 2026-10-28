@@ -31,6 +31,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
@@ -1335,7 +1336,21 @@ private:
       a & m_unconfirmed_payments.parent();
       if(ver < 23)
         return;
-      a & (std::pair<std::map<std::string, std::string>, std::vector<std::string>>&)m_account_tags;
+      // Preserve the v23+ Boost archive's std::map/vector pair representation.
+      // m_account_tags is a different pair type: do not cast the pair itself.
+      if (t_archive::is_saving::value)
+      {
+        std::pair<std::map<std::string, std::string>, std::vector<std::string>> account_tags(
+          m_account_tags.first.parent(), m_account_tags.second);
+        a & account_tags;
+      }
+      else
+      {
+        std::pair<std::map<std::string, std::string>, std::vector<std::string>> account_tags;
+        a & account_tags;
+        m_account_tags.first.parent() = std::move(account_tags.first);
+        m_account_tags.second = std::move(account_tags.second);
+      }
       if(ver < 24)
         return;
       a & m_ring_history_saved;

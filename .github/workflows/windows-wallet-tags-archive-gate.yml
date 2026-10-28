@@ -5,6 +5,8 @@ on:
     paths:
       - .github/workflows/windows-wallet-tags-archive-gate.yml
       - scripts/tests/windows-wallet-tags-archive-gate.cpp
+      - src/wallet/wallet2.h
+      - tests/unit_tests/wallet_storage.cpp
 permissions:
   contents: read
 jobs:
@@ -27,6 +29,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if grep -Fq 'a & (std::pair<std::map<std::string, std::string>, std::vector<std::string>>&)m_account_tags;' src/wallet/wallet2.h; then
+            echo 'ERROR: unsafe old wallet archive pair cast still present'
+            exit 1
+          fi
+          grep -Fq 'm_account_tags.first.parent() = std::move(account_tags.first);' src/wallet/wallet2.h
           export PATH="/c/msys64/mingw64/bin:$PATH"
           shopt -s nullglob
           libs=(/c/msys64/mingw64/lib/libboost_serialization*.dll.a /c/msys64/mingw64/lib/libboost_serialization*.a)

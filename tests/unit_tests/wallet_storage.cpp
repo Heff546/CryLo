@@ -265,3 +265,40 @@ TEST(wallet_storage, change_password_mem2file)
 
     EXPECT_EQ(primary_address_1, primary_address_2);
 }
+
+TEST(wallet_storage, account_tags_survive_store_and_reload)
+{
+    const path target_wallet_file = unit_test::data_dir / "wallet_account_tags_portable";
+    if (is_file_exist(target_wallet_file.string()))
+        remove(target_wallet_file);
+    if (is_file_exist(target_wallet_file.string() + ".keys"))
+        remove(target_wallet_file.string() + ".keys");
+
+    epee::wipeable_string password("wallet-tags-regression-test");
+    std::string original_address;
+    {
+        tools::wallet2 w;
+        w.generate("", password);
+        original_address = w.get_address_as_str();
+        w.set_account_tag({0}, "savings");
+        w.set_account_tag_description("savings", "Long-term savings");
+        const auto &tags = w.get_account_tags();
+        ASSERT_EQ("Long-term savings", tags.first.at("savings"));
+        ASSERT_FALSE(tags.second.empty());
+        ASSERT_EQ("savings", tags.second[0]);
+        w.store_to(target_wallet_file.string(), password);
+    }
+
+    ASSERT_TRUE(is_file_exist(target_wallet_file.string()));
+    ASSERT_TRUE(is_file_exist(target_wallet_file.string() + ".keys"));
+    {
+        tools::wallet2 restored;
+        restored.load(target_wallet_file.string(), password);
+        EXPECT_EQ(original_address, restored.get_address_as_str());
+        const auto &tags = restored.get_account_tags();
+        ASSERT_EQ("Long-term savings", tags.first.at("savings"));
+        ASSERT_FALSE(tags.second.empty());
+        EXPECT_EQ("savings", tags.second[0]);
+        restored.store_to("", "");
+    }
+}
