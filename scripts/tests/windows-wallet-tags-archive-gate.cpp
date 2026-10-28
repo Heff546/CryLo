@@ -59,7 +59,9 @@ ActualTags decode(const std::string &bytes, Func f) {
 }
 
 bool equal(const ActualTags &a, const ActualTags &b) {
-  return a.first.parent() == b.first.parent() && a.second == b.second;
+  using Map = std::map<std::string, std::string>;
+  return static_cast<const Map&>(a.first) == static_cast<const Map&>(b.first)
+      && a.second == b.second;
 }
 
 void require(bool yes, const char *reason) {
