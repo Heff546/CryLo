@@ -157,7 +157,7 @@ jobs:
           set -euo pipefail
           export MSYSTEM=MINGW64
           export PATH="/mingw64/bin:/usr/bin"
-          root="$(cygpath -u "$GITHUB_WORKSPACE")"
+          root="${1:?Windows source checkout path argument was not supplied}"
           cd "$root/build/win-x64"
           test -f CMakeCache.txt
           grep -Fxq 'BUILD_TESTS:BOOL=OFF' CMakeCache.txt
@@ -168,12 +168,13 @@ jobs:
           cmake --build . --parallel 1 --target unit_tests
           executable="$(find . -type f -name unit_tests.exe -print -quit)"
           test -n "$executable" || { echo 'ERROR: wallet unit test executable absent'; exit 1; }
-          "$executable" --gtest_list_tests | grep -Fq 'account_tags_survive_store_and_reload'
+          test_listing="$("$executable" --gtest_list_tests)"
+          grep -Fq 'account_tags_survive_store_and_reload' <<< "$test_listing"
           "$executable" --data-dir "$root/tests/data" --gtest_filter='wallet_storage.*'
           echo 'PASS: Windows wallet storage unit tests, including account tags save and reload'
           SH
           tr -d '\r' < "$script" > "$script.unix"
-          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")' '$(cygpath -u "$GITHUB_WORKSPACE")'"
       - name: Audit complete Windows standalone runtime closure
         shell: cmd
         run: |
