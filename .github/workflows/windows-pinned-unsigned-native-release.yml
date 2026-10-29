@@ -16,6 +16,8 @@ on:
       - src/cryptonote_core/blockchain.cpp
       - src/p2p/net_node.inl
       - tests/unit_tests/wallet_storage.cpp
+      - tests/unit_tests/epee_boosted_tcp_server.cpp
+      - tests/unit_tests/crypto.cpp
   workflow_dispatch:
 
 permissions:

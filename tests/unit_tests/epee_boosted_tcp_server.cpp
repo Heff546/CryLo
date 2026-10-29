@@ -32,8 +32,10 @@
 #include <boost/chrono/chrono.hpp>
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/mutex.hpp>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <thread>
 
 #include "gtest/gtest.h"
 
