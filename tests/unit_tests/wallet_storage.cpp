@@ -229,6 +229,9 @@ TEST(wallet_storage, change_password_in_memory)
     EXPECT_EQ(primary_address_1, primary_address_2);
 
     EXPECT_THROW(w.change_password("", password_wrong, password1), tools::error::invalid_password);
+    // A rejected change must preserve the current password and wallet state.
+    EXPECT_NO_THROW(w.change_password("", password2, password1));
+    EXPECT_EQ(primary_address_1, w.get_address_as_str());
 }
 
 TEST(wallet_storage, change_password_mem2file)
@@ -300,5 +303,107 @@ TEST(wallet_storage, account_tags_survive_store_and_reload)
         ASSERT_FALSE(tags.second.empty());
         EXPECT_EQ("savings", tags.second[0]);
         restored.store_to("", "");
+    }
+}
+
+
+// Self-contained CryLo wallet storage cases. Unlike the old Monero archive
+// fixture tests above, these require no historical .keys file.
+static void reset_generated_wallet_test_files(const path& wallet_file)
+{
+    if (is_file_exist(wallet_file.string()))
+        remove(wallet_file);
+    if (is_file_exist(wallet_file.string() + ".keys"))
+        remove(wallet_file.string() + ".keys");
+}
+
+TEST(wallet_storage, generated_store_to_file2file)
+{
+    const path source = unit_test::data_dir / "wallet_generated_copy_source";
+    const path target = unit_test::data_dir / "wallet_generated_copy_target";
+    reset_generated_wallet_test_files(source);
+    reset_generated_wallet_test_files(target);
+    epee::wipeable_string password("generated-wallet-copy-password");
+    std::string address;
+    {
+        tools::wallet2 wallet;
+        wallet.generate(source.string(), password);
+        address = wallet.get_address_as_str();
+    }
+    ASSERT_TRUE(is_file_exist(source.string()));
+    ASSERT_TRUE(is_file_exist(source.string() + ".keys"));
+    {
+        tools::wallet2 wallet;
+        wallet.load(source.string(), password);
+        EXPECT_EQ(address, wallet.get_address_as_str());
+        wallet.store_to(target.string(), password);
+    }
+    EXPECT_FALSE(is_file_exist(source.string()));
+    EXPECT_FALSE(is_file_exist(source.string() + ".keys"));
+    ASSERT_TRUE(is_file_exist(target.string()));
+    ASSERT_TRUE(is_file_exist(target.string() + ".keys"));
+    {
+        tools::wallet2 wallet;
+        wallet.load(target.string(), password);
+        EXPECT_EQ(address, wallet.get_address_as_str());
+        wallet.store_to("", "");
+    }
+}
+
+TEST(wallet_storage, generated_change_password_same_file)
+{
+    const path source = unit_test::data_dir / "wallet_generated_change_same";
+    reset_generated_wallet_test_files(source);
+    epee::wipeable_string old_password("wallet-generated-old-same");
+    epee::wipeable_string new_password("wallet-generated-new-same");
+    std::string address;
+    {
+        tools::wallet2 wallet;
+        wallet.generate(source.string(), old_password);
+        address = wallet.get_address_as_str();
+    }
+    {
+        tools::wallet2 wallet;
+        wallet.load(source.string(), old_password);
+        wallet.change_password(wallet.get_wallet_file(), old_password, new_password);
+    }
+    {
+        tools::wallet2 wallet;
+        wallet.load(source.string(), new_password);
+        EXPECT_EQ(address, wallet.get_address_as_str());
+    }
+    {
+        tools::wallet2 wallet;
+        EXPECT_THROW(wallet.load(source.string(), old_password), tools::error::invalid_password);
+    }
+}
+
+TEST(wallet_storage, generated_change_password_different_file)
+{
+    const path source = unit_test::data_dir / "wallet_generated_change_source";
+    const path target = unit_test::data_dir / "wallet_generated_change_target";
+    reset_generated_wallet_test_files(source);
+    reset_generated_wallet_test_files(target);
+    epee::wipeable_string old_password("wallet-generated-old-different");
+    epee::wipeable_string new_password("wallet-generated-new-different");
+    std::string address;
+    {
+        tools::wallet2 wallet;
+        wallet.generate(source.string(), old_password);
+        address = wallet.get_address_as_str();
+    }
+    {
+        tools::wallet2 wallet;
+        wallet.load(source.string(), old_password);
+        wallet.change_password(target.string(), old_password, new_password);
+    }
+    EXPECT_FALSE(is_file_exist(source.string()));
+    EXPECT_FALSE(is_file_exist(source.string() + ".keys"));
+    ASSERT_TRUE(is_file_exist(target.string()));
+    ASSERT_TRUE(is_file_exist(target.string() + ".keys"));
+    {
+        tools::wallet2 wallet;
+        wallet.load(target.string(), new_password);
+        EXPECT_EQ(address, wallet.get_address_as_str());
     }
 }

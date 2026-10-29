@@ -13,6 +13,7 @@ on:
       - src/daemonizer/windows_service.cpp
       - src/common/utf8.h
       - src/wallet/wallet2.h
+      - src/wallet/wallet2.cpp
       - src/cryptonote_core/blockchain.cpp
       - src/p2p/net_node.inl
       - tests/unit_tests/wallet_storage.cpp
@@ -174,8 +175,15 @@ jobs:
           test -n "$executable" || { echo 'ERROR: wallet unit test executable absent'; exit 1; }
           test_listing="$("$executable" --gtest_list_tests)"
           grep -Fq 'account_tags_survive_store_and_reload' <<< "$test_listing"
-          "$executable" --data-dir "$root/tests/data" --gtest_filter='wallet_storage.*'
-          echo 'PASS: Windows wallet storage unit tests, including account tags save and reload'
+          # Historical Monero fixture tests require wallet_00fd416a.keys,
+          # which is not part of the CryLo repository. Do not fabricate that
+          # key file or silently report legacy migration compatibility.
+          test ! -f "$root/tests/data/wallet_00fd416a.keys" || {
+            echo 'ERROR: historical wallet fixture appeared; reassess test selection'; exit 1;
+          }
+          echo 'NOTICE: 3 historical Monero wallet tests remain unvalidated (missing original .keys fixture).'
+          "$executable" --data-dir "$root/tests/data" --gtest_filter='wallet_storage.store_to_mem2file:wallet_storage.change_password_in_memory:wallet_storage.change_password_mem2file:wallet_storage.account_tags_survive_store_and_reload:wallet_storage.generated_*'
+          echo 'PASS: current CryLo wallet save/reopen, password and account-tag storage tests'
           SH
           tr -d '\r' < "$script" > "$script.unix"
           C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")' '$(cygpath -u "$GITHUB_WORKSPACE")'"

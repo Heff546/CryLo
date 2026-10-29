@@ -4936,6 +4936,10 @@ void wallet2::change_password(const std::string &filename, const epee::wipeable_
   THROW_WALLET_EXCEPTION_IF(m_background_syncing || m_is_background_wallet, error::wallet_internal_error,
       "cannot change password from background wallet");
 
+  // Validate the current password before mutating in-memory keys or the cache
+  // key. AskPasswordNever/OnAction wallets keep secret keys decrypted, so
+  // decrypt_keys() alone cannot be relied upon to reject incorrect passwords.
+  verify_password_with_cached_key(original_password);
   if (m_ask_password == AskPasswordToDecrypt && !m_unattended && !m_watch_only)
     decrypt_keys(original_password);
   setup_keys(new_password);
