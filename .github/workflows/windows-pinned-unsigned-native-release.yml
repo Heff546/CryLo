@@ -18,6 +18,8 @@ on:
       - tests/unit_tests/wallet_storage.cpp
       - tests/unit_tests/epee_boosted_tcp_server.cpp
       - tests/unit_tests/crypto.cpp
+      - tests/unit_tests/node_server.cpp
+      - tests/unit_tests/memwipe.cpp
   workflow_dispatch:
 
 permissions:

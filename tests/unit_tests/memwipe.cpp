@@ -28,30 +28,24 @@
 
 #include "gtest/gtest.h"
 
-#include <iomanip>
-#include <stdint.h>
-#include "misc_log_ex.h"
+#include <array>
+#include <cstring>
+
 #include "memwipe.h"
 
-// Probably won't catch the optimized out case, but at least we test
-// it works in the normal case
+// Validate the wipe while the buffer is still alive. Reading a newly
+// allocated buffer after free is undefined and allocator-dependent.
 static void test(bool wipe)
 {
-  char *foo = (char*)malloc(4);
-  ASSERT_TRUE(foo != NULL);
-  intptr_t foop = (intptr_t)foo;
-  strcpy(foo, "bar");
-  void *bar = wipe ? memwipe(foo, 3) : memset(foo, 0, 3);
-  ASSERT_EQ(foo, bar);
-  free(foo);
-  char *quux = (char*)malloc(4); // same size, just after free, so we're likely to get the same, depending on the allocator
-  if ((intptr_t)quux == foop)
-  {
-    MDEBUG(std::hex << std::setw(8) << std::setfill('0') << *(uint32_t*)quux);
-    if (wipe) { ASSERT_TRUE(memcmp(quux, "bar", 3)); }
-  }
-  else MWARNING("We did not get the same location, cannot check");
-  free(quux);
+  std::array<unsigned char, 4> bytes{{'b', 'a', 'r', '!'}};
+  void *const ptr = bytes.data();
+  void *const result = wipe ? memwipe(ptr, 3) : std::memset(ptr, 0, 3);
+  ASSERT_EQ(ptr, result);
+
+  for (std::size_t i = 0; i < 3; ++i)
+    EXPECT_EQ(0, bytes[i]) << "byte " << i << " was not erased";
+  EXPECT_EQ(static_cast<unsigned char>('!'), bytes[3])
+    << "memory outside the requested wipe region changed";
 }
 
 TEST(memwipe, control)
