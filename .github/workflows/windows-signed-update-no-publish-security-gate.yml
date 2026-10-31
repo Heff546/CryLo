@@ -1,0 +1,76 @@
+name: CryLo Windows signed updater trust and downgrade gates (no publishing or native build)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - scripts/tests/windows-signed-update-verifier-e2e.test.js
+      - .github/workflows/windows-signed-update-no-publish-security-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-signed-updater:
+    runs-on: windows-2022
+    timeout-minutes: 14
+    steps:
+      - name: Checkout reviewed source without persisted Git credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Use pinned Windows Node 24 runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Execute production signature/hash verifier and negative scenarios
+        shell: cmd
+        run: |
+          node --check scripts\crylo.js
+          if errorlevel 1 exit /b 1
+          node --check scripts\release\verify-release-manifest.js
+          if errorlevel 1 exit /b 1
+          node --test scripts\tests\windows-signed-update-verifier-e2e.test.js
+          if errorlevel 1 exit /b 1
+          node --test scripts\tests\signed-update-contract.test.js
+          if errorlevel 1 exit /b 1
+          echo PASS: Windows signed updater verifier gates (synthetic keys, no real release installed)
+
+      - name: Check signed historical testnet.21 manifest and incompatible source ancestry
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/crylo-old-release-audit"
+          gh release download v1.1.1-testnet.21 --repo Heff546/CryLo \
+            --pattern 'crylo-release-manifest.json' \
+            --pattern 'crylo-release-manifest.json.sig' \
+            --dir "$RUNNER_TEMP/crylo-old-release-audit"
+          export CRYLO_MANIFEST_DIR="$RUNNER_TEMP/crylo-old-release-audit"
+          node - <<'NODE'
+          const fs=require('fs'),path=require('path'),crypto=require('crypto');
+          const dir=process.env.CRYLO_MANIFEST_DIR;
+          const bytes=fs.readFileSync(path.join(dir,'crylo-release-manifest.json'));
+          const sigText=fs.readFileSync(path.join(dir,'crylo-release-manifest.json.sig'),'utf8').trim();
+          const trusted=crypto.createPublicKey(fs.readFileSync('scripts/release/keys/crylo-testnet-release-ed25519-public.pem'));
+          if(trusted.asymmetricKeyType!=='ed25519'||!/^[A-Za-z0-9+/]+={0,2}$/.test(sigText))throw Error('Invalid trust key/signature encoding');
+          const sig=Buffer.from(sigText,'base64');
+          if(sig.length!==64||!crypto.verify(null,bytes,trusted,sig))throw Error('Historical .21 release is not signed by current trusted CryLo key');
+          const m=JSON.parse(bytes.toString('utf8'));
+          if(m.schema!==1||m.product!=='CryLo'||m.network!=='testnet'||m.signatureAlgorithm!=='Ed25519'||m.hashAlgorithm!=='SHA-256'||m.releaseTag!=='v1.1.1-testnet.21'||m.releaseSequence!==21||m.gitCommit!=='5c7a5ac842eda8f143abacfe6b4e8c22161e0931')throw Error('Old release signed metadata mismatch');
+          const win=m.artifacts.filter(a=>a.platform==='win'&&a.architecture==='x64');
+          if(win.length!==1||win[0].file!=='CryLo-Release-1.1.1-win-x64.zip')throw Error('Historical signed Windows asset identity mismatch');
+          console.log('PASS: existing testnet.21 manifest signature verifies against pinned CryLo trusted public key');
+          console.log('NOTE: historical ZIP file bytes not downloaded in this preflight');
+          NODE
+          tagsha="$(gh api repos/Heff546/CryLo/git/ref/tags/v1.1.1-testnet.21 --jq '.object.sha')"
+          oldcommit="$(gh api "repos/Heff546/CryLo/git/tags/$tagsha" --jq '.object.sha')"
+          test "$oldcommit" = '5c7a5ac842eda8f143abacfe6b4e8c22161e0931'
+          status="$(gh api "repos/Heff546/CryLo/compare/$oldcommit...5120debcc2a75fa0c7198ee0137f142dd0a5f6a8" --jq '.status')"
+          echo "Historical release vs audited Windows native source: $status"
+          test "$status" = diverged
+          echo 'PASS: old published testnet.21 cannot serve as fast-forward update for verified Windows candidate'
+          echo 'PASS: no source modifications, release publication, native compilation or actual install'
