@@ -172,6 +172,62 @@ def check_inherited_prefix_behavior(port):
             raise RuntimeError("Cross-network address checksum mutation unexpectedly accepted (" + network + ")")
     return len(cases)
 
+def validate_fixed_public_vectors(port):
+    """Read-only RPC format validation. Does NOT prove multisig derivation/signing."""
+    import ast
+    root = Path(__file__).resolve().parents[2]
+    fixture = root / "tests" / "functional_tests" / "crylo_address_vectors.py"
+    tree = ast.parse(fixture.read_text(encoding="utf-8"), filename=str(fixture))
+    types = {
+        "PRIMARY_ADDRESS":"standard", "SECOND_ADDRESS":"standard",
+        "ACCOUNT_1_ADDRESS":"subaddress", "ACCOUNT_2_ADDRESS":"subaddress",
+        "SUB_0_1_ADDRESS":"subaddress", "SUB_1_1_ADDRESS":"subaddress",
+        "SUB_1_2_ADDRESS":"subaddress", "SUB_0_999_ADDRESS":"subaddress",
+        "INTEGRATED_ADDRESS_VALIDATION":"integrated",
+        "SUB_VALIDATION_1":"subaddress", "SUB_VALIDATION_2":"subaddress",
+    }
+    vectors = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        name = node.targets[0].id
+        if name not in types or name in vectors:
+            raise RuntimeError("Unexpected public address vector assignment")
+        if not isinstance(node.value, ast.Constant) or not isinstance(node.value.value, str):
+            raise RuntimeError("Public address vector is not a static string")
+        vectors[name] = node.value.value
+    if set(vectors) != set(types) or len(set(vectors.values())) != len(vectors):
+        raise RuntimeError("Missing, duplicated or colliding CryLo public address reference vectors")
+    for name, address in vectors.items():
+        result = rpc(port, "validate_address", {"address":address,"any_net_type":False})
+        expected_type = types[name]
+        if not result.get("valid") or result.get("nettype") != "mainnet":
+            raise RuntimeError("CryLo RPC rejected independently re-encoded public address: " + name)
+        if bool(result.get("integrated")) != (expected_type=="integrated"):
+            raise RuntimeError("Integrated flag mismatch in reference vector: " + name)
+        if bool(result.get("subaddress")) != (expected_type=="subaddress"):
+            raise RuntimeError("Subaddress flag mismatch in reference vector: " + name)
+    multisig_file = root / "tests" / "functional_tests" / "multisig.py"
+    multisig_tree = ast.parse(multisig_file.read_text(encoding="utf-8"), filename=str(multisig_file))
+    matches = [
+        node.value for node in multisig_tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(x, ast.Name) and x.id=="TEST_CASES" for x in node.targets)
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("Multisig independent expected-address table not found")
+    entries = ast.literal_eval(matches[0])
+    mn_expected = [(2,2),(2,3),(3,3),(3,4),(2,4),(1,2)]
+    if len(entries)!=6 or [(m,n) for m,n,_ in entries] != mn_expected:
+        raise RuntimeError("Multisig configuration/fixture provenance changed")
+    for m,n,address in entries:
+        response = rpc(port,"validate_address",{"address":address,"any_net_type":False})
+        if not response.get("valid") or response.get("nettype")!="mainnet" or response.get("subaddress") or response.get("integrated"):
+            raise RuntimeError("CryLo multisig %s-of-%s fixed public address fails mainnet-format validation" % (m,n))
+    if len(set(row[2] for row in entries))!=6:
+        raise RuntimeError("Duplicate independent expected CryLo multisig addresses")
+    return len(vectors),len(entries)
+
 def smoke(directory, port, report_path):
     response = rpc(port, "restore_deterministic_wallet", {
         "seed": PUBLIC_TEST_SEED,
@@ -213,6 +269,7 @@ def smoke(directory, port, report_path):
         if rpc(port,"validate_address",{"address":bad,"any_net_type":True}).get("valid"):
             raise RuntimeError("Wallet RPC accepted legacy or invalid address")
     cross_network_count = check_inherited_prefix_behavior(port)
+    public_count, multisig_count = validate_fixed_public_vectors(port)
     report = {
         "classification":"WINDOWS_EXISTING_UNSIGNED_BINARY_RPC_SMOKE_ONLY",
         "sourceCommit":EXPECTED_SOURCE,
@@ -223,6 +280,9 @@ def smoke(directory, port, report_path):
         "independentPrimaryAndSubaddressVectors": "passed",
         "integratedAddressRoundtrip": "passed",
         "oldMoneroAndInvalidAddressRejection": "passed",
+        "fixedCryLoPublicVectorsFormatValidated": public_count,
+        "fixedMultisigExpectedAddressesFormatValidated": multisig_count,
+        "multisigDerivationOrSigningExecuted": False,
         "strictMainnetRejectedInheritedCrossNetworkAddresses":cross_network_count,
         "explicitAnyNetTypeClassifiedInheritedCrossNetworkAddresses":cross_network_count,
         "legacyMoneroTestnetAndStagenetPrefixOverlap":"confirmed; preserve compatibility and review transaction/UI network checks",
@@ -234,6 +294,7 @@ def smoke(directory, port, report_path):
     report_path.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     print("PASS: existing unsigned Windows CryLo wallet RPC matched independent primary and subaddress vectors")
     print("PASS: integrated address roundtrip and legacy address rejection")
+    print("PASS: %s CryLo public vectors and %s fixed multisig addresses validated against actual wallet RPC (format only)" % (public_count,multisig_count))
     print("PASS: %s inherited testnet/stagenet fixture addresses rejected by default, correctly classified only with any_net_type" % cross_network_count)
     print("NOTICE: inherited Monero network prefix overlap confirmed; no protocol changes authorized")
     print("NOTICE: staged URI fix, multisig and transfer tests NOT executed; release remains frozen")
