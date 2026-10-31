@@ -89,7 +89,7 @@ class URITest:
             assert parsed.uri.amount == 0
             assert parsed.uri.tx_description == ''
             assert parsed.uri.recipient_name == ''
-            assert not parsed.get('unknown_parameters', [])
+            assert 'unknown_parameters' not in parsed or len(parsed.unknown_parameters) == 0
 
             # CryLo atomic units have 11 decimal places; use an exact
             # atomic amount and require the RPC to round-trip it.
@@ -99,7 +99,7 @@ class URITest:
             parsed = wallet.parse_uri(result.uri)
             assert parsed.uri.address == address
             assert parsed.uri.amount == atomic_amount
-            assert not parsed.get('unknown_parameters', [])
+            assert 'unknown_parameters' not in parsed or len(parsed.unknown_parameters) == 0
 
         address = self.primary_address
         result = wallet.make_uri(address=address, tx_description=first)
