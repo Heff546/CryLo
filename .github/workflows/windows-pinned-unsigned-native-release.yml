@@ -2,7 +2,7 @@ name: CryLo Windows pinned unsigned release build
 
 on:
   push:
-    branches: [feature/mac-first-build-gate]
+    branches: [feature/mac-first-build-gate, audit/windows-warning-fixes]
     paths:
       - .github/workflows/windows-pinned-unsigned-native-release.yml
       - .gitattributes
