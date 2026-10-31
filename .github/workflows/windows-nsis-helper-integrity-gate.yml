@@ -1,0 +1,38 @@
+name: CryLo Windows NSIS helper trust pin fail-closed packaging audit
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/windows-nsis-helper-integrity-gate.yml
+      - electron/build/installer.nsh
+      - electron/build/windows-installer-runtime.js
+      - electron/scripts/before-pack.js
+      - electron/scripts/verify-windows-installer-helper-pin.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  helper-pin:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Verify exact Windows NSIS runtime-helper hash and reject tampering
+        shell: cmd
+        run: |
+          node --check electron\scripts\verify-windows-installer-helper-pin.js
+          if errorlevel 1 exit /b 1
+          node electron\scripts\verify-windows-installer-helper-pin.js
+          if errorlevel 1 exit /b 1
+          node -e "const fs=require('fs'),os=require('os'),path=require('path');const {verifyWindowsInstallerHelperPin:check}=require('./electron/scripts/verify-windows-installer-helper-pin');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'crylo-nsis-tamper-'));try{const src='electron/build/installer.nsh';let altered=fs.readFileSync(src,'utf8');altered=altered.replace('d222a115c756797ef0005e16af720b90e11907c8c5dfda7c118e0680deb2b6e1','0000000000000000000000000000000000000000000000000000000000000000');if(altered===fs.readFileSync(src,'utf8'))throw Error('Expected hash not found in original installer');const fake=path.join(dir,'installer.nsh');fs.writeFileSync(fake,altered,'utf8');let rejected=false;try{check(path.resolve('electron'),{nsisPath:fake})}catch(error){if(/SHA256 mismatch/.test(error.message))rejected=true;else throw error}if(!rejected)throw Error('Tampered NSIS helper pin was accepted');console.log('PASS: tampered Windows NSIS helper pin rejected before packaging')}finally{fs.rmSync(dir,{recursive:true,force:true})}"
+          if errorlevel 1 exit /b 1
+          echo PASS: Windows NSIS immutable helper pin and negative tamper gate
