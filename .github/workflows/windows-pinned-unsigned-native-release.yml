@@ -10,6 +10,7 @@ on:
       - contrib/depends/patches/openssl/openssl-3.5.9-mingw-warning-compat.patch
       - contrib/depends/patches/openssl/openssl-3.5.9-mingw-unused-compat.patch
       - scripts/release/crylo-release.js
+      - cmake/CheckTrezor.cmake
       - src/daemonizer/windows_service.cpp
       - src/common/utf8.h
       - src/wallet/wallet2.h
