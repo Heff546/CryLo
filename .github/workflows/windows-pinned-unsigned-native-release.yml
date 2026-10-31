@@ -94,7 +94,7 @@ jobs:
           mkdir -p /tmp/crylo-msys2-pinned
           cd /tmp/crylo-msys2-pinned
           cat > packages.txt <<'PINS'
-          mingw-w64-x86_64-abseil-cpp-20260526.0-1-any.pkg.tar.zst c6b613a70906f58d5cffbcfa913ef582fa9bb418301039b6f2e4326cfe558b12
+          mingw-w64-x86_64-abseil-cpp-20260817.0-1-any.pkg.tar.zst 2fb525de7a87f25b4b5cfd2d0c8f2a40c24f7bebfc18aca4dd693e92e624c481
           mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst 89fb61549a437d65076a092a367fcb264fc7045ee9ebef48cd81f5a76a5588f8
           mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst 124edc26b009678a4c5e759481a364abf63ed7f2f49a53092e8bd0a47c0c0740
           mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst 4d737e09dd1137bb318e2d563962ddcbe511de02155e5835affc1f09d174c6a3
@@ -110,7 +110,7 @@ jobs:
             pacman -Qp "$file"
           done < packages.txt
           pacman -U --noconfirm \
-            mingw-w64-x86_64-abseil-cpp-20260526.0-1-any.pkg.tar.zst \
+            mingw-w64-x86_64-abseil-cpp-20260817.0-1-any.pkg.tar.zst \
             mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst \
             mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst \
             mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst
@@ -120,7 +120,7 @@ jobs:
           mingw-w64-x86_64-unbound 1.26.1
           mingw-w64-x86_64-boost 1.92.0
           mingw-w64-x86_64-protobuf 36.2
-          mingw-w64-x86_64-abseil-cpp 20260526.0
+          mingw-w64-x86_64-abseil-cpp 20260817.0
           mingw-w64-x86_64-zeromq 4.3.5
           mingw-w64-x86_64-libsodium 1.0.22
           mingw-w64-x86_64-libiconv 1.19
@@ -156,7 +156,7 @@ jobs:
           echo "protoc exit status=$rc"
           if [ "$rc" -ne 0 ]; then
             echo '===== protoc imported Windows DLL names ====='
-            x86_64-w64-mingw32-objdump -p /mingw64/bin/protoc.exe | grep 'DLL Name:' || true
+            /mingw64/bin/objdump.exe -p /mingw64/bin/protoc.exe | grep 'DLL Name:' || true
             echo '===== MSYS2 cygcheck runtime dependency resolution ====='
             if [ -x /usr/bin/cygcheck.exe ]; then
               /usr/bin/cygcheck.exe /mingw64/bin/protoc.exe || true
@@ -168,6 +168,13 @@ jobs:
             echo 'FAIL: pinned protoc cannot execute from the exact Windows CMake shell'
             exit 1
           fi
+          for required in libabsl_hash-2608.0.0.dll libabsl_log_initialize-2608.0.0.dll libabsl_strings-2608.0.0.dll; do
+            test -f "/mingw64/bin/$required" || {
+              echo "FAIL: matching Abseil runtime DLL missing: $required"
+              exit 1
+            }
+          done
+          pacman -Qkk mingw-w64-x86_64-protobuf mingw-w64-x86_64-abseil-cpp
           echo 'PASS: pinned protoc executes from Windows CMake shell'
           SH
           tr -d '\r' < "$script" > "$script.unix"

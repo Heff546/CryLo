@@ -37,7 +37,7 @@ const windowsOpenSSLBuildStampBase = [
 const windowsSharedDependencyVersions = Object.freeze({
   'mingw-w64-x86_64-boost': '1.92.0',
   'mingw-w64-x86_64-protobuf': '36.2',
-  'mingw-w64-x86_64-abseil-cpp': '20260526.0',
+  'mingw-w64-x86_64-abseil-cpp': '20260817.0',
   'mingw-w64-x86_64-hidapi': '0.15.0',
   'mingw-w64-x86_64-libusb': '1.0.30',
   'mingw-w64-x86_64-zeromq': '4.3.5',
