@@ -19,7 +19,7 @@ jobs:
       - name: Download identity-verified exact original unsigned installer
         shell: bash
         env:
-          GH_${{ github.token }}: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           run=41244508425
