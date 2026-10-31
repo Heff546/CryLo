@@ -71,13 +71,47 @@ for name in ACTIVE[1:]:
     if name.endswith("/speed.py"):
         if s.index("from __future__ import print_function") > s.index("import time"):
             raise SystemExit("FAIL: Python future import must precede ordinary imports")
-# Fixed public-address expected strings must remain independent of runtime RPC.
+# Check actual assignment syntax and public-address encoding, not comments.
 vectors_src = (ROOT / "tests/functional_tests/crylo_address_vectors.py").read_text(encoding="utf8")
-ast.parse(vectors_src, filename="crylo_address_vectors.py")
-if vectors_src.count(" = '") != 11:
-    raise SystemExit("FAIL: expected 11 fixed CryLo address vectors")
-if "PRIVATE KEY" in vectors_src.upper() or "SECRET_KEY" in vectors_src:
-    raise SystemExit("FAIL: review public-only fixture file")
+tree = ast.parse(vectors_src, filename="crylo_address_vectors.py")
+expected_vector_prefixes = {
+    "PRIMARY_ADDRESS": "Wo", "SECOND_ADDRESS": "Wo",
+    "ACCOUNT_1_ADDRESS": "WW", "ACCOUNT_2_ADDRESS": "WW",
+    "SUB_0_1_ADDRESS": "WW", "SUB_1_1_ADDRESS": "WW",
+    "SUB_1_2_ADDRESS": "WW", "SUB_0_999_ADDRESS": "WW",
+    "INTEGRATED_ADDRESS_VALIDATION": "So",
+    "SUB_VALIDATION_1": "WW", "SUB_VALIDATION_2": "WW",
+}
+addresses = {}
+for node in tree.body:
+    if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+        continue
+    name = node.targets[0].id
+    if name not in expected_vector_prefixes or name in addresses:
+        raise SystemExit("FAIL: unexpected or duplicate CryLo vector assignment: " + name)
+    if not isinstance(node.value, ast.Constant) or not isinstance(node.value.value, str):
+        raise SystemExit("FAIL: CryLo fixture values must be fixed public-address literals")
+    value = node.value.value
+    if not value.startswith(expected_vector_prefixes[name]) or len(value) not in (97, 108) or not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]+", value):
+        raise SystemExit("FAIL: invalid CryLo public-address fixture: " + name)
+    addresses[name] = value
+if set(addresses) != set(expected_vector_prefixes):
+    raise SystemExit("FAIL: missing or added CryLo fixture assignments")
+
+# Current CryLo chain configurations must match the pinned public vectors.
+config_src = (ROOT / "src/cryptonote_config.h").read_text(encoding="utf8")
+prefix_values = {}
+for typ in ("", "INTEGRATED_", "SUB"):
+    prefix_name = "CRYPTONOTE_PUBLIC_" + ("SUBADDRESS" if typ == "SUB" else typ + "ADDRESS") + "_BASE58_PREFIX"
+    prefix_values[prefix_name] = [int(x) for x in re.findall(
+        r"uint64_t const " + prefix_name + r"\s*=\s*(\d+);", config_src)]
+if prefix_values != {
+    "CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX": [4146, 53, 24],
+    "CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX": [6810, 54, 25],
+    "CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX": [12208, 63, 36],
+}:
+    raise SystemExit("FAIL: public-address network prefixes changed; regenerate and independently verify CryLo vectors")
+
 validation_src = (ROOT / "tests/functional_tests/validate_address.py").read_text(encoding="utf8")
 ast.parse(validation_src, filename="validate_address.py")
 if "INTEGRATED_ADDRESS_VALIDATION" not in validation_src or "SUB_VALIDATION_1" not in validation_src:
@@ -108,6 +142,13 @@ report = {
     "rpcIntegrationExecuted": False,
     "migrated": list(ACTIVE),
     "remainingLegacyAddressCandidatesByFile": other,
-    "note": "Remaining fixtures require wallet-derived CryLo addresses or verified CryLo vectors. Do not change upstream copyright or compatibility fixtures blindly."
+    "verifiedPublicVectorAssignments": len(addresses),
+    "networkPrefixOverlapRequiresReview": {
+        "testnet": {"standard": 53, "integrated": 54, "subaddress": 63},
+        "stagenet": {"standard": 24, "integrated": 25, "subaddress": 36},
+        "status": "inherited prefix overlap with legacy Monero networks; no protocol changes authorized",
+    },
+    "externalOpenAliasFixtureReviewRequired": True,
+    "note": "Generated CryLo mainnet vectors still require wallet RPC execution. Network-prefix and external OpenAlias review remain open."
 }
 print(json.dumps(report, indent=2))
