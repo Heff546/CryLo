@@ -4,6 +4,7 @@ on:
     branches: [feature/mac-first-build-gate, audit/windows-warning-fixes]
     paths:
       - .github/workflows/windows-wallet-tags-archive-gate.yml
+      - docs/security/windows-wallet-archive-trigger-2026-10-31.md
       - scripts/tests/windows-wallet-tags-archive-gate.cpp
       - src/wallet/wallet2.h
       - tests/unit_tests/wallet_storage.cpp
