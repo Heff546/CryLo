@@ -43,6 +43,34 @@ jobs:
           test -f "$out/translations/CMakeCache.txt"
           echo 'PASS: isolated Windows Google Test and translations CMake configuration'
 
+      - name: Provision the pinned MinGW CMake compiler and generator for configuration-only check
+        shell: cmd
+        run: |
+          if not exist C:\msys64\usr\bin\bash.exe exit /b 1
+          C:\msys64\usr\bin\bash.exe -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc mingw-w64-x86_64-make"
+          if errorlevel 1 exit /b 1
+
+      - name: Verify the exact CMake 4.4.4 MinGW warning profile without native compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/c/msys64/mingw64/bin:$PATH"
+          out="$RUNNER_TEMP/crylo-windows-toolchain-audit"
+          test "$(cmake --version | head -n1)" = 'cmake version 4.4.4' || {
+            echo "ERROR: tested MinGW CMake version differs from the successful Windows release toolchain"
+            cmake --version
+            exit 1
+          }
+          cmake -S tests/gtest -B "$out/gtest-mingw" -G "MinGW Makefiles" 2>&1 | tee "$out/gtest-mingw.log"
+          cmake -S translations -B "$out/translations-mingw" -G "MinGW Makefiles" 2>&1 | tee "$out/translations-mingw.log"
+          if grep -iE 'CMake Warning \((author|deprecated)\)|CMake Error' "$out/gtest-mingw.log" "$out/translations-mingw.log"; then
+            echo "ERROR: MinGW CMake compatibility warning persists"
+            exit 1
+          fi
+          test -f "$out/gtest-mingw/CMakeCache.txt"
+          test -f "$out/translations-mingw/CMakeCache.txt"
+          echo 'PASS: actual MinGW CMake 4.4.4 configured both projects without compatibility warnings; no CryLo binaries built'
+
       - name: Audit RPC Python test prerequisites without installing or executing RPC services
         shell: bash
         run: |
@@ -94,6 +122,8 @@ jobs:
           path: |
             ${{ runner.temp }}/crylo-windows-toolchain-audit/gtest.log
             ${{ runner.temp }}/crylo-windows-toolchain-audit/translations.log
+            ${{ runner.temp }}/crylo-windows-toolchain-audit/gtest-mingw.log
+            ${{ runner.temp }}/crylo-windows-toolchain-audit/translations-mingw.log
             ${{ runner.temp }}/crylo-windows-toolchain-audit/python-prerequisites.json
           if-no-files-found: error
           retention-days: 30
