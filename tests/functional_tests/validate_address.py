@@ -32,6 +32,7 @@
 """
 
 from __future__ import print_function
+import os
 from framework.wallet import Wallet
 from crylo_address_vectors import (PRIMARY_ADDRESS, SECOND_ADDRESS, INTEGRATED_ADDRESS_VALIDATION,
     SUB_VALIDATION_1, SUB_VALIDATION_2)
@@ -57,7 +58,7 @@ class AddressValidationTest():
 
     def check_bad_addresses(self):
         print('Validating bad addresses')
-        bad_addresses = ['', 'a', PRIMARY_ADDRESS[:-1] + ('1' if PRIMARY_ADDRESS[-1] != '1' else '2'), ' ', '@', '42ey']
+        bad_addresses = ['', 'a', PRIMARY_ADDRESS[:-1] + ('1' if PRIMARY_ADDRESS[-1] != '1' else '2'), ' ', '@', 'monero:' + PRIMARY_ADDRESS]
         for address in bad_addresses:
             res = self.wallet.validate_address(address, any_net_type = False)
             assert not res.valid
@@ -97,21 +98,27 @@ class AddressValidationTest():
                     assert not res.valid
 
     def check_openalias_addresses(self):
-        # External DNS OpenAlias compatibility fixture retained pending review.
-        # It must not be treated as an approved CryLo payment destination.
-        print('Validating openalias addresses')
-        addresses = [
-            ['donate@getmonero.org', '888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H']
-        ]
-        for address in addresses:
-            res = self.wallet.validate_address(address[0])
-            assert not res.valid
-            res = self.wallet.validate_address(address[0], allow_openalias = True)
-            assert res.valid
-            assert not res.integrated
-            assert res.subaddress
-            assert res.nettype == 'mainnet'
-            assert res.openalias_address == address[1]
+        # Never resolve a third-party Monero donation alias by default.
+        # Explicit fixtures require a real, reviewed CryLo alias and expected
+        # CryLo public address. This is an external DNS integration case, not
+        # a self-contained wallet unit test.
+        alias = os.environ.get('CRYLO_TEST_OPENALIAS', '').strip()
+        expected = os.environ.get('CRYLO_TEST_OPENALIAS_EXPECTED_ADDRESS', '').strip()
+        if bool(alias) != bool(expected):
+            raise AssertionError("Both CryLo OpenAlias test environment variables are required")
+        if not alias:
+            print("SKIP: external OpenAlias DNS validation (no reviewed CryLo test alias configured)")
+            return
+        expected_validation = self.wallet.validate_address(expected)
+        assert expected_validation.valid
+        assert expected.startswith(('Wo', 'WW'))
+        assert not self.wallet.validate_address(alias).valid
+        res = self.wallet.validate_address(alias, allow_openalias = True)
+        assert res.valid
+        assert res.integrated == expected_validation.integrated
+        assert res.subaddress == expected_validation.subaddress
+        assert res.nettype == 'mainnet'
+        assert res.openalias_address == expected
 
 if __name__ == '__main__':
     AddressValidationTest().run_test()

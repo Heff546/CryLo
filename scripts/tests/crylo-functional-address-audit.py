@@ -123,6 +123,15 @@ validation_src = (ROOT / "tests/functional_tests/validate_address.py").read_text
 ast.parse(validation_src, filename="validate_address.py")
 if "INTEGRATED_ADDRESS_VALIDATION" not in validation_src or "SUB_VALIDATION_1" not in validation_src:
     raise SystemExit("FAIL: CryLo mainnet network validation vectors missing")
+for name in ("tests/functional_tests/address_book.py", "tests/functional_tests/validate_address.py"):
+    source = (ROOT / name).read_text(encoding="utf8")
+    if "donate@getmonero.org" in source or "888tNkZrPN" in source:
+        raise SystemExit("FAIL: default external Monero donation fixture remains in: " + name)
+    for env in ("CRYLO_TEST_OPENALIAS", "CRYLO_TEST_OPENALIAS_EXPECTED_ADDRESS"):
+        if env not in source:
+            raise SystemExit("FAIL: optional CryLo OpenAlias integration contract absent in: " + name)
+    if "SKIP: external OpenAlias DNS" not in source:
+        raise SystemExit("FAIL: external OpenAlias DNS test does not report a skipped case: " + name)
 
 # URI support is part of the same address-migration release gate.
 wallet_cpp = (ROOT / "src/wallet/wallet2.cpp").read_text(encoding="utf8")
@@ -156,6 +165,8 @@ report = {
         "status": "inherited prefix overlap with legacy Monero networks; no protocol changes authorized",
     },
     "externalOpenAliasFixtureReviewRequired": True,
+    "defaultMoneroOpenAliasDNSTestDisabled": True,
+    "externalOpenAliasIntegrationExecuted": False,
     "note": "Generated CryLo mainnet vectors still require wallet RPC execution. Network-prefix and external OpenAlias review remain open."
 }
 print(json.dumps(report, indent=2))
