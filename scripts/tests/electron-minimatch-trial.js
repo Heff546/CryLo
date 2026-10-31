@@ -3,7 +3,7 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {spawnSync}=require('node:child_process'),{createRequire}=require('node:module');
 const candidate=process.argv[2],output=process.argv[3];
-if(!['baseline','override','builder','builder-override'].includes(candidate)||!output)throw Error('candidate and report required');
+if(!['baseline','override','builder','builder-override','scoped-10','scoped-9-10'].includes(candidate)||!output)throw Error('candidate and report required');
 const source=path.resolve(__dirname,'../../electron');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'crylo-electron-'));
 const report={candidate,releaseFrozen:true,mayPublish:false,nativeBuild:false,installerBuild:false};
@@ -45,6 +45,10 @@ async function smoke(){
   for(const f of ['package.json','package-lock.json'])fs.copyFileSync(path.join(source,f),path.join(dir,f));
   const pkg=JSON.parse(fs.readFileSync(path.join(dir,'package.json'),'utf8'));
   if(candidate.includes('override'))pkg.overrides={...(pkg.overrides||{}),minimatch:'11.0.1'};
+  if(candidate==='scoped-10'||candidate==='scoped-9-10'){
+    pkg.overrides={'app-builder-lib':{minimatch:'11.0.1'}};
+    if(candidate==='scoped-9-10')pkg.overrides['@electron/universal']={minimatch:'11.0.1'};
+  }
   if(candidate.includes('builder'))pkg.devDependencies['electron-builder']='26.18.1';
   fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify(pkg,null,2)+'\n');
   if(candidate!=='baseline'){
