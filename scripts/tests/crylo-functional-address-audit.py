@@ -15,6 +15,7 @@ ACTIVE = (
     "tests/functional_tests/txpool.py",
     "tests/functional_tests/rpc_payment.py",
     "tests/functional_tests/uri.py",
+    "tests/functional_tests/speed.py",
 )
 # Detect legacy Monero-form base58 constants; do not treat copyright headers as an address.
 MONERO_ADDRESS_LIKE = re.compile(r"(?<![A-Za-z0-9])[48][1-9A-HJ-NP-Za-km-z]{80,115}(?![A-Za-z0-9])")
@@ -40,9 +41,12 @@ for name in ACTIVE[1:]:
             raise SystemExit("FAIL: RPC payment test not using explicit CryLo address")
     elif "self.mining_address = res.address" not in s or "validate_address(self.mining_address).valid" not in s:
         raise SystemExit("FAIL: RPC wallet-derived address contract missing: " + name)
-    if name.endswith("/txpool.py"):
+    if name.endswith("/txpool.py") or name.endswith("/speed.py"):
         if "self.destination_address = destination.address" not in s:
-            raise SystemExit("FAIL: txpool destination is not wallet-generated")
+            raise SystemExit("FAIL: receiver destination is not wallet-generated: " + name)
+    if name.endswith("/speed.py"):
+        if s.index("from __future__ import print_function") > s.index("import time"):
+            raise SystemExit("FAIL: Python future import must precede ordinary imports")
 # URI support is part of the same address-migration release gate.
 wallet_cpp = (ROOT / "src/wallet/wallet2.cpp").read_text(encoding="utf8")
 unit_cpp = (ROOT / "tests/unit_tests/wallet_storage.cpp").read_text(encoding="utf8")

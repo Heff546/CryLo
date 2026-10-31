@@ -39,9 +39,9 @@ Test the following RPCs:
 """
 
 
+from __future__ import print_function
 import time
 from time import sleep
-from __future__ import print_function
 
 from framework.daemon import Daemon
 from framework.wallet import Wallet
@@ -64,11 +64,17 @@ class SpeedTest():
         # close the wallet if any, will throw if none is loaded
         try: wallet.close_wallet()
         except: pass
-        wallet.restore_deterministic_wallet('velvet lymph giddy number token physics poetry unquoted nibs useful sabotage limits benches lifestyle eden nitrogen anvil fewest avoid batch vials washing fences goat unquoted')
+        res = wallet.restore_deterministic_wallet(seed = 'velvet lymph giddy number token physics poetry unquoted nibs useful sabotage limits benches lifestyle eden nitrogen anvil fewest avoid batch vials washing fences goat unquoted')
+        self.mining_address = res.address
+        assert wallet.validate_address(self.mining_address).valid
+        destination = wallet.create_address(account_index = 0, label = "speed-recipient")
+        self.destination_address = destination.address
+        assert self.destination_address != self.mining_address
+        assert wallet.validate_address(self.destination_address).valid
 
         destinations = []
         for i in range(3):
-            destinations.append({"amount":1,"address":'888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H'})
+            destinations.append({"amount":1,"address":self.destination_address})
 
         self._test_speed_generateblocks(daemon=daemon, blocks=70)
         for i in range(1, 10):
@@ -82,7 +88,7 @@ class SpeedTest():
         print('Test speed of block generation')
         start = time.time()
 
-        res = daemon.generateblocks('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', blocks)
+        res = daemon.generateblocks(self.mining_address, blocks)
 
         print('generating ', blocks, 'blocks took: ', time.time() - start, 'seconds')
 
@@ -90,7 +96,7 @@ class SpeedTest():
         print('Test speed of transfer')
         start = time.time()
 
-        destinations = [{"amount":1,"address":'888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H'}]
+        destinations = [{"amount":1,"address":self.destination_address}]
         res = wallet.transfer_split(destinations)
 
         print('generating tx took: ', time.time() - start, 'seconds')
