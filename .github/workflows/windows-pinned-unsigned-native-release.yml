@@ -138,6 +138,40 @@ jobs:
           SH
           tr -d '\r' < "$script" > "$script.unix"
           C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
+      - name: Fail-fast diagnostic of native Protobuf DLL resolution before OpenSSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/crylo-protoc-runtime-gate.sh"
+          cat > "$script" <<'SH'
+          set -uo pipefail
+          export MSYSTEM=MINGW64
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          echo '===== CRYLO MSYS2 CMAKE-SHELL PROTOC RUNTIME GATE ====='
+          printf 'MSYSTEM=%s\nPATH=%s\n' "$MSYSTEM" "$PATH"
+          echo "protoc=$(command -v protoc)"
+          echo '===== Native protoc launch ====='
+          protoc --version
+          rc=$?
+          echo "protoc exit status=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo '===== protoc imported Windows DLL names ====='
+            x86_64-w64-mingw32-objdump -p /mingw64/bin/protoc.exe | grep 'DLL Name:' || true
+            echo '===== MSYS2 cygcheck runtime dependency resolution ====='
+            if [ -x /usr/bin/cygcheck.exe ]; then
+              /usr/bin/cygcheck.exe /mingw64/bin/protoc.exe || true
+            else
+              echo 'cygcheck.exe unavailable'
+            fi
+            echo '===== Selected environment variables ====='
+            env | grep -Ei '^(MSYSTEM|MINGW_PREFIX|MSYS2_PATH_TYPE|PATH|LD_LIBRARY_PATH|PROTOBUF|CMAKE)=' || true
+            echo 'FAIL: pinned protoc cannot execute from the exact Windows CMake shell'
+            exit 1
+          fi
+          echo 'PASS: pinned protoc executes from Windows CMake shell'
+          SH
+          tr -d '\r' < "$script" > "$script.unix"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
       - name: Verify normal-user CMD release prerequisites
         shell: cmd
         run: |
