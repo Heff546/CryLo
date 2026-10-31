@@ -1,0 +1,41 @@
+name: CryLo Windows Abseil signed package fingerprint (diagnostic only)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/windows-abseil-package-fingerprint.yml
+
+permissions:
+  contents: read
+
+jobs:
+  signed-package-fingerprint:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - name: Verify Abseil 2608 package signature and report SHA256 (no native build)
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/crylo-abseil-fingerprint.sh"
+          cat > "$script" <<'SH'
+          set -euo pipefail
+          export MSYSTEM=MINGW64
+          export PATH="/mingw64/bin:/usr/bin"
+          file="mingw-w64-x86_64-abseil-cpp-20260817.0-1-any.pkg.tar.zst"
+          work="$(mktemp -d)"
+          cd "$work"
+          url="https://repo.msys2.org/mingw/mingw64/$file"
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 --silent --show-error --output "$file" "$url"
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 --silent --show-error --output "$file.sig" "$url.sig"
+          gpgv --keyring /etc/pacman.d/gnupg/pubring.gpg "$file.sig" "$file"
+          test "$(pacman -Qp "$file" | awk '{print $1" "$2}')" = "mingw-w64-x86_64-abseil-cpp 20260817.0-1"
+          echo '===== SIGNED ABSEIL 20260817.0-1 SHA256 ====='
+          sha256sum "$file"
+          echo '===== ABI-SPECIFIC DLL PACKAGE CONTENTS ====='
+          bsdtar -tf "$file" | grep -E 'libabsl_(hash|strings|log_initialize)-2608\\.0\\.0\\.dll$'
+          echo 'PASS: signed package identity, checksum output, and 2608 ABI DLL entries'
+          SH
+          tr -d '\r' < "$script" > "$script.unix"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
