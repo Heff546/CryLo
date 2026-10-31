@@ -81,6 +81,16 @@ int main() {
     unsigned int n = 0;
     for (const auto &expected: fixtures) {
       const auto oldBytes = encode(expected, existing_wallet_v23_tag_archive<boost::archive::portable_binary_oarchive>);
+      // Temporary audit evidence: record historical bytes before removing
+      // the unsafe legacy cast from the isolated comparison harness.
+      static constexpr char hex_digits[] = "0123456789abcdef";
+      std::string legacyHex;
+      legacyHex.reserve(oldBytes.size() * 2);
+      for (unsigned char b : oldBytes) {
+        legacyHex.push_back(hex_digits[b >> 4]);
+        legacyHex.push_back(hex_digits[b & 15]);
+      }
+      std::cout << "ARCHIVE_V23_GOLDEN_" << n << "=" << legacyHex << "\n";
       const auto newBytes = encode(expected, proposed_wallet_v23_tag_archive<boost::archive::portable_binary_oarchive>);
       require(oldBytes == newBytes, "FAIL: account-tag output bytes differ from legacy wallet archive");
       const auto corrected = decode(oldBytes, proposed_wallet_v23_tag_archive<boost::archive::portable_binary_iarchive>);
