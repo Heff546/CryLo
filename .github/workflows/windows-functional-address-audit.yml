@@ -6,6 +6,7 @@ on:
       - audit/windows-warning-fixes
     paths:
       - .github/workflows/windows-functional-address-audit.yml
+      - docs/security/windows-functional-address-trigger-2026-10-31.md
       - scripts/tests/crylo-functional-address-audit.py
       - tests/functional_tests/functional_tests_rpc.py
       - tests/functional_tests/mining.py
