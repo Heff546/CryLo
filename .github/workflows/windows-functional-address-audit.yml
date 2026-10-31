@@ -11,6 +11,9 @@ on:
       - tests/functional_tests/mining.py
       - tests/functional_tests/get_output_distribution.py
       - tests/functional_tests/p2p.py
+      - tests/functional_tests/blockchain.py
+      - tests/functional_tests/txpool.py
+      - tests/functional_tests/rpc_payment.py
       - src/wallet/wallet2.cpp
       - tests/unit_tests/wallet_storage.cpp
       - .github/workflows/windows-pinned-unsigned-native-release.yml
@@ -38,7 +41,7 @@ jobs:
           report=json.load(open(sys.argv[1],encoding="utf8"))
           assert report["mayPublish"] is False and report["releaseFrozen"] is True
           assert report["rpcIntegrationExecuted"] is False
-          assert len(report["migrated"]) == 4
+          assert len(report["migrated"]) == 7
           print("PASS: active RPC-payment/mining tests no longer use the old Monero destination; remaining vectors explicitly inventoried")
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

@@ -361,7 +361,7 @@ class RPCPaymentTest():
         assert res.credits == credits - 1
         credits = res.credits
 
-        res = daemon.generateblocks('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 100)
+        res = daemon.generateblocks(os.environ['CRYLO_REGTEST_RPC_PAYMENT_ADDRESS'], 100)
         block_hashes = res.blocks
 
         # ask for 1 block -> 1 credit

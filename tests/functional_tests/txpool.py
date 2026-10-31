@@ -59,13 +59,20 @@ class TransferTest():
         except: pass
         seed = 'velvet lymph giddy number token physics poetry unquoted nibs useful sabotage limits benches lifestyle eden nitrogen anvil fewest avoid batch vials washing fences goat unquoted'
         res = wallet.restore_deterministic_wallet(seed = seed)
+        self.mining_address = res.address
+        assert wallet.validate_address(self.mining_address).valid
+        # A wallet-generated subaddress is a valid non-primary tx destination.
+        destination = wallet.create_address(account_index = 0, label = "txpool-recipient")
+        self.destination_address = destination.address
+        assert self.destination_address != self.mining_address
+        assert wallet.validate_address(self.destination_address).valid
 
     def mine(self):
         print("Mining some blocks")
         daemon = Daemon()
         wallet = Wallet()
 
-        daemon.generateblocks('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 80)
+        daemon.generateblocks(self.mining_address, 80)
         wallet.refresh()
 
     def create_txes(self, address, ntxes):
@@ -117,7 +124,7 @@ class TransferTest():
 
         self.check_empty_pool()
 
-        txes = self.create_txes('46r4nYSevkfBUMhuykdK3gQ98XDqDTYW1hNLaXNvjpsJaSbNtdXh1sKMsdVgqkaihChAzEy29zEDPMR3NHQvGoZCLGwTerK', 5)
+        txes = self.create_txes(self.destination_address, 5)
 
         res = daemon.get_info()
         assert res.tx_pool_size == txpool_size + 5
@@ -234,7 +241,7 @@ class TransferTest():
         assert len(res.transactions) == txpool_size - 2
 
         print('Mining transactions')
-        daemon.generateblocks('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 1)
+        daemon.generateblocks(self.mining_address, 1)
         res = daemon.get_transaction_pool()
         assert not 'transactions' in res or len(res.transactions) == txpool_size - 5
         res = daemon.get_transaction_pool_hashes()
