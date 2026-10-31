@@ -1,0 +1,99 @@
+name: CryLo Windows optional-test tooling and CMake audit — no release
+
+on:
+  push:
+    branches:
+      - audit/windows-warning-fixes
+    paths:
+      - .github/workflows/windows-test-toolchain-audit.yml
+      - translations/CMakeLists.txt
+      - tests/gtest/CMakeLists.txt
+      - tests/functional_tests/CMakeLists.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tooling-audit:
+    name: Windows CMake configure and Python RPC prerequisites (audit only)
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact audit branch without persisting credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Check bundled Google Test and translations CMake configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/crylo-windows-toolchain-audit"
+          mkdir -p "$out"
+          cmake --version
+          cmake -S tests/gtest -B "$out/gtest" -G "Visual Studio 17 2022" -A x64 2>&1 | tee "$out/gtest.log"
+          cmake -S translations -B "$out/translations" -G "Visual Studio 17 2022" -A x64 2>&1 | tee "$out/translations.log"
+          if grep -iE 'CMake Warning \((author|deprecated)\)|CMake Error' "$out/gtest.log" "$out/translations.log"; then
+            echo "ERROR: CMake configure still emits compatibility diagnostics"
+            exit 1
+          fi
+          test -f "$out/gtest/CMakeCache.txt"
+          test -f "$out/translations/CMakeCache.txt"
+          echo 'PASS: isolated Windows Google Test and translations CMake configuration'
+
+      - name: Audit RPC Python test prerequisites without installing or executing RPC services
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/crylo-windows-toolchain-audit"
+          python - "$out" <<'PY'
+          import importlib.util
+          import json
+          import pathlib
+          import re
+          import sys
+
+          root = pathlib.Path.cwd()
+          out = pathlib.Path(sys.argv[1])
+          names = ("requests", "psutil", "monotonic", "zmq", "deepdiff")
+          # The CMake module gate uses the same five module imports.
+          cmake_text = (root / "tests/functional_tests/CMakeLists.txt").read_text(encoding="utf-8")
+          for name in names:
+              if "import " + name not in cmake_text:
+                  raise SystemExit("ERROR: CMake optional module gate changed: " + name)
+          missing = [name for name in names if importlib.util.find_spec(name) is None]
+          entrypoints = ("functional_tests_rpc.py", "check_missing_rpc_methods.py")
+          for name in entrypoints:
+              script = root / "tests/functional_tests" / name
+              compile(script.read_text(encoding="utf-8"), str(script), "exec")
+          rpc_source = (root / "tests/functional_tests/functional_tests_rpc.py").read_text(encoding="utf-8")
+          report = {
+              "classification": "WINDOWS_OPTIONAL_TEST_TOOLING_AUDIT_ONLY",
+              "releaseFrozen": True,
+              "mayPublish": False,
+              "rpcFunctionalTestsExecuted": False,
+              "rpcFunctionalTestsValidated": False,
+              "pythonModulesRequested": list(names),
+              "pythonModulesMissingFromRunner": missing,
+              "pythonEntrypointsSyntaxChecked": list(entrypoints),
+              "legacyMoneroAddressFixtureStillPresent": bool(re.search(r"rpc-payment-address.*44SK", rpc_source)),
+              "note": "RPC integration requires reviewed CryLo-specific fixtures, pinned Python dependencies, and daemon/wallet orchestration."
+          }
+          (out / "python-prerequisites.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+          print("PASS: Python syntax preflight and explicit RPC-test coverage report")
+          print("Python optional modules absent:", ",".join(missing) if missing else "none")
+          print("RPC integration tested: NO")
+          PY
+
+      - name: Retain audit evidence only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-windows-toolchain-configuration-audit-only
+          path: |
+            ${{ runner.temp }}/crylo-windows-toolchain-audit/gtest.log
+            ${{ runner.temp }}/crylo-windows-toolchain-audit/translations.log
+            ${{ runner.temp }}/crylo-windows-toolchain-audit/python-prerequisites.json
+          if-no-files-found: error
+          retention-days: 30
