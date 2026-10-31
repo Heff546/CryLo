@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/mac-first-build-gate
+      - audit/windows-warning-fixes
     paths:
       - .github/workflows/unified-update-release-readiness-gate.yml
   workflow_dispatch:
