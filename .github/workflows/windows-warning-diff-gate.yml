@@ -23,19 +23,54 @@ jobs:
         with:
           node-version: '24.21.0'
       - run: node --test scripts/tests/windows-warning-diff.test.js
-      - name: Compare historical Windows CI job logs without building or publishing
+      - name: Audit current Windows candidate and archive logs without building
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/crylo-win-warning"
-          gh api --allow-escape-sequences repos/Heff546/CryLo/actions/jobs/112575712128/logs > "$RUNNER_TEMP/crylo-win-warning/old.log"
-          gh api --allow-escape-sequences repos/Heff546/CryLo/actions/jobs/121294855214/logs > "$RUNNER_TEMP/crylo-win-warning/new.log"
-          node scripts/release/windows-warning-diff.js "$RUNNER_TEMP/crylo-win-warning/old.log" "$RUNNER_TEMP/crylo-win-warning/new.log" "$RUNNER_TEMP/crylo-win-warning/summary.json"
+          out="$RUNNER_TEMP/crylo-win-warning"
+          mkdir -p "$out"
+          # Pin complete source-run evidence; this gate never authorizes publication.
+          old_job=123209645715
+          old_run=40801257875
+          candidate_job=123230651715
+          candidate_run=40807758891
+          archive_job=123230651682
+          archive_run=40807758882
+          for spec in "$old_job:$old_run" "$candidate_job:$candidate_run" "$archive_job:$archive_run"; do
+            job="${spec%%:*}"
+            expected="${spec##*:}"
+            observed="$(gh api "repos/Heff546/CryLo/actions/jobs/$job" --jq '.run_id')"
+            test "$observed" = "$expected" || { echo "ERROR: job $job is not from approved run $expected"; exit 1; }
+          done
+          gh api --allow-escape-sequences "repos/Heff546/CryLo/actions/jobs/$old_job/logs" > "$out/previous.log"
+          gh api --allow-escape-sequences "repos/Heff546/CryLo/actions/jobs/$candidate_job/logs" > "$out/candidate.log"
+          gh api --allow-escape-sequences "repos/Heff546/CryLo/actions/jobs/$archive_job/logs" > "$out/archive.log"
+          test -s "$out/previous.log"
+          test -s "$out/candidate.log"
+          test -s "$out/archive.log"
+          node scripts/release/windows-warning-diff.js "$out/previous.log" "$out/candidate.log" "$out/candidate-warning-audit.json"
+          : > "$out/empty.log"
+          node scripts/release/windows-warning-diff.js "$out/empty.log" "$out/archive.log" "$out/archive-warning-audit.json"
+          node - "$out" <<'NODE'
+          const fs=require('node:fs'),path=require('node:path');
+          const d=process.argv[2];
+          for(const f of ['candidate-warning-audit.json','archive-warning-audit.json']){
+            const report=JSON.parse(fs.readFileSync(path.join(d,f),'utf8'));
+            if(report.mayPublish!==false||report.releaseFrozen!==true||report.classification!=='WINDOWS_WARNING_REVIEW_ONLY')
+              throw Error('Audit must fail closed: '+f);
+            console.log(f,'diagnostics:',report.currentDiagnostics.length,'new:',report.newDiagnostics.length);
+          }
+          NODE
+          printf 'Candidate run=%s job=%s\nArchive run=%s job=%s\nNo native build or signing\n' \
+            "$candidate_run" "$candidate_job" "$archive_run" "$archive_job" > "$out/RUNS.txt"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: crylo-windows-warning-audit-only
-          path: ${{ runner.temp }}/crylo-win-warning/summary.json
+          path: |
+            ${{ runner.temp }}/crylo-win-warning/candidate-warning-audit.json
+            ${{ runner.temp }}/crylo-win-warning/archive-warning-audit.json
+            ${{ runner.temp }}/crylo-win-warning/RUNS.txt
           if-no-files-found: error
           retention-days: 30
