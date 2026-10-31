@@ -86,7 +86,7 @@ jobs:
             return [ordered]@{stage=$stage;bootstrapLogPresent=$found;markers=$safe}
           }
           function Invoke-CmdNSIS([string]$exe,[string]$arguments,[string]$stage) {
-            Write-Host "===== $stage: real NSIS through Windows CMD ====="
+            Write-Host ("===== "+$stage+": real NSIS through Windows CMD =====")
             $command='start /wait "" "'+$exe+'" '+$arguments
             $process=Start-Process -FilePath $env:ComSpec -ArgumentList @('/D','/C',$command) -PassThru
             if(!$process.WaitForExit(360000)){
