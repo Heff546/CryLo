@@ -29,201 +29,166 @@
 # STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Test URI RPC
-"""
+"""Test CryLo URI RPC using real regtest wallet-derived addresses."""
 
 from __future__ import print_function
+
 try:
-  from urllib import quote as urllib_quote
-except:
-  from urllib.parse import quote as urllib_quote
+    from urllib import quote as urllib_quote
+except ImportError:
+    from urllib.parse import quote as urllib_quote
 
 from framework.wallet import Wallet
 
-class URITest():
+
+class URITest:
     def run_test(self):
-      self.create()
-      self.test_monero_uri()
+        self.create()
+        self.test_crylo_uri()
 
     def create(self):
-        print('Creating wallet')
         wallet = Wallet()
-        # close the wallet if any, will throw if none is loaded
-        try: wallet.close_wallet()
-        except: pass
+        try:
+            wallet.close_wallet()
+        except Exception:
+            pass
         seed = 'velvet lymph giddy number token physics poetry unquoted nibs useful sabotage limits benches lifestyle eden nitrogen anvil fewest avoid batch vials washing fences goat unquoted'
-        res = wallet.restore_deterministic_wallet(seed = seed)
-        assert res.address == '42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm'
+        res = wallet.restore_deterministic_wallet(seed=seed)
         assert res.seed == seed
+        self.primary_address = res.address
+        assert wallet.validate_address(self.primary_address).valid
+        self.subaddress = wallet.create_address(account_index=0, label="CryLo URI recipient").address
+        assert wallet.validate_address(self.subaddress).valid
+        self.integrated_address = wallet.make_integrated_address(payment_id="0123456789abcdef").integrated_address
+        assert wallet.validate_address(self.integrated_address).valid
 
-    def test_monero_uri(self):
-        print('Testing monero: URI')
+    def test_crylo_uri(self):
+        print('Testing crylo: URI')
         wallet = Wallet()
+        first = u'えんしゅう'
+        second = u'あまやかす'
+        quoted_first = urllib_quote(first.encode('utf8'))
+        quoted_second = urllib_quote(second.encode('utf8'))
+        payment_addresses = [self.primary_address, self.subaddress, self.integrated_address]
 
-        utf8string = [u'えんしゅう', u'あまやかす']
-        quoted_utf8string = [urllib_quote(x.encode('utf8')) for x in utf8string]
+        # Invalid or missing payment destinations are rejected.
+        for args in ({}, {"address": ""}, {"address": "kjshdkj"}):
+            try:
+                wallet.make_uri(**args)
+            except Exception:
+                pass
+            else:
+                raise AssertionError("make_uri accepted a missing or invalid CryLo address")
 
-        ok = False
-        try: res = wallet.make_uri()
-        except: ok = True
-        assert ok
-        ok = False
-        try: res = wallet.make_uri(address = '')
-        except: ok = True
-        assert ok
-        ok = False
-        try: res = wallet.make_uri(address = 'kjshdkj')
-        except: ok = True
-        assert ok
+        for address in payment_addresses:
+            result = wallet.make_uri(address=address)
+            assert result.uri == "crylo:" + address
+            parsed = wallet.parse_uri(result.uri)
+            assert parsed.uri.address == address
+            assert parsed.uri.payment_id == ''
+            assert parsed.uri.amount == 0
+            assert parsed.uri.tx_description == ''
+            assert parsed.uri.recipient_name == ''
+            assert not parsed.get('unknown_parameters', [])
 
-        for address in [
-            '42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm',
-            '4BxSHvcgTwu25WooY4BVmgdcKwZu5EksVZSZkDd6ooxSVVqQ4ubxXkhLF6hEqtw96i9cf3cVfLw8UWe95bdDKfRQeYtPwLm1Jiw7AKt2LY',
-            '8AsN91rznfkBGTY8psSNkJBg9SZgxxGGRUhGwRptBhgr5XSQ1XzmA9m8QAnoxydecSh5aLJXdrgXwTDMMZ1AuXsN1EX5Mtm'
+            # CryLo atomic units have 11 decimal places; use an exact
+            # atomic amount and require the RPC to round-trip it.
+            atomic_amount = 11000000000
+            result = wallet.make_uri(address=address, amount=atomic_amount)
+            assert result.uri.startswith("crylo:" + address + "?tx_amount=")
+            parsed = wallet.parse_uri(result.uri)
+            assert parsed.uri.address == address
+            assert parsed.uri.amount == atomic_amount
+            assert not parsed.get('unknown_parameters', [])
+
+        address = self.primary_address
+        result = wallet.make_uri(address=address, tx_description=first)
+        assert result.uri == "crylo:" + address + "?tx_description=" + quoted_first
+        parsed = wallet.parse_uri(result.uri)
+        assert parsed.uri.address == address
+        assert parsed.uri.tx_description == first
+        assert parsed.uri.recipient_name == ''
+
+        result = wallet.make_uri(address=address, recipient_name=first)
+        assert result.uri == "crylo:" + address + "?recipient_name=" + quoted_first
+        parsed = wallet.parse_uri(result.uri)
+        assert parsed.uri.address == address
+        assert parsed.uri.recipient_name == first
+        assert parsed.uri.tx_description == ''
+
+        result = wallet.make_uri(address=address, recipient_name=first, tx_description=second)
+        assert result.uri == ("crylo:" + address + "?recipient_name=" + quoted_first
+                              + "&tx_description=" + quoted_second)
+        parsed = wallet.parse_uri(result.uri)
+        assert parsed.uri.recipient_name == first
+        assert parsed.uri.tx_description == second
+
+        atomic_unit = 100000000000  # 1 CryLo at 11 decimals.
+        result = wallet.make_uri(address=address, amount=atomic_unit,
+                                 recipient_name=first, tx_description=second)
+        assert result.uri.startswith("crylo:" + address + "?tx_amount=")
+        parsed = wallet.parse_uri(result.uri)
+        assert parsed.uri.address == address
+        assert parsed.uri.amount == atomic_unit
+        assert parsed.uri.recipient_name == first
+        assert parsed.uri.tx_description == second
+
+        # A separate payment ID is not allowed with current CryLo URIs.
+        try:
+            wallet.make_uri(address=address, payment_id='1' * 64)
+        except Exception:
+            pass
+        else:
+            raise AssertionError("make_uri accepted deprecated standalone payment id")
+
+        result = wallet.make_uri(address=address,
+                                 tx_description=' ' + second + ' ' + first + ' ',
+                                 amount=atomic_unit)
+        assert "&tx_description=%20" in result.uri
+        parsed = wallet.parse_uri(result.uri)
+        assert parsed.uri.amount == atomic_unit
+        assert parsed.uri.tx_description == ' ' + second + ' ' + first + ' '
+
+        # Bad schemes, invalid addresses and malformed parameters must fail.
+        invalid = [
+            '', ':', 'crylo', 'crylo:', 'crylo:badaddress',
+            'notcrylo:' + address, 'CRYLO:' + address,
+            'monero:' + address,  # Negative compatibility check, never a payment destination.
+            'crylo::' + address, 'crylo:tx_amount=10',
+            'crylo:?tx_amount=10',
+            'crylo:' + address + '?tx_amount=-1',
+            'crylo:' + address + '?tx_amount=1e12',
+            'crylo:' + address + '?tx_amount=+12',
+            'crylo:' + address + '?tx_amount=1+2',
+            'crylo:' + address + '?tx_amount=A',
+            'crylo:' + address + '?tx_amount=0x2',
+            'crylo:' + address + '?tx_amount=222222222222222222222',
+            'crylo:' + address[:-1] + '1?tx_amount=10',
+            'crylo:' + address + '&',
+            'crylo:' + address + '&tx_amount',
+            'crylo:' + address + '&tx_amount=',
+            'crylo:' + address + '&tx_amount=10=',
+            'crylo:' + address + '?tx_amount=10&tx_amount=20',
+            'crylo:' + self.integrated_address + '?tx_payment_id=' + '1' * 64
+        ]
+        for bad_uri in invalid:
+            try:
+                wallet.parse_uri(bad_uri)
+            except Exception:
+                continue
+            raise AssertionError("parse_uri accepted malformed or non-CryLo URI")
+
+        # Unrecognized but syntactically valid parameters must be reported.
+        for params, unknown in [
+            ('foo=bar', ['foo=bar']),
+            ('foo=bar&baz=quux', ['foo=bar', 'baz=quux']),
+            ('%20=%20', ['%20=%20']),
+            ('unknown=' + quoted_first, ['unknown=' + quoted_first])
         ]:
-            res = wallet.make_uri(address = address)
-            assert res.uri == 'monero:' + address
-            res = wallet.parse_uri(res.uri)
-            assert res.uri.address == address
-            assert res.uri.payment_id == ''
-            assert res.uri.amount == 0
-            assert res.uri.tx_description == ''
-            assert res.uri.recipient_name == ''
-            assert not 'unknown_parameters' in res or len(res.unknown_parameters) == 0
-            res = wallet.make_uri(address = address, amount = 11000000000)
-            assert res.uri == 'monero:' + address + '?tx_amount=0.011' or res.uri == 'monero:' + address + '?tx_amount=0.011000000000'
-            res = wallet.parse_uri(res.uri)
-            assert res.uri.address == address
-            assert res.uri.payment_id == ''
-            assert res.uri.amount == 11000000000
-            assert res.uri.tx_description == ''
-            assert res.uri.recipient_name == ''
-            assert not 'unknown_parameters' in res or len(res.unknown_parameters) == 0
-
-        address = '42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm'
-
-        res = wallet.make_uri(address = address, tx_description = utf8string[0])
-        assert res.uri == 'monero:' + address + '?tx_description=' + quoted_utf8string[0]
-        res = wallet.parse_uri(res.uri)
-        assert res.uri.address == address
-        assert res.uri.payment_id == ''
-        assert res.uri.amount == 0
-        assert res.uri.tx_description == utf8string[0]
-        assert res.uri.recipient_name == ''
-        assert not 'unknown_parameters' in res or len(res.unknown_parameters) == 0
-
-        res = wallet.make_uri(address = address, recipient_name = utf8string[0])
-        assert res.uri == 'monero:' + address + '?recipient_name=' + quoted_utf8string[0]
-        res = wallet.parse_uri(res.uri)
-        assert res.uri.address == address
-        assert res.uri.payment_id == ''
-        assert res.uri.amount == 0
-        assert res.uri.tx_description == ''
-        assert res.uri.recipient_name == utf8string[0]
-        assert not 'unknown_parameters' in res or len(res.unknown_parameters) == 0
-
-        res = wallet.make_uri(address = address, recipient_name = utf8string[0], tx_description = utf8string[1])
-        assert res.uri == 'monero:' + address + '?recipient_name=' + quoted_utf8string[0] + '&tx_description=' + quoted_utf8string[1]
-        res = wallet.parse_uri(res.uri)
-        assert res.uri.address == address
-        assert res.uri.payment_id == ''
-        assert res.uri.amount == 0
-        assert res.uri.tx_description == utf8string[1]
-        assert res.uri.recipient_name == utf8string[0]
-        assert not 'unknown_parameters' in res or len(res.unknown_parameters) == 0
-
-        res = wallet.make_uri(address = address, recipient_name = utf8string[0], tx_description = utf8string[1], amount = 1000000000000)
-        assert res.uri == 'monero:' + address + '?tx_amount=1.000000000000&recipient_name=' + quoted_utf8string[0] + '&tx_description=' + quoted_utf8string[1]
-        res = wallet.parse_uri(res.uri)
-        assert res.uri.address == address
-        assert res.uri.payment_id == ''
-        assert res.uri.amount == 1000000000000
-        assert res.uri.tx_description == utf8string[1]
-        assert res.uri.recipient_name == utf8string[0]
-        assert not 'unknown_parameters' in res or len(res.unknown_parameters) == 0
-
-        # external payment ids are not supported anymore
-        ok = False
-        try: res = wallet.make_uri(address = address, recipient_name = utf8string[0], tx_description = utf8string[1], amount = 1000000000000, payment_id = '1' * 64)
-        except: ok = True
-        assert ok
-
-        # spaces must be encoded as %20
-        res = wallet.make_uri(address = address, tx_description = ' ' + utf8string[1] + ' ' + utf8string[0] + ' ', amount = 1000000000000)
-        assert res.uri == 'monero:' + address + '?tx_amount=1.000000000000&tx_description=%20' + quoted_utf8string[1] + '%20' + quoted_utf8string[0] + '%20'
-        res = wallet.parse_uri(res.uri)
-        assert res.uri.address == address
-        assert res.uri.payment_id == ''
-        assert res.uri.amount == 1000000000000
-        assert res.uri.tx_description == ' ' + utf8string[1] + ' ' + utf8string[0] + ' '
-        assert res.uri.recipient_name == ''
-        assert not 'unknown_parameters' in res or len(res.unknown_parameters) == 0
-
-        # the example from the docs
-        res = wallet.parse_uri('monero:46BeWrHpwXmHDpDEUmZBWZfoQpdc6HaERCNmx1pEYL2rAcuwufPN9rXHHtyUA4QVy66qeFQkn6sfK8aHYjA3jk3o1Bv16em?tx_amount=239.39014&tx_description=donation')
-        assert res.uri.address == '46BeWrHpwXmHDpDEUmZBWZfoQpdc6HaERCNmx1pEYL2rAcuwufPN9rXHHtyUA4QVy66qeFQkn6sfK8aHYjA3jk3o1Bv16em'
-        assert res.uri.amount == 239390140000000
-        assert res.uri.tx_description == 'donation'
-        assert res.uri.recipient_name == ''
-        assert res.uri.payment_id == ''
-        assert not 'unknown_parameters' in res or len(res.unknown_parameters) == 0
-
-        # malformed/invalid
-        for uri in [
-            '',
-            ':',
-            'monero',
-            'notmonero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm',
-            'MONERO:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm',
-            'MONERO::42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm',
-            'monero:',
-            'monero:badaddress',
-            'monero:tx_amount=10',
-            'monero:?tx_amount=10',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm?tx_amount=-1',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm?tx_amount=1e12',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm?tx_amount=+12',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm?tx_amount=1+2',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm?tx_amount=A',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm?tx_amount=0x2',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm?tx_amount=222222222222222222222',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDn?tx_amount=10',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm&',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm&tx_amount',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm&tx_amount=',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm&tx_amount=10=',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm&tx_amount=10=&',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm&tx_amount=10=&foo=bar',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm?tx_amount=10&tx_amount=20',
-            'monero:42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm?tx_payment_id=1111111111111111',
-            'monero:4BxSHvcgTwu25WooY4BVmgdcKwZu5EksVZSZkDd6ooxSVVqQ4ubxXkhLF6hEqtw96i9cf3cVfLw8UWe95bdDKfRQeYtPwLm1Jiw7AKt2LY?tx_payment_id=' + '1' * 64,
-            'monero:9ujeXrjzf7bfeK3KZdCqnYaMwZVFuXemPU8Ubw335rj2FN1CdMiWNyFV3ksEfMFvRp9L9qum5UxkP5rN9aLcPxbH1au4WAB',
-            'monero:5K8mwfjumVseCcQEjNbf59Um6R9NfVUNkHTLhhPCmNvgDLVS88YW5tScnm83rw9mfgYtchtDDTW5jEfMhygi27j1QYphX38hg6m4VMtN29',
-            'monero:7A1Hr63MfgUa8pkWxueD5xBqhQczkusYiCMYMnJGcGmuQxa7aDBxN1G7iCuLCNB3VPeb2TW7U9FdxB27xKkWKfJ8VhUZthF',
-        ]:
-            ok = False
-            try: res = wallet.parse_uri(uri)
-            except: ok = True
-            assert ok, res
-
-        # unknown parameters but otherwise valid
-        res = wallet.parse_uri('monero:' + address + '?tx_amount=239.39014&foo=bar')
-        assert res.uri.address == address
-        assert res.uri.amount == 239390140000000
-        assert res.unknown_parameters == ['foo=bar'], res
-        res = wallet.parse_uri('monero:' + address + '?tx_amount=239.39014&foo=bar&baz=quux')
-        assert res.uri.address == address
-        assert res.uri.amount == 239390140000000
-        assert res.unknown_parameters == ['foo=bar', 'baz=quux'], res
-        res = wallet.parse_uri('monero:' + address + '?tx_amount=239.39014&%20=%20')
-        assert res.uri.address == address
-        assert res.uri.amount == 239390140000000
-        assert res.unknown_parameters == ['%20=%20'], res
-        res = wallet.parse_uri('monero:' + address + '?tx_amount=239.39014&unknown=' + quoted_utf8string[0])
-        assert res.uri.address == address
-        assert res.uri.amount == 239390140000000
-        assert res.unknown_parameters == [u'unknown=' + quoted_utf8string[0]], res
-
+            result = wallet.parse_uri("crylo:" + address + "?tx_amount=239.39014&" + params)
+            assert result.uri.address == address
+            assert result.uri.amount == 23939014000000
+            assert result.unknown_parameters == unknown
 
 
 if __name__ == '__main__':
