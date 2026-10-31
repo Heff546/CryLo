@@ -27,7 +27,7 @@ jobs:
       - name: Download exact older Windows artifact only
         shell: bash
         env:
-          GH_$: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           run_id=40807758891
