@@ -187,15 +187,15 @@ test('Windows updater still mandates current trust before signed source merge', 
   const updateEnd = source.indexOf('\nfunction probe(', updateStart);
   assert.ok(updateStart >= 0 && updateEnd > updateStart);
   const update = source.slice(updateStart, updateEnd);
-  const verify = update.indexOf('authorization = authenticateSignedRelease(\n        before\n      );');
-  const merge = update.indexOf("git([\n      'merge',\n      '--ff-only'");
-  const install = update.indexOf('installAuthorizedReleaseBundle(\n      authorization');
+  const verify = /authorization\s*=\s*authenticateSignedRelease\(\s*before\s*\)/.exec(update)?.index ?? -1;
+  const merge = /git\(\s*\[\s*'merge',\s*'--ff-only'/.exec(update)?.index ?? -1;
+  const install = /installAuthorizedReleaseBundle\(\s*authorization\s*\)/.exec(update)?.index ?? -1;
   assert.ok(verify > 0, 'Expected current signed trust check');
   assert.ok(merge > verify, 'Git merge must follow release authentication');
   assert.ok(install > merge, 'Binary install must follow signed release authorization');
   assert.match(update, /CRYLO_AUTHORIZED_COMMIT/);
   assert.match(update, /CRYLO_UPDATE_RESUMED/);
-  assert.match(update, /git\(\[\s*'status',\s*'--porcelain'\]/);
+  assert.match(update, /git\(\s*\[\s*'status',\s*'--porcelain'\]/);
   const sourceAuth = source.slice(
     source.indexOf('function fetchAuthenticatedReleaseSource('),
     source.indexOf('function authenticateSignedRelease(')
