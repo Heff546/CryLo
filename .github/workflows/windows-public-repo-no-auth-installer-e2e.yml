@@ -36,7 +36,6 @@ jobs:
 
       - name: Verify actual corrected NSIS install, reinstall and uninstall through Windows CMD
         shell: pwsh
-        env:
         run: |
           $ErrorActionPreference='Stop'
           if ($env:GH_TOKEN -or $env:GITHUB_TOKEN) { throw 'No credentials permitted in end-user test' }
