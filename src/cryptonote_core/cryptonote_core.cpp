@@ -665,7 +665,14 @@ namespace cryptonote
       MERROR("Failed to parse block rate notify spec: " << e.what());
     }
 
-    const std::pair<uint8_t, uint64_t> regtest_hard_forks[3] = {std::make_pair(1, 0), std::make_pair(mainnet_hard_forks[num_mainnet_hard_forks-1].version, 1), std::make_pair(0, 0)};
+    // FAKECHAIN/regtest reuses CryLo mainnet genesis (major version 17).
+    // The inherited Monero v1-at-height-0 schedule rejects that genesis.
+    // This array applies ONLY to regtest and must not modify live networks.
+    const std::pair<uint8_t, uint64_t> regtest_hard_forks[3] = {
+      std::make_pair(mainnet_hard_forks[0].version, 0),
+      std::make_pair(mainnet_hard_forks[num_mainnet_hard_forks - 1].version, 1),
+      std::make_pair(0, 0)
+    };
     const cryptonote::test_options regtest_test_options = {
       regtest_hard_forks,
       0

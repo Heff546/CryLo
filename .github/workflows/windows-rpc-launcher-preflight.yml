@@ -8,6 +8,10 @@ on:
       - .github/workflows/windows-rpc-launcher-preflight.yml
       - tests/functional_tests/functional_tests_rpc.py
       - scripts/tests/windows_rpc_launcher_preflight_test.py
+      - scripts/tests/windows_regtest_genesis_gate.py
+      - src/cryptonote_core/cryptonote_core.cpp
+      - src/hardforks/hardforks.cpp
+      - src/cryptonote_config.h
   workflow_dispatch:
 
 permissions:
@@ -30,4 +34,5 @@ jobs:
           python --version
           python -m py_compile tests/functional_tests/functional_tests_rpc.py scripts/tests/windows_rpc_launcher_preflight_test.py
           python -m unittest discover -s scripts/tests -p windows_rpc_launcher_preflight_test.py -v
+          python scripts/tests/windows_regtest_genesis_gate.py
           echo 'PASS: test-only Windows launcher preflight. No daemon, wallet or release binaries executed.'
