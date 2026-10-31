@@ -1,0 +1,108 @@
+name: CryLo exact unsigned NSIS CMD startup telemetry (no rebuild)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/windows-current-unsigned-nsis-launch-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  cmd-installer-diagnostic:
+    runs-on: windows-2022
+    timeout-minutes: 14
+    steps:
+      - name: Download identity-verified exact original unsigned installer
+        shell: bash
+        env:
+          GH_${{ github.token }}: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=41244508425
+          id=13060610636
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.head_sha')" = '5120debcc2a75fa0c7198ee0137f142dd0a5f6a8'
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.digest')" = 'sha256:27e7bbba85dfdea965d7bb66e49554b858a01bc493263a376ad48b1337250a23'
+          mkdir -p "$RUNNER_TEMP/crylo-current-cmd-nsis"
+          gh run download "$run" --repo Heff546/CryLo --name crylo-unified-windows-x64-unsigned-native-candidate --dir "$RUNNER_TEMP/crylo-current-cmd-nsis"
+          echo 'PASS: verified original unsigned NSIS candidate, no compilation'
+
+      - name: Launch genuine NSIS via Windows CMD and inspect noninteractive startup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'crylo-current-cmd-nsis'
+          $files=@(Get-ChildItem $root -Recurse -File -Filter 'CryLo Wallet Setup 1.1.1.exe')
+          if ($files.Count -ne 1) { throw 'Expected one original unsigned CryLo setup EXE' }
+          $setup=$files[0].FullName
+          $install=Join-Path $env:RUNNER_TEMP 'CryLoCmdInstallerQA'
+          $bootstrap=Join-Path $env:LOCALAPPDATA 'CryLo\installer-bootstrap.log'
+          if ((Test-Path $install) -or (Test-Path $bootstrap)) { throw 'Expected a clean ephemeral Windows installer environment' }
+          $invoke='start /wait "" "'+$setup+'" /S /D='+$install
+          Write-Host '===== CMD-ONLY TEST LAUNCH ====='
+          Write-Host 'Windows CMD start /wait with NSIS /S and explicit /D install destination'
+          $started=Get-Date
+          $p=Start-Process -FilePath $env:ComSpec -ArgumentList @('/D','/C',$invoke) -PassThru
+          $finished=$p.WaitForExit(90000)
+          $elapsed=[int]((Get-Date)-$started).TotalSeconds
+          $stages=@()
+          if (Test-Path $bootstrap) {
+            $stages=@(Get-Content $bootstrap | Where-Object { $_ -match '^(STAGE|RESULT|FAIL_STAGE|FAIL_RC|RUNTIME_HELPER_RC)=' })
+          }
+          foreach ($line in $stages) { Write-Host $line }
+          $processes=@()
+          Get-Process | Where-Object { $_.ProcessName -match '(?i)crylo|setup|nsis|consent|git|node|cmd' } |
+            ForEach-Object {
+              $processes+=@([ordered]@{
+                name=$_.ProcessName
+                pid=$_.Id
+                sessionId=$_.SessionId
+                mainWindowHandle=$_.MainWindowHandle
+                mainWindowTitle=$_.MainWindowTitle
+                cpuSeconds=$_.CPU
+                workingSetBytes=$_.WorkingSet64
+              })
+              Write-Host ("PROCESS name={0} pid={1} session={2} window={3} cpuSeconds={4}" -f $_.ProcessName,$_.Id,$_.SessionId,$_.MainWindowHandle,$_.CPU)
+              if ($_.ProcessName -match '(?i)crylo|setup|nsis|consent') { Write-Host ("  WINDOW TITLE: "+$_.MainWindowTitle) }
+            }
+          $nsisTemps=@(Get-ChildItem $env:TEMP -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '(?i)^ns|crylo' } |
+            Select-Object -First 15 -ExpandProperty Name)
+          foreach ($tmp in $nsisTemps) { Write-Host ("TEMP ENTRY: "+$tmp) }
+          $report=[ordered]@{
+            classification='WINDOWS_EXACT_UNSIGNED_NSIS_CMD_STARTUP_ONLY_NOT_RELEASE_CERTIFICATION'
+            sourceCommit='5120debcc2a75fa0c7198ee0137f142dd0a5f6a8'
+            commandLaunch='cmd.exe /D /C start /wait setup /S /D=isolatedRunnerTemp'
+            cmdFinishedWithinBound=$finished
+            elapsedSeconds=$elapsed
+            bootstrapLogExists=(Test-Path $bootstrap)
+            installerTargetExists=(Test-Path $install)
+            bootstrapStageMarkers=$stages
+            processes=$processes
+            nsisTempEntries=$nsisTemps
+            releaseFrozen=$true
+            mayPublish=$false
+            nativeRebuilt=$false
+            ciPrivateRepositoryTokenProvidedToInstaller=$false
+          }
+          $reportPath=Join-Path $env:RUNNER_TEMP 'crylo-windows-cmd-nsis-startup-diagnostic.json'
+          [IO.File]::WriteAllText($reportPath,(ConvertTo-Json $report -Depth 6)+[Environment]::NewLine,[Text.Encoding]::UTF8)
+          if (!$finished) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+          if (!$finished -or !(Test-Path $bootstrap)) {
+            throw 'Unsigned NSIS has not reached CryLo bootstrap through direct Windows CMD; telemetry retained'
+          }
+          if ($p.ExitCode -ne 0) { throw "CMD installer returned $($p.ExitCode); inspect stage telemetry" }
+          Write-Host 'PASS: exact unsigned NSIS starts through CMD and reaches CryLo bootstrap'
+
+      - name: Retain diagnostic evidence only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-original-windows-unsigned-nsis-cmd-startup-telemetry
+          path: ${{ runner.temp }}/crylo-windows-cmd-nsis-startup-diagnostic.json
+          if-no-files-found: ignore
+          retention-days: 30
