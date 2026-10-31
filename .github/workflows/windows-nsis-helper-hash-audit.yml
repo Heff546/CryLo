@@ -1,0 +1,28 @@
+name: CryLo Windows NSIS embedded helper hash audit (no build)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/windows-nsis-helper-hash-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  embedded-helper-trust:
+    runs-on: windows-2022
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 5120debcc2a75fa0c7198ee0137f142dd0a5f6a8
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Compare exact packaged helper SHA256 with hardcoded NSIS runtime trust pin
+        shell: cmd
+        run: |
+          node -e "const fs=require('fs'),crypto=require('crypto');const helper=fs.readFileSync('electron/build/windows-installer-runtime.js');const actual=crypto.createHash('sha256').update(helper).digest('hex');const nsh=fs.readFileSync('electron/build/installer.nsh','utf8');const m=nsh.match(/findstr\.exe[^\r\n]*\/C:\\x22([0-9a-f]{64})\\x22[^\r\n]*crylo-hash-output/i);if(!m)throw Error('Cannot locate NSIS helper SHA256 trust pin');console.log('Actual Windows packaged installer helper SHA256: '+actual);console.log('Hardcoded NSIS helper trust SHA256: '+m[1]);if(actual!==m[1].toLowerCase())throw Error('Embedded NSIS helper SHA256 pin mismatch: installer will fail closed at HELPER_HASH_COMPARE');console.log('PASS: embedded installer helper SHA256 matches NSIS trust pin')"
+          if errorlevel 1 exit /b 1
+          echo PASS: exact reviewed Windows helper hash trust source
