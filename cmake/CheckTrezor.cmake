@@ -87,7 +87,11 @@ if(Protobuf_FOUND AND USE_DEVICE_TREZOR AND TREZOR_PYTHON)
         ERROR_VARIABLE ERR)
 
     if(RET)
-        message(FATAL_ERROR "Protobuf test generation failed: ${OUT} ${ERR}")
+        message(STATUS "Protobuf test command: ${Protobuf_PROTOC_EXECUTABLE} -I ${CMAKE_CURRENT_LIST_DIR} -I ${TREZOR_PROTOBUF_INCLUDE_DIR} ${CMAKE_CURRENT_LIST_DIR}/test-protobuf.proto --cpp_out ${CMAKE_BINARY_DIR}")
+        message(STATUS "Protobuf test exit status: ${RET}")
+        message(STATUS "Protobuf test stdout: [${OUT}]")
+        message(STATUS "Protobuf test stderr: [${ERR}]")
+        message(FATAL_ERROR "Protobuf test generation failed (exit=${RET}): ${OUT} ${ERR}")
     endif()
 
     try_compile(Protobuf_COMPILE_TEST_PASSED
