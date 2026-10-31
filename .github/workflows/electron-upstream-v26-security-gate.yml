@@ -1,0 +1,194 @@
+name: CryLo upstream Electron v26 security gate (disposable, no native builds)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/electron-upstream-v26-security-gate.yml
+  workflow_dispatch:
+    inputs:
+      builder_version:
+        description: Exact published stable electron-builder v26 version
+        required: true
+        type: string
+        default: '26.18.1'
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Pin release npm
+        run: |
+          npm install --global --no-audit --no-fund --ignore-scripts npm@12.1.0
+          test "$(npm --version)" = 12.1.0
+      - name: Verify candidate and document every remaining dependency path
+        shell: bash
+        env:
+          BUILDER_VERSION: ${{ inputs.builder_version || '26.18.1' }}
+          EVIDENCE: ${{ runner.temp }}/electron-upstream-v26-evidence.json
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          'use strict';
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const {spawnSync} = require('node:child_process');
+          const {createRequire} = require('node:module');
+          const exact = process.env.BUILDER_VERSION;
+          if (!/^26\\.\\d+\\.\\d+$/.test(exact)) throw Error('Use an exact stable v26 version');
+          const src = path.resolve('electron');
+          const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crylo-v26-trial-'));
+          const sha = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+          const files = ['package.json', 'package-lock.json'];
+          const before = files.map(f => sha(path.join(src, f)));
+          const report = {candidate: exact, auditBranchOnly: true, canonicalModified: false,
+            nativeBuild: false, installerBuild: false, signing: false, publishing: false,
+            checks: [], candidateSafe: false, executionValid: false};
+          const must = (ok, message) => {if (!ok) throw Error(message)};
+          const invoke = args => {
+            const r = spawnSync('npm', args, {cwd:dir, encoding:'utf8', timeout:180000, maxBuffer:12000000});
+            must(!r.error && r.status === 0, 'npm '+args.join(' ')+' failed: '+String(r.error || r.stderr || r.stdout).slice(-700));
+          };
+          const audit = omit => {
+            const r = spawnSync('npm', ['audit','--package-lock-only',...omit,'--json'], {
+              cwd:dir, encoding:'utf8', timeout:180000, maxBuffer:12000000});
+            let json;
+            try {json=JSON.parse(r.stdout)} catch {throw Error('npm audit returned invalid JSON')};
+            must(!r.error && (r.status === 0 || r.status === 1) && !json.error && json.metadata?.vulnerabilities,
+              'Registry audit unavailable or invalid');
+            return {counts:json.metadata.vulnerabilities,
+              findings:Object.entries(json.vulnerabilities || {}).map(([name,v])=>({name,severity:v.severity}))};
+          };
+          const check = async (label, fn) => {
+            try {await fn();report.checks.push({label,pass:true})}
+            catch(e){report.checks.push({label,pass:false,detail:String(e).slice(0,350)})}
+          };
+          const file={isFile:()=>true,isDirectory:()=>false,isSymbolicLink:()=>false};
+          const folder={isFile:()=>false,isDirectory:()=>true,isSymbolicLink:()=>false};
+          try {
+            files.forEach(f=>fs.copyFileSync(path.join(src,f),path.join(dir,f)));
+            const pkg=JSON.parse(fs.readFileSync(path.join(dir,'package.json'),'utf8'));
+            must(!pkg.overrides,'Canonical Electron package has unexpected overrides');
+            pkg.devDependencies['electron-builder']=exact;
+            fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify(pkg,null,2)+'\n');
+            invoke(['install','--package-lock-only','--ignore-scripts','--no-audit','--no-fund']);
+            const lock=JSON.parse(fs.readFileSync(path.join(dir,'package-lock.json'),'utf8'));
+            report.resolvedBuilder=lock.packages?.['node_modules/electron-builder']?.version;
+            report.resolvedAppBuilder=lock.packages?.['node_modules/app-builder-lib']?.version;
+            must(report.resolvedBuilder===exact && /^26\\./.test(report.resolvedAppBuilder||''),
+              'Dependency candidate mismatch; no v27 migration authorized');
+            report.minimatch=Object.entries(lock.packages||{}).filter(([k])=>
+              k==='node_modules/minimatch'||k.endsWith('/node_modules/minimatch'))
+              .map(([location,p])=>({location,version:p.version}));
+            report.fullAudit=audit([]);
+            report.productionAudit=audit(['--omit=dev']);
+            invoke(['ci','--ignore-scripts','--no-audit','--no-fund']);
+            const req=createRequire(path.join(dir,'package.json'));
+            const appReq=createRequire(req.resolve('app-builder-lib/package.json'));
+            const mmPath=appReq.resolve('minimatch');
+            let mmDir=path.dirname(mmPath),mmVersion=null;
+            for(let i=0;i<7;i++,mmDir=path.dirname(mmDir)){
+              const p=path.join(mmDir,'package.json');
+              if(fs.existsSync(p)){const meta=JSON.parse(fs.readFileSync(p,'utf8'));
+                if(meta.name==='minimatch'){mmVersion=meta.version;break}}
+            }
+            report.builderMinimatch=mmVersion;
+            await check('patched app-builder-lib Minimatch class',()=>{
+              must(typeof appReq('minimatch').Minimatch==='function','class missing');
+              must(mmVersion && /^11\\.(?:[1-9]\\d*|0\\.[1-9]\\d*)/.test(mmVersion),
+                'app-builder-lib minimatch remains below 11.0.1');
+            });
+            const {FileMatcher}=appReq('app-builder-lib/out/fileMatcher');
+            const match=(patterns,name,include,exclude)=>{
+              const f=new FileMatcher('/app','/out',s=>s,patterns).createFilter();
+              for(const p of include)must(f('/app/'+p,file),name+' dropped '+p);
+              for(const p of exclude)must(!f('/app/'+p,file),name+' incorrectly included '+p);
+            };
+            await check('CryLo shared Wallet file patterns',()=>match(
+              ['main.js','preload.js','security/**/*','src/**/*','assets/**/*'],'wallet',
+              ['main.js','preload.js','security/c.js','src/nexus/client.js','assets/icon.png'],
+              ['wallet.keys','private.pem']));
+            await check('CryLo Windows native resource patterns',()=>match(
+              ['CryLo-daemon.exe','CryLo-wallet-rpc.exe','BINARY-MANIFEST.txt','*.dll'],'windows',
+              ['CryLo-daemon.exe','CryLo-wallet-rpc.exe','BINARY-MANIFEST.txt','libcrypto.dll'],['private.pem']));
+            await check('CryLo Linux and Mac native patterns',()=>match(
+              ['CryLo-daemon','CryLo-wallet-rpc','BINARY-MANIFEST.txt'],'unix',
+              ['CryLo-daemon','CryLo-wallet-rpc','BINARY-MANIFEST.txt'],['CryLo-daemon.exe','private.pem']));
+            await check('globstar partial-directory traversal',()=>{
+              const f=new FileMatcher('/app','/out',s=>s,['src/**/*.js']).createFilter();
+              must(f('/app/src',folder)&&f('/app/src/deep',folder)&&f('/app/src/deep/a.js',file),
+                'directory traversal broken');
+              must(!f('/app/src/deep/a.map',file),'glob incorrectly accepted map');
+            });
+            await check('brace exclusion and extglob filtering',()=>{
+              const f=new FileMatcher('/app','/out',s=>s,
+                ['**/*','!**/*.{map,d.ts}','!node_modules/@(electron|electron-download)/**/*']).createFilter();
+              must(f('/app/dist/app.js',file),'normal JS excluded');
+              must(!f('/app/dist/app.js.map',file),'map not excluded');
+              must(!f('/app/node_modules/electron/index.js',file),'electron not excluded');
+              must(f('/app/node_modules/electron-log/index.js',file),'unrelated module excluded');
+            });
+            await check('glob7 sync and callable legacy minimatch',()=>{
+              const g=req('glob');must(typeof g.sync==='function','glob.sync missing');
+              const legacy=createRequire(req.resolve('glob/package.json'))('minimatch');
+              must(typeof legacy==='function' && legacy('foo.js','*.js'),'legacy minimatch API broken');
+            });
+            await check('ASAR round-trip',async()=>{
+              const asar=req('@electron/asar');
+              const d=fs.mkdtempSync(path.join(os.tmpdir(),'crylo-asar-'));
+              try{
+                fs.mkdirSync(path.join(d,'input'));
+                fs.writeFileSync(path.join(d,'input','sample.json'),'{"crylo":1}');
+                await asar.createPackage(path.join(d,'input'),path.join(d,'app.asar'));
+                asar.extractAll(path.join(d,'app.asar'),path.join(d,'extracted'));
+                must(fs.readFileSync(path.join(d,'extracted','sample.json'),'utf8')==='{"crylo":1}',
+                  'ASAR content changed');
+              } finally {fs.rmSync(d,{recursive:true,force:true})}
+            });
+            await check('electron-builder library API',()=>{
+              must(typeof req('electron-builder').build==='function','builder API unavailable');
+            });
+            report.executionValid=true;
+            report.candidateSafe=report.checks.every(x=>x.pass) &&
+              report.fullAudit.counts.total===0 && report.productionAudit.counts.total===0;
+          }catch(e){report.error=String(e)}
+          finally {
+            report.canonicalModified=files.some((f,i)=>sha(path.join(src,f))!==before[i]);
+            if(report.canonicalModified){report.executionValid=false;report.candidateSafe=false}
+            fs.writeFileSync(process.env.EVIDENCE,JSON.stringify(report,null,2)+'\n');
+            fs.rmSync(dir,{recursive:true,force:true});
+            console.log(JSON.stringify({candidate:report.candidate,fullAudit:report.fullAudit?.counts?.total,
+              productionAudit:report.productionAudit?.counts?.total, builderMinimatch:report.builderMinimatch,
+              checks:report.checks,executionValid:report.executionValid,candidateSafe:report.candidateSafe,
+              error:report.error}));
+          }
+          if(!report.executionValid)throw Error('Trial incomplete: '+(report.error||'canonical change'));
+          if(process.env.GITHUB_EVENT_NAME==='push'){
+            must(exact==='26.18.1' && !report.candidateSafe,'Negative control unexpectedly approved');
+            console.log('PASS: 26.18.1 remains BLOCKED (negative control only)');
+          } else {
+            must(report.candidateSafe,'RELEASE BLOCKED: advisory or compatibility gate failed');
+            console.log('Isolated candidate PASS only; native/cross-platform release still blocked pending full gates');
+          }
+          NODE
+      - name: Preserve evidence even when candidate remains blocked
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-upstream-v26-security-evidence
+          path: ${{ runner.temp }}/electron-upstream-v26-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
