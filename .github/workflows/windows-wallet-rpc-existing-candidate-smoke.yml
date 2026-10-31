@@ -6,6 +6,7 @@ on:
       - audit/windows-warning-fixes
     paths:
       - .github/workflows/windows-wallet-rpc-existing-candidate-smoke.yml
+      - docs/security/windows-existing-wallet-rpc-trigger-2026-10-31.md
       - scripts/tests/windows_wallet_rpc_existing_candidate_smoke.py
   workflow_dispatch:
 
