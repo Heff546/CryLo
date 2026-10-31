@@ -1,0 +1,179 @@
+name: CryLo Windows no-credentials fresh install/reinstall/uninstall of exact corrected NSIS
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/windows-public-repo-no-auth-installer-e2e.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  corrected-unsigned-installer:
+    runs-on: windows-2022
+    timeout-minutes: 22
+    steps:
+      - name: Download only exact audited Electron-only corrected NSIS candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=41251769644
+          id=13062020464
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.head_sha')" = 'd306294c7401ef039639af226af51fb1f5c61316'
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.workflow_run.id')" = "$run"
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.digest')" = 'sha256:1169a645867026205234027da569315431dda32512fa7d5e2a0f018d471e12c9'
+          mkdir -p "$RUNNER_TEMP/crylo-corrected-installer"
+          gh run download "$run" --repo Heff546/CryLo \
+            --name crylo-windows-electron-only-nsis-corrected-audit-candidate \
+            --dir "$RUNNER_TEMP/crylo-corrected-installer"
+          echo 'PASS: exact corrected unsigned installer downloaded; native build not repeated'
+
+      - name: Verify actual corrected NSIS install, reinstall and uninstall through Windows CMD
+        shell: pwsh
+        env:
+        run: |
+          $ErrorActionPreference='Stop'
+          if ($env:GH_TOKEN -or $env:GITHUB_TOKEN) { throw 'No credentials permitted in end-user test' }
+          $artifact=Join-Path $env:RUNNER_TEMP 'crylo-corrected-installer'
+          $setups=@(Get-ChildItem $artifact -Recurse -File -Filter 'CryLo Wallet Setup 1.1.1.exe')
+          $audits=@(Get-ChildItem $artifact -Recurse -File -Filter 'crylo-electron-only-audit.json')
+          if($setups.Count -ne 1 -or $audits.Count -ne 1){throw 'Corrected installer or packaging audit file missing or duplicated'}
+          $setup=$setups[0].FullName
+          $receipt=Get-Content $audits[0].FullName -Raw|ConvertFrom-Json
+          if($receipt.nativeSourceCommit -ne '5120debcc2a75fa0c7198ee0137f142dd0a5f6a8' -or
+             $receipt.electronPackagingCommit -ne 'd306294c7401ef039639af226af51fb1f5c61316' -or
+             $receipt.originalRuntimeDllsPreserved -ne 55 -or $receipt.nativeRebuilt -ne $false -or
+             $receipt.setupSha256 -ne (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()){
+            throw 'Corrected NSIS provenance and original native runtime audit mismatch'
+          }
+          $install=Join-Path $env:RUNNER_TEMP 'CryLoCorrectedInstallQA'
+          $checkout=Join-Path $env:USERPROFILE 'CryLo'
+          $local=Join-Path $env:LOCALAPPDATA 'CryLo'
+          $wallets=Join-Path $local 'wallets'
+          $walletMarker=Join-Path $wallets 'crylo-preserved-wallet-fixture'
+          $config=Join-Path (Join-Path $env:APPDATA 'CryLo') 'CryLo.conf'
+          $bootstrap=Join-Path $local 'installer-bootstrap.log'
+          $git=Join-Path $local 'runtime\mingit-2.56.0.windows.1-x64\cmd\git.exe'
+          $node=Join-Path $local 'runtime\node-v24.21.0-win-x64\node.exe'
+          $launcher=Join-Path $local 'bin\crylo.cmd'
+          foreach($p in @($install,$checkout,$walletMarker,$config,$bootstrap)){
+            if(Test-Path $p){throw "Ephemeral test target unexpectedly exists: $p"}
+          }
+          New-Item -ItemType Directory -Force -Path $wallets,(Split-Path $config)|Out-Null
+          [IO.File]::WriteAllText($walletMarker,'existing-wallet-bytes-must-survive',[Text.Encoding]::UTF8)
+          [IO.File]::WriteAllText($config,'testnet=1'+[Environment]::NewLine+'# original-user-config-preserve',[Text.Encoding]::UTF8)
+          $walletSha=(Get-FileHash $walletMarker -Algorithm SHA256).Hash
+          $configSha=(Get-FileHash $config -Algorithm SHA256).Hash
+          function Preserve-Check {
+            if(!(Test-Path $walletMarker) -or !(Test-Path $config)){throw 'Installer erased user wallet or configuration'}
+            if((Get-FileHash $walletMarker -Algorithm SHA256).Hash -ne $walletSha){throw 'Installer changed existing wallet bytes'}
+            if((Get-FileHash $config -Algorithm SHA256).Hash -ne $configSha){throw 'Installer changed existing configuration bytes'}
+            Write-Host 'PASS: existing wallet and config hashes preserved'
+          }
+          function Stage-Report([string]$stage) {
+            $safe=@()
+            if(Test-Path $bootstrap){
+              $safe=@(Get-Content $bootstrap|Where-Object{$_ -match '^(STAGE|FAIL_STAGE|FAIL_RC|RESULT|RUNTIME_HELPER_RC|RUNTIME_HELPER)='})
+              foreach($line in $safe){Write-Host $line}
+            }
+            $found=Test-Path $bootstrap
+            return [ordered]@{stage=$stage;bootstrapLogPresent=$found;markers=$safe}
+          }
+          function Invoke-CmdNSIS([string]$exe,[string]$arguments,[string]$stage) {
+            Write-Host ("===== "+$stage+": real NSIS through Windows CMD =====")
+            $command='start /wait "" "'+$exe+'" '+$arguments
+            $process=Start-Process -FilePath $env:ComSpec -ArgumentList @('/D','/C',$command) -PassThru
+            if(!$process.WaitForExit(360000)){
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              Stage-Report $stage|Out-Null
+              throw "$stage did not exit within six-minute bounded test window"
+            }
+            $process.Refresh()
+            $stageRecord=Stage-Report $stage
+            if($process.ExitCode -ne 0){throw "$stage CMD wrapper exited $($process.ExitCode)"}
+            if($stage -ne 'UNINSTALL' -and
+               (!$stageRecord.bootstrapLogPresent -or $stageRecord.markers -notcontains 'RESULT=READY')){
+              throw "$stage did not reach RESULT=READY"
+            }
+            Write-Host "PASS: $stage CMD/NSIS completed"
+          }
+          $result=[ordered]@{
+            classification='WINDOWS_CORRECTED_NSIS_NO_AUTH_FIRST_INSTALL_E2E'
+            nativeSourceCommit='5120debcc2a75fa0c7198ee0137f142dd0a5f6a8'
+            correctedPackagingCommit='d306294c7401ef039639af226af51fb1f5c61316'
+            nativeRebuilt=$false
+            privateRepoCiAuthenticationUsed=$false
+            publicUnauthenticatedFirstInstallValidated=$false
+            installed=$false;reinstalled=$false;uninstalled=$false
+            existingWalletPreserved=$false;existingConfigPreserved=$false
+            releaseFrozen=$true;mayPublish=$false
+          }
+          $reportPath=Join-Path $env:RUNNER_TEMP 'crylo-no-auth-nsis-e2e-report.json'
+          try {
+            # Deliberately forbid every Git credential helper or interactive prompt.
+            # This step has NO GH_TOKEN / GitHub token; the previous authenticated
+            # artifact-download step's process environment is not inherited.
+            $env:GIT_CONFIG_COUNT='1'
+            $env:GIT_CONFIG_KEY_0='credential.helper'
+            $env:GIT_CONFIG_VALUE_0=''
+            $env:GIT_TERMINAL_PROMPT='0'
+            $env:GCM_INTERACTIVE='never'
+            if ($env:GH_TOKEN -or $env:GITHUB_TOKEN) {
+              throw 'GitHub credential leaked into unauthenticated installer test'
+            }
+            & git -c 'credential.helper=' ls-remote https://github.com/Heff546/CryLo.git HEAD | Out-Null
+            if($LASTEXITCODE -ne 0){throw 'CryLo source cannot be read anonymously'}
+            Write-Host 'PASS: CryLo Git source is anonymously readable without token or prompts'
+            try {
+              Invoke-CmdNSIS $setup ('/S /D='+$install) 'FIRST INSTALL'
+              $result.publicUnauthenticatedFirstInstallValidated=$true
+            } finally {
+              Remove-Item Env:GIT_CONFIG_COUNT,Env:GIT_CONFIG_KEY_0,Env:GIT_CONFIG_VALUE_0 -ErrorAction SilentlyContinue
+            }
+            foreach($file in @((Join-Path $install 'CryLo Wallet.exe'),
+                               (Join-Path $install 'resources\bin\win\CryLo-daemon.exe'),
+                               (Join-Path $install 'resources\bin\win\CryLo-wallet-rpc.exe'),
+                               $node,$git,$launcher,(Join-Path $checkout 'crylo.cmd'))){
+              if(!(Test-Path $file -PathType Leaf)){throw "Installed CryLo component missing: $file"}
+            }
+            $head=& $git -C $checkout rev-parse HEAD
+            $origin=& $git -C $checkout remote get-url origin
+            if($LASTEXITCODE -ne 0 -or $head -ne 'd306294c7401ef039639af226af51fb1f5c61316' -or
+               $origin -ne 'https://github.com/Heff546/CryLo.git'){throw 'Managed checkout does not match packaged source provenance'}
+            Preserve-Check
+            $result.installed=$true
+            Invoke-CmdNSIS $setup ('/S /D='+$install) 'REINSTALL'
+            Preserve-Check
+            $after=& $git -C $checkout rev-parse HEAD
+            if($LASTEXITCODE -ne 0 -or $after -ne $head){throw 'Reinstall changed existing source checkout'}
+            $result.reinstalled=$true
+            $uninstallers=@(Get-ChildItem $install -File -Filter '*Uninstall*.exe')
+            if($uninstallers.Count -ne 1){throw "Expected exact NSIS uninstaller; found $($uninstallers.Count)"}
+            Invoke-CmdNSIS $uninstallers[0].FullName '/S' 'UNINSTALL'
+            Preserve-Check
+            if(!(Test-Path $node) -or !(Test-Path (Join-Path $checkout 'crylo.cmd'))){
+              throw 'Uninstaller deleted preserved managed runtime or existing checkout'
+            }
+            $result.uninstalled=$true
+            $result.existingWalletPreserved=$true
+            $result.existingConfigPreserved=$true
+            Write-Host 'PASS: full corrected unsigned NSIS install, reinstall and uninstall preserved wallet/config'
+          } finally {
+            [IO.File]::WriteAllText($reportPath,(ConvertTo-Json $result -Depth 5)+[Environment]::NewLine,[Text.Encoding]::UTF8)
+          }
+          Write-Host 'PASS: fresh Windows CMD-only installation cloned public CryLo anonymously without GitHub credentials; no native rebuild or release'
+
+      - name: Retain sanitized test-only NSIS E2E report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-windows-no-auth-cmd-installer-e2e-report-only
+          path: ${{ runner.temp }}/crylo-no-auth-nsis-e2e-report.json
+          if-no-files-found: ignore
+          retention-days: 30
