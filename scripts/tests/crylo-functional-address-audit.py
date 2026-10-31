@@ -16,6 +16,7 @@ ACTIVE = (
     "tests/functional_tests/rpc_payment.py",
     "tests/functional_tests/uri.py",
     "tests/functional_tests/speed.py",
+    "tests/functional_tests/sign_message.py",
 )
 # Detect legacy Monero-form base58 constants; do not treat copyright headers as an address.
 MONERO_ADDRESS_LIKE = re.compile(r"(?<![A-Za-z0-9])[48][1-9A-HJ-NP-Za-km-z]{80,115}(?![A-Za-z0-9])")
@@ -39,6 +40,9 @@ for name in ACTIVE[1:]:
     elif name.endswith("/rpc_payment.py"):
         if "os.environ['CRYLO_REGTEST_RPC_PAYMENT_ADDRESS']" not in s:
             raise SystemExit("FAIL: RPC payment test not using explicit CryLo address")
+    elif name.endswith("/sign_message.py"):
+        if "self.address.append(res.address)" not in s or "validate_address(self.address[i]).valid" not in s:
+            raise SystemExit("FAIL: message-signing addresses must come from CryLo wallet RPC")
     elif "self.mining_address = res.address" not in s or "validate_address(self.mining_address).valid" not in s:
         raise SystemExit("FAIL: RPC wallet-derived address contract missing: " + name)
     if name.endswith("/txpool.py") or name.endswith("/speed.py"):
