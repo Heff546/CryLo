@@ -44,9 +44,18 @@ jobs:
             echo "ERROR: npm registry audit failed unexpectedly: exit $status"
             exit 1
           fi
+          set +e
+          npm --prefix electron audit --omit=dev --package-lock-only --json > "$out/production-npm-audit.json"
+          production_status=$?
+          set -e
+          if [[ "$production_status" -ne 0 && "$production_status" -ne 1 ]]; then
+            echo "ERROR: production-only registry audit failed unexpectedly: exit $production_status"
+            exit 1
+          fi
           node scripts/tests/electron-shared-warning-audit.js \
             electron/package.json electron/package-lock.json \
-            "$out/full-npm-audit.json" "$out/shared-dependency-report.json"
+            "$out/full-npm-audit.json" "$out/production-npm-audit.json" \
+            "$out/shared-dependency-report.json"
 
       - name: Audit current Windows candidate and archive logs without building
         shell: bash
@@ -90,6 +99,17 @@ jobs:
           NODE
           printf 'Candidate run=%s job=%s\nArchive run=%s job=%s\nNo native build or signing\n' \
             "$candidate_run" "$candidate_job" "$archive_run" "$archive_job" > "$out/RUNS.txt"
+      - name: Preserve security advisory evidence even when the gate blocks
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-shared-electron-dependency-security-review
+          path: |
+            ${{ runner.temp }}/crylo-electron-warning-audit/full-npm-audit.json
+            ${{ runner.temp }}/crylo-electron-warning-audit/production-npm-audit.json
+            ${{ runner.temp }}/crylo-electron-warning-audit/shared-dependency-report.json
+          if-no-files-found: warn
+          retention-days: 30
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: crylo-windows-warning-audit-only

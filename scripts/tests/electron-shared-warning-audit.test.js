@@ -14,7 +14,7 @@ function fixtures(){
   return {pkg,lock:{lockfileVersion:3,packages:pkgs},audit};
 }
 test('shared lock provenance and zero advisories pass',()=>{
- const v=fixtures(),r=inspect(v.pkg,v.lock,v.audit);
+ const v=fixtures(),r=inspect(v.pkg,v.lock,v.audit,v.audit);
  assert.equal(r.deprecatedTooling.length,4);
  assert.equal(r.mayPublish,false);
  assert.equal(r.sameLockfileForWindowsLinuxAndMac,true);
@@ -22,17 +22,29 @@ test('shared lock provenance and zero advisories pass',()=>{
 });
 test('production transitive dependency cannot be silently waved away',()=>{
  const v=fixtures();v.lock.packages['node_modules/temp'].dev=false;
- assert.throws(()=>inspect(v.pkg,v.lock,v.audit),/non-development dependency parents/);
+ assert.throws(()=>inspect(v.pkg,v.lock,v.audit,v.audit),/non-development dependency parents/);
 });
 test('security advisory blocks a clean audit',()=>{
  const v=fixtures();v.audit.metadata.vulnerabilities.high=1;v.audit.metadata.vulnerabilities.total=1;
- assert.throws(()=>inspect(v.pkg,v.lock,v.audit),/vulnerabilities/);
+ const r=inspect(v.pkg,v.lock,v.audit,fixtures().audit);
+ assert.equal(r.requiresSecurityReview,true);
+ assert.equal(r.registryVulnerabilities.high,1);
+ assert.equal(r.productionOnlyVulnerabilities.total,0);
 });
 test('registry errors and missing audit metadata block',()=>{
  const v=fixtures();v.audit={error:{code:'EAI_AGAIN'}};
- assert.throws(()=>inspect(v.pkg,v.lock,v.audit),/incomplete/);
+ assert.throws(()=>inspect(v.pkg,v.lock,v.audit,fixtures().audit),/incomplete/);
 });
 test('tooling version drift blocks silent package changes',()=>{
  const v=fixtures();v.lock.packages['node_modules/glob'].version='8.0.0';
- assert.throws(()=>inspect(v.pkg,v.lock,v.audit),/unexpectedly changed/);
+ assert.throws(()=>inspect(v.pkg,v.lock,v.audit,v.audit),/unexpectedly changed/);
+});
+
+test('production-only advisory is recorded and blocks',()=>{
+ const v=fixtures(),prod=fixtures().audit;
+ prod.metadata.vulnerabilities.critical=1;
+ prod.metadata.vulnerabilities.total=1;
+ const r=inspect(v.pkg,v.lock,v.audit,prod);
+ assert.equal(r.requiresSecurityReview,true);
+ assert.equal(r.productionOnlyVulnerabilities.critical,1);
 });
