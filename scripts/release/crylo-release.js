@@ -1553,6 +1553,16 @@ command -v protoc >/dev/null || {
   echo "ERROR: protoc missing; Trezor support requires protobuf-compiler"
   exit 1
 }
+# Verify protoc in the same MSYS2 shell used for CMake configuration.
+# A native Windows DLL-load failure can otherwise be misreported as a
+# Protobuf source-generation failure during CheckTrezor.cmake.
+echo "===== WINDOWS PROTOC CONFIGURE ENVIRONMENT ====="
+command -v protoc
+protoc --version || {
+  echo "ERROR: pinned protoc cannot start in the Windows CMake environment"
+  exit 1
+}
+echo "PASS: pinned protoc starts in Windows CMake environment"
 
 mkdir -p "${buildMsys}"
 cd "${buildMsys}"
