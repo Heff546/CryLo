@@ -69,9 +69,47 @@ jobs:
           function Invoke-Setup([string]$exe,[string[]]$args,[string]$stage) {
             Write-Host "===== $stage ====="
             $p=Start-Process -FilePath $exe -ArgumentList $args -PassThru
-            if (!$p.WaitForExit(480000)) {
+            if (!$p.WaitForExit(150000)) {
+              Write-Host '===== SANITIZED NSIS INSTALLER TIMEOUT DIAGNOSTICS ====='
+              $bootstrap=Join-Path $local 'installer-bootstrap.log'
+              $safe=@()
+              if (Test-Path -LiteralPath $bootstrap) {
+                $safe=@(Get-Content -LiteralPath $bootstrap | Where-Object {
+                  $_ -match '^(STAGE|FAIL_STAGE|FAIL_RC|RESULT|RUNTIME_HELPER_RC|HELPER_HASH|NODE_ARCHIVE_HASH|NODE_EXE_HASH|NODE_EXTRACTION|HELPER_CERTUTIL_RC)='
+                })
+                foreach ($line in $safe) { Write-Host $line }
+              } else {
+                Write-Host 'No CryLo installer-bootstrap.log present'
+              }
+              foreach ($label in @('installationTarget','checkout','checkoutStage','managedNode','managedGit','walletSentinel','userConfig')) {
+                $where=switch ($label) {
+                  'installationTarget' { $install }
+                  'checkout' { $checkout }
+                  'checkoutStage' { $checkout+'.pre-crylo-install' }
+                  'managedNode' { $node }
+                  'managedGit' { $git }
+                  'walletSentinel' { $marker }
+                  'userConfig' { $config }
+                }
+                Write-Host ("STATUS {0}: exists={1}" -f $label,(Test-Path -LiteralPath $where))
+              }
+              Get-Process | Where-Object { $_.ProcessName -match '^(git|node|CryLo|tar|cmd|conhost|nsis|elevate)' } |
+                ForEach-Object { Write-Host ('PROCESS '+$_.ProcessName+' pid='+$_.Id) }
+              $diag=[ordered]@{
+                classification='WINDOWS_UNSIGNED_INSTALLER_TIMEOUT_DIAGNOSTIC'
+                sourceCommit='5120debcc2a75fa0c7198ee0137f142dd0a5f6a8'
+                failedStage=$stage
+                bootstrapStages=$safe
+                walletSentinelPreserved=((Test-Path $marker) -and ((Get-FileHash $marker -Algorithm SHA256).Hash -eq $walletHash))
+                userConfigPreserved=((Test-Path $config) -and ((Get-FileHash $config -Algorithm SHA256).Hash -eq $configHash))
+                releaseFrozen=$true
+                mayPublish=$false
+                nativeRebuilt=$false
+              }
+              [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'crylo-current-windows-nsis-report.json'),
+                (ConvertTo-Json $diag -Depth 5)+[Environment]::NewLine,[Text.Encoding]::UTF8)
               Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-              throw "$stage exceeded bounded test timeout"
+              throw "$stage exceeded bounded diagnostic timeout; review sanitized stage evidence"
             }
             $p.Refresh()
             if ($p.ExitCode -ne 0) { throw "$stage returned $($p.ExitCode)" }
