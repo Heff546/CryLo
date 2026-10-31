@@ -1,11 +1,15 @@
 name: CryLo Windows Warning Baseline Audit — Release Frozen
 on:
   push:
-    branches: [feature/mac-first-build-gate]
+    branches: [feature/mac-first-build-gate, audit/windows-warning-fixes]
     paths:
       - .github/workflows/windows-warning-diff-gate.yml
       - scripts/release/windows-warning-diff.js
       - scripts/tests/windows-warning-diff.test.js
+      - scripts/tests/electron-shared-warning-audit.js
+      - scripts/tests/electron-shared-warning-audit.test.js
+      - electron/package.json
+      - electron/package-lock.json
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,6 +27,27 @@ jobs:
         with:
           node-version: '24.21.0'
       - run: node --test scripts/tests/windows-warning-diff.test.js
+      - name: Verify shared Electron dependency warning scope, pinned npm and registry advisories
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global --no-fund --no-audit --ignore-scripts npm@12.1.0
+          test "$(npm --version)" = 12.1.0
+          node --test scripts/tests/electron-shared-warning-audit.test.js
+          out="$RUNNER_TEMP/crylo-electron-warning-audit"
+          mkdir -p "$out"
+          set +e
+          npm --prefix electron audit --package-lock-only --json > "$out/full-npm-audit.json"
+          status=$?
+          set -e
+          if [[ "$status" -ne 0 && "$status" -ne 1 ]]; then
+            echo "ERROR: npm registry audit failed unexpectedly: exit $status"
+            exit 1
+          fi
+          node scripts/tests/electron-shared-warning-audit.js \
+            electron/package.json electron/package-lock.json \
+            "$out/full-npm-audit.json" "$out/shared-dependency-report.json"
+
       - name: Audit current Windows candidate and archive logs without building
         shell: bash
         env:
@@ -72,5 +97,6 @@ jobs:
             ${{ runner.temp }}/crylo-win-warning/candidate-warning-audit.json
             ${{ runner.temp }}/crylo-win-warning/archive-warning-audit.json
             ${{ runner.temp }}/crylo-win-warning/RUNS.txt
+            ${{ runner.temp }}/crylo-electron-warning-audit/shared-dependency-report.json
           if-no-files-found: error
           retention-days: 30
