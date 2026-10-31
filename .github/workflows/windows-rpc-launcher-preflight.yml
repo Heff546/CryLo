@@ -6,6 +6,7 @@ on:
       - audit/windows-warning-fixes
     paths:
       - .github/workflows/windows-rpc-launcher-preflight.yml
+      - docs/security/windows-rpc-preflight-trigger-2026-10-31.md
       - tests/functional_tests/functional_tests_rpc.py
       - scripts/tests/windows_rpc_launcher_preflight_test.py
       - scripts/tests/windows_regtest_genesis_gate.py
