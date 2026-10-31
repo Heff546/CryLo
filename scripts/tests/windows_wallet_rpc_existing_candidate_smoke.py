@@ -104,6 +104,74 @@ def wait_ready(port, process, until):
             time.sleep(0.3)
     raise RuntimeError("Timed out checking wallet RPC readiness: " + str(last))
 
+def inherited_cross_network_fixtures():
+    """Read *existing* intentionally retained network fixtures without adding addresses.
+
+    Do not execute the functional test file; read only its literal AST so this
+    Windows-only audit has no external Python dependency or DNS/network calls.
+    """
+    import ast
+    root = Path(__file__).resolve().parents[2]
+    file = root / "tests" / "functional_tests" / "validate_address.py"
+    tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+    lists = [
+        node.value for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "addresses" for t in node.targets)
+        and isinstance(node.value, ast.List)
+    ]
+    if len(lists) != 1:
+        raise RuntimeError("Expected exactly one wallet address-validation fixture table")
+    cases = []
+    for row in lists[0].elts:
+        if not isinstance(row, ast.List) or len(row.elts) != 3:
+            raise RuntimeError("Unexpected structure in network validation fixtures")
+        if not isinstance(row.elts[0], ast.Constant):
+            raise RuntimeError("Network validation fixture has no literal network")
+        network = row.elts[0].value
+        if network not in ("testnet", "stagenet"):
+            continue
+        if not isinstance(row.elts[1], ast.Constant) or not isinstance(row.elts[2], ast.Constant):
+            raise RuntimeError("Cross-network compatibility fixture must be public literal")
+        subtype, address = row.elts[1].value, row.elts[2].value
+        if subtype not in ("", "i", "s") or not isinstance(address, str):
+            raise RuntimeError("Invalid inherited network fixture metadata")
+        cases.append((network, subtype, address))
+    if len(cases) != 8 or any(sum(1 for net, _, _ in cases if net == expected) != 4 for expected in ("testnet", "stagenet")):
+        raise RuntimeError("Expected four inherited public address vectors per non-mainnet network")
+    config = (root / "src" / "cryptonote_config.h").read_text(encoding="utf-8")
+    expected_values = (("testnet", 53, 54, 63), ("stagenet", 24, 25, 36))
+    for network, standard, integrated, subaddress in expected_values:
+        region = config.split("namespace " + network, 1)
+        if len(region) != 2:
+            raise RuntimeError("Network configuration missing: " + network)
+        values = region[1].split("}", 1)[0]
+        for suffix, expected in (
+            ("CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX", standard),
+            ("CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX", integrated),
+            ("CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX", subaddress),
+        ):
+            if not re.search(r"\b" + suffix + r"\s*=\s*" + str(expected) + r"\s*;", values):
+                raise RuntimeError("Network prefix changed; halt for compatibility review: " + network)
+    return cases
+
+def check_inherited_prefix_behavior(port):
+    """Verify default mainnet rejection and explicit cross-network classification."""
+    cases = inherited_cross_network_fixtures()
+    for network, subtype, address in cases:
+        default = rpc(port, "validate_address", {"address": address, "any_net_type": False})
+        if default.get("valid"):
+            raise RuntimeError("Mainnet-default wallet accepted cross-network address (" + network + ")")
+        explicit = rpc(port, "validate_address", {"address": address, "any_net_type": True})
+        if not explicit.get("valid") or explicit.get("nettype") != network:
+            raise RuntimeError("Explicit cross-network classification disagrees with source fixture (" + network + ")")
+        if bool(explicit.get("integrated")) != (subtype == "i") or bool(explicit.get("subaddress")) != (subtype == "s"):
+            raise RuntimeError("Cross-network address subtype misclassified (" + network + ")")
+        bad = address[:-1] + ("1" if address[-1] != "1" else "2")
+        if rpc(port, "validate_address", {"address": bad, "any_net_type": True}).get("valid"):
+            raise RuntimeError("Cross-network address checksum mutation unexpectedly accepted (" + network + ")")
+    return len(cases)
+
 def smoke(directory, port, report_path):
     response = rpc(port, "restore_deterministic_wallet", {
         "seed": PUBLIC_TEST_SEED,
@@ -144,6 +212,7 @@ def smoke(directory, port, report_path):
                 "42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm"):
         if rpc(port,"validate_address",{"address":bad,"any_net_type":True}).get("valid"):
             raise RuntimeError("Wallet RPC accepted legacy or invalid address")
+    cross_network_count = check_inherited_prefix_behavior(port)
     report = {
         "classification":"WINDOWS_EXISTING_UNSIGNED_BINARY_RPC_SMOKE_ONLY",
         "sourceCommit":EXPECTED_SOURCE,
@@ -154,6 +223,10 @@ def smoke(directory, port, report_path):
         "independentPrimaryAndSubaddressVectors": "passed",
         "integratedAddressRoundtrip": "passed",
         "oldMoneroAndInvalidAddressRejection": "passed",
+        "strictMainnetRejectedInheritedCrossNetworkAddresses":cross_network_count,
+        "explicitAnyNetTypeClassifiedInheritedCrossNetworkAddresses":cross_network_count,
+        "legacyMoneroTestnetAndStagenetPrefixOverlap":"confirmed; preserve compatibility and review transaction/UI network checks",
+        "networkPrefixChangeAuthorized":False,
         "uriFixExecuted":False,
         "multisigAndTransferIntegrationExecuted":False,
         "note":"Only the previous compiled unsigned candidate was exercised; new URI and shared-wallet source corrections require final native build."
@@ -161,6 +234,8 @@ def smoke(directory, port, report_path):
     report_path.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     print("PASS: existing unsigned Windows CryLo wallet RPC matched independent primary and subaddress vectors")
     print("PASS: integrated address roundtrip and legacy address rejection")
+    print("PASS: %s inherited testnet/stagenet fixture addresses rejected by default, correctly classified only with any_net_type" % cross_network_count)
+    print("NOTICE: inherited Monero network prefix overlap confirmed; no protocol changes authorized")
     print("NOTICE: staged URI fix, multisig and transfer tests NOT executed; release remains frozen")
 
 def main():
