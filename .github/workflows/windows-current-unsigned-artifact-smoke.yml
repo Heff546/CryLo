@@ -1,0 +1,76 @@
+name: CryLo Windows current unsigned artifact wallet RPC and URI gate (no rebuild)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/windows-current-unsigned-artifact-smoke.yml
+      - scripts/tests/windows_current_unsigned_artifact_smoke.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  current-candidate-wallet-rpc:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout audited Python smoke tests, not release sources
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Acquire only the exact successful unsigned candidate, no native build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=41244508425
+          expected_sha=5120debcc2a75fa0c7198ee0137f142dd0a5f6a8
+          artifact_id=13060610636
+          expected_digest=sha256:27e7bbba85dfdea965d7bb66e49554b858a01bc493263a376ad48b1337250a23
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run_id" --jq '.head_sha')" = "$expected_sha"
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run_id" --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$artifact_id" --jq '.workflow_run.id')" = "$run_id"
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$artifact_id" --jq '.digest')" = "$expected_digest"
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$artifact_id" --jq '.name')" = crylo-unified-windows-x64-unsigned-native-candidate
+          mkdir -p "$RUNNER_TEMP/crylo-current-unsigned"
+          gh run download "$run_id" --repo Heff546/CryLo \
+            --name crylo-unified-windows-x64-unsigned-native-candidate \
+            --dir "$RUNNER_TEMP/crylo-current-unsigned"
+          echo 'PASS: authenticated successful build, source SHA, artifact ID/digest and exact unsigned candidate'
+
+      - name: Exercise current CryLo wallet-RPC and URI regression on genuine Windows executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/tests/windows_current_unsigned_artifact_smoke.py
+          python scripts/tests/windows_current_unsigned_artifact_smoke.py \
+            "$RUNNER_TEMP/crylo-current-unsigned" \
+            "$RUNNER_TEMP/crylo-current-unsigned-rpc-report.json"
+          python - "$RUNNER_TEMP/crylo-current-unsigned-rpc-report.json" <<'PY'
+          import json,sys
+          report=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert report["sourceCommit"]=="5120debcc2a75fa0c7198ee0137f142dd0a5f6a8"
+          assert report["nativeArtifactHashesVerified"] is True
+          assert report["runtimeDllsVerified"]==55
+          assert report["walletRPCExecuted"] is True
+          assert report["uriRegressionExecuted"] is True
+          assert report["uriChecksPassed"]>=20
+          assert report["releaseFrozen"] is True and report["mayPublish"] is False
+          assert report["installerExecuted"] is False and report["updaterExecuted"] is False
+          print("PASS: exact current CryLo Windows artifact executed, not prior binary; no release")
+          PY
+
+      - name: Preserve current-artifact test evidence only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-current-windows-unsigned-rpc-uri-audit-only
+          path: ${{ runner.temp }}/crylo-current-unsigned-rpc-report.json
+          if-no-files-found: ignore
+          retention-days: 30
