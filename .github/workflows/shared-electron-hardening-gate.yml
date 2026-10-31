@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/mac-first-build-gate
+      - audit/windows-warning-fixes
     paths:
       - .github/workflows/shared-electron-hardening-gate.yml
       - electron/main.js
