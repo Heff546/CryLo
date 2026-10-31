@@ -84,7 +84,7 @@ crylo_helper_certutil_ok:
   FileWrite $8 "STAGE=HELPER_HASH_COMPARE$\r$\n"
   FileClose $8
 
-  nsExec::ExecToStack `"$SYSDIR\findstr.exe" /I /X /C:"69feebe2d19f7af89126358d57dbdef9e3068e7310d68ef9ee2f759b00c39a7f" "$PLUGINSDIR\crylo-hash-output.txt"`
+  nsExec::ExecToStack `"$SYSDIR\findstr.exe" /I /X /C:"d222a115c756797ef0005e16af720b90e11907c8c5dfda7c118e0680deb2b6e1" "$PLUGINSDIR\crylo-hash-output.txt"`
   Pop $R0
   Pop $R1
 

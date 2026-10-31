@@ -5,6 +5,7 @@ const fs = require('fs');
 const https = require('https');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
+const { verifyWindowsInstallerHelperPin } = require('./verify-windows-installer-helper-pin');
 
 const ELECTRON_BUILDER_ARCH = {
   0: 'ia32',
@@ -465,6 +466,8 @@ module.exports = async function beforePack(context) {
   }
 
   if (platform === 'win') {
+    verifyWindowsInstallerHelperPin(electronDir);
+
     await stageWindowsNodeInstallerResource(
       electronDir
     );
