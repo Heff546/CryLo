@@ -54,6 +54,8 @@ class GetOutputDistributionTest():
         try: self.wallet.close_wallet()
         except: pass
         res = self.wallet.restore_deterministic_wallet(seed = 'velvet lymph giddy number token physics poetry unquoted nibs useful sabotage limits benches lifestyle eden nitrogen anvil fewest avoid batch vials washing fences goat unquoted')
+        self.mining_address = res.address
+        assert self.wallet.validate_address(self.mining_address).valid
 
     def test_get_output_distribution(self):
         print("Test get_output_distribution")
@@ -69,7 +71,7 @@ class GetOutputDistributionTest():
         assert len(d.distribution) == 1
         assert d.distribution[0] == 0
 
-        res = daemon.generateblocks('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 1)
+        res = daemon.generateblocks(self.mining_address, 1)
 
         res = daemon.get_output_distribution([0], 0, 0)
         assert len(res.distributions) == 1
@@ -92,7 +94,7 @@ class GetOutputDistributionTest():
         assert len(d.distribution) == 1
         assert d.distribution[0] == 0
 
-        res = daemon.generateblocks('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 3)
+        res = daemon.generateblocks(self.mining_address, 3)
 
         res = daemon.get_output_distribution([0], 0, 0, cumulative = True)
         assert len(res.distributions) == 1
@@ -107,7 +109,7 @@ class GetOutputDistributionTest():
         assert d.distribution[3] == 3
 
         # extend
-        res = daemon.generateblocks('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 80)
+        res = daemon.generateblocks(self.mining_address, 80)
 
         res = daemon.get_output_distribution([0], 0, 0, cumulative = True)
         assert len(res.distributions) == 1
@@ -122,9 +124,9 @@ class GetOutputDistributionTest():
         # pop and replace, this will do through the "trim and extend" path
         res = daemon.pop_blocks(2)
         self.wallet.refresh()
-        dst = {'address': '42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 'amount': 1000000000000}
+        dst = {'address': self.mining_address, 'amount': 1000000000000}
         self.wallet.transfer([dst])
-        res = daemon.generateblocks('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 1)
+        res = daemon.generateblocks(self.mining_address, 1)
         for step in range(3): # the second will be cached, the third will also be cached, but we get it in non-cumulative mode
             res = daemon.get_output_distribution([0], 0, 0, cumulative = step < 3)
             assert len(res.distributions) == 1

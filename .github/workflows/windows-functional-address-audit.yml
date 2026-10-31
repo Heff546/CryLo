@@ -1,0 +1,46 @@
+name: CryLo Windows functional address migration static audit — no release
+
+on:
+  push:
+    branches:
+      - audit/windows-warning-fixes
+    paths:
+      - .github/workflows/windows-functional-address-audit.yml
+      - scripts/tests/crylo-functional-address-audit.py
+      - tests/functional_tests/functional_tests_rpc.py
+      - tests/functional_tests/mining.py
+      - tests/functional_tests/get_output_distribution.py
+      - tests/functional_tests/p2p.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Audit migrated CryLo addresses and enumerate remaining Monero fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tests/crylo-functional-address-audit.py | tee "$RUNNER_TEMP/crylo-address-audit.json"
+          python - "$RUNNER_TEMP/crylo-address-audit.json" <<'PY'
+          import json, sys
+          report=json.load(open(sys.argv[1],encoding="utf8"))
+          assert report["mayPublish"] is False and report["releaseFrozen"] is True
+          assert report["rpcIntegrationExecuted"] is False
+          assert len(report["migrated"]) == 4
+          print("PASS: active RPC-payment/mining tests no longer use the old Monero destination; remaining vectors explicitly inventoried")
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-windows-legacy-address-inventory-audit-only
+          path: ${{ runner.temp }}/crylo-address-audit.json
+          if-no-files-found: error
+          retention-days: 30

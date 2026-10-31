@@ -34,6 +34,18 @@ try:
 except:
   tests = DEFAULT_TESTS
 
+# This harness deliberately has no built-in Monero payment address.
+# The caller supplies a valid CryLo regtest destination when testing RPC payment.
+rpc_payment_address = os.environ.get('CRYLO_REGTEST_RPC_PAYMENT_ADDRESS', '').strip()
+if 'rpc_payment' in tests and not rpc_payment_address:
+  print('ERROR: CRYLO_REGTEST_RPC_PAYMENT_ADDRESS is required to run rpc_payment; provide a verified CryLo regtest address.')
+  sys.exit(2)
+if rpc_payment_address:
+  import re
+  if not rpc_payment_address.startswith('Wo') or not re.fullmatch(r'[1-9A-HJ-NP-Za-km-z]+', rpc_payment_address):
+    print('ERROR: CRYLO_REGTEST_RPC_PAYMENT_ADDRESS must be a CryLo mainnet/regtest address (Wo prefix).')
+    sys.exit(2)
+
 # a main offline CryLo daemon, which runs most tests
 # a restricted CryLo daemon with RPC payment enabled
 # two local online CryLo daemons connected to each other
@@ -51,11 +63,16 @@ DIFFICULTY = 10
 crylo_daemon_base = [builddir + "/bin/CryLo-daemon", "--regtest", "--fixed-difficulty", str(DIFFICULTY), "--no-igd", "--p2p-bind-port", "crylo_daemon_p2p_port", "--rpc-bind-port", "crylo_daemon_rpc_port", "--zmq-rpc-bind-port", "crylo_daemon_zmq_port", "--zmq-pub", "crylo_daemon_zmq_pub", "--non-interactive", "--disable-dns-checkpoints", "--check-updates", "disabled", "--rpc-ssl", "disabled", "--data-dir", "crylo_daemon_data_dir", "--log-level", "1", "--rpc-max-connections-per-private-ip", "100", "--rpc-max-connections", "100"]
 crylo_daemon_extra = [
   ["--offline"],
-  ["--rpc-payment-address", "44SKxxLQw929wRF6BA9paQ1EWFshNnKhXM3qz6Mo3JGDE2YG3xyzVutMStEicxbQGRfrYvAAYxH6Fe8rnD56EaNwUiqhcwR", "--rpc-payment-difficulty", str(DIFFICULTY), "--rpc-payment-credits", "5000", "--offline"],
+  ["--offline"],  # RPC payment options set only with a verified CryLo test address.
   ["--add-exclusive-node", "127.0.0.1:18283"],
   ["--add-exclusive-node", "127.0.0.1:18282"],
 ]
 wallet_base = [builddir + "/bin/CryLo-wallet-rpc", "--wallet-dir", WALLET_DIRECTORY, "--rpc-bind-port", "wallet_port", "--disable-rpc-login", "--rpc-ssl", "disabled", "--daemon-ssl", "disabled", "--log-level", "1", "--allow-mismatched-daemon-version"]
+# CryLo-daemon performs the definitive address/checksum validation at startup.
+if rpc_payment_address:
+  crylo_daemon_extra[1] = ["--rpc-payment-address", rpc_payment_address,
+    "--rpc-payment-difficulty", str(DIFFICULTY), "--rpc-payment-credits", "5000", "--offline"]
+
 wallet_extra = [
   ["--daemon-port", "18180"],
   ["--daemon-port", "18180"],
