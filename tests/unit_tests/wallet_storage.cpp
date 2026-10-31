@@ -407,3 +407,35 @@ TEST(wallet_storage, generated_change_password_different_file)
         EXPECT_EQ(address, wallet.get_address_as_str());
     }
 }
+
+TEST(wallet_storage, crylo_uri_roundtrip)
+{
+    const epee::wipeable_string password("crylo-uri-regression");
+    tools::wallet2 wallet;
+    wallet.generate("", password);
+    const std::string address = wallet.get_address_as_str();
+    std::string error;
+    const uint64_t amount = 100000000000;
+    const std::string uri = wallet.make_uri(address, "", amount, "URI regression", "CryLo recipient", error);
+    ASSERT_TRUE(error.empty()) << error;
+    ASSERT_FALSE(uri.empty());
+    EXPECT_EQ(0u, uri.find("crylo:" + address));
+
+    std::string recovered_address, recovered_payment, recovered_description, recovered_recipient;
+    uint64_t recovered_amount = 0;
+    std::vector<std::string> unknown;
+    ASSERT_TRUE(wallet.parse_uri(uri, recovered_address, recovered_payment, recovered_amount,
+        recovered_description, recovered_recipient, unknown, error)) << error;
+    EXPECT_EQ(address, recovered_address);
+    EXPECT_TRUE(recovered_payment.empty());
+    EXPECT_EQ(amount, recovered_amount);
+    EXPECT_EQ("URI regression", recovered_description);
+    EXPECT_EQ("CryLo recipient", recovered_recipient);
+    EXPECT_TRUE(unknown.empty());
+
+    // Payment URI parsing must not accept the former chain's scheme.
+    error.clear();
+    EXPECT_FALSE(wallet.parse_uri("monero:" + address, recovered_address, recovered_payment,
+        recovered_amount, recovered_description, recovered_recipient, unknown, error));
+    EXPECT_NE(std::string::npos, error.find("wrong scheme"));
+}

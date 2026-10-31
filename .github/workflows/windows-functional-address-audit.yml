@@ -11,6 +11,9 @@ on:
       - tests/functional_tests/mining.py
       - tests/functional_tests/get_output_distribution.py
       - tests/functional_tests/p2p.py
+      - src/wallet/wallet2.cpp
+      - tests/unit_tests/wallet_storage.cpp
+      - .github/workflows/windows-pinned-unsigned-native-release.yml
   workflow_dispatch:
 
 permissions:

@@ -182,7 +182,7 @@ jobs:
             echo 'ERROR: historical wallet fixture appeared; reassess test selection'; exit 1;
           }
           echo 'NOTICE: 3 historical Monero wallet tests remain unvalidated (missing original .keys fixture).'
-          "$executable" --data-dir "$root/tests/data" --gtest_filter='wallet_storage.store_to_mem2file:wallet_storage.change_password_in_memory:wallet_storage.change_password_mem2file:wallet_storage.account_tags_survive_store_and_reload:wallet_storage.generated_*'
+          "$executable" --data-dir "$root/tests/data" --gtest_filter='wallet_storage.store_to_mem2file:wallet_storage.change_password_in_memory:wallet_storage.change_password_mem2file:wallet_storage.account_tags_survive_store_and_reload:wallet_storage.crylo_uri_roundtrip:wallet_storage.generated_*'
           echo 'PASS: current CryLo wallet save/reopen, password and account-tag storage tests'
           SH
           tr -d '\r' < "$script" > "$script.unix"

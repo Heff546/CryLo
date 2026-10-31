@@ -15681,13 +15681,16 @@ std::string wallet2::make_uri(const std::string &address, const std::string &pay
 //----------------------------------------------------------------------------------------------------
 bool wallet2::parse_uri(const std::string &uri, std::string &address, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error)
 {
-  if (uri.substr(0, 8) != "crylo:")
+  // Keep the checked scheme length and address offset synchronized.
+  static constexpr char uri_scheme[] = "crylo:";
+  const size_t scheme_length = sizeof(uri_scheme) - 1;
+  if (uri.compare(0, scheme_length, uri_scheme) != 0)
   {
     error = std::string("URI has wrong scheme (expected \"crylo:\"): ") + uri;
     return false;
   }
 
-  std::string remainder = uri.substr(8);
+  std::string remainder = uri.substr(scheme_length);
   const char *ptr = strchr(remainder.c_str(), '?');
   address = ptr ? remainder.substr(0, ptr-remainder.c_str()) : remainder;
 

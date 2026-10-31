@@ -30,6 +30,17 @@ for name in ACTIVE[1:]:
     s = (ROOT / name).read_text(encoding="utf8")
     if "self.mining_address = res.address" not in s or "validate_address(self.mining_address).valid" not in s:
         raise SystemExit("FAIL: RPC wallet-derived address contract missing: " + name)
+# URI support is part of the same address-migration release gate.
+wallet_cpp = (ROOT / "src/wallet/wallet2.cpp").read_text(encoding="utf8")
+unit_cpp = (ROOT / "tests/unit_tests/wallet_storage.cpp").read_text(encoding="utf8")
+release_yml = (ROOT / ".github/workflows/windows-pinned-unsigned-native-release.yml").read_text(encoding="utf8")
+if 'uri.compare(0, scheme_length, uri_scheme) != 0' not in wallet_cpp or 'uri.substr(scheme_length)' not in wallet_cpp:
+    raise SystemExit("FAIL: CryLo URI parsing scheme length and offset are not synchronized")
+if 'TEST(wallet_storage, crylo_uri_roundtrip)' not in unit_cpp or 'EXPECT_FALSE(wallet.parse_uri("monero:" + address' not in unit_cpp:
+    raise SystemExit("FAIL: CryLo URI regression does not cover roundtrip and legacy-scheme rejection")
+if 'wallet_storage.crylo_uri_roundtrip' not in release_yml:
+    raise SystemExit("FAIL: Windows native wallet gate does not execute the URI regression")
+
 other = {}
 for file in sorted((ROOT / "tests/functional_tests").glob("*.py")):
     if file.relative_to(ROOT).as_posix() in ACTIVE:
