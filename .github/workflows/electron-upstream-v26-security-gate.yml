@@ -40,6 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           node <<'NODE'
+          (async () => {
           'use strict';
           const fs = require('node:fs');
           const os = require('node:os');
@@ -183,6 +184,7 @@ jobs:
             must(report.candidateSafe,'RELEASE BLOCKED: advisory or compatibility gate failed');
             console.log('Isolated candidate PASS only; native/cross-platform release still blocked pending full gates');
           }
+          })().catch(e => { console.error(e); process.exitCode = 1; });
           NODE
       - name: Preserve evidence even when candidate remains blocked
         if: always()
