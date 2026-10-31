@@ -17,6 +17,9 @@ ACTIVE = (
     "tests/functional_tests/uri.py",
     "tests/functional_tests/speed.py",
     "tests/functional_tests/sign_message.py",
+    "tests/functional_tests/proofs.py",
+    "tests/functional_tests/cold_signing.py",
+    "tests/functional_tests/integrated_address.py",
 )
 # Detect legacy Monero-form base58 constants; do not treat copyright headers as an address.
 MONERO_ADDRESS_LIKE = re.compile(r"(?<![A-Za-z0-9])[48][1-9A-HJ-NP-Za-km-z]{80,115}(?![A-Za-z0-9])")
@@ -43,6 +46,19 @@ for name in ACTIVE[1:]:
     elif name.endswith("/sign_message.py"):
         if "self.address.append(res.address)" not in s or "validate_address(self.address[i]).valid" not in s:
             raise SystemExit("FAIL: message-signing addresses must come from CryLo wallet RPC")
+    elif name.endswith("/proofs.py"):
+        if "self.address.append(res.address)" not in s or "self.mine(self.address[0], 80)" not in s:
+            raise SystemExit("FAIL: proof inputs must be restored CryLo wallet addresses")
+    elif name.endswith("/cold_signing.py"):
+        expected = ("self.standard_address = res.address", 'if not hasattr(self, "subaddress")',
+                    "self.subaddress == hot_subaddress.address", "self.hot_wallet.validate_address(self.subaddress).valid")
+        if any(x not in s for x in expected):
+            raise SystemExit("FAIL: cold-signing hot/cold wallet address parity missing")
+    elif name.endswith("/integrated_address.py"):
+        expected = ("self.addresses.append(result.address)", "wallet.split_integrated_address(combined)",
+                    "wallet.validate_address(corrupt_address).valid")
+        if any(x not in s for x in expected):
+            raise SystemExit("FAIL: integrated-address roundtrip/negative coverage missing")
     elif "self.mining_address = res.address" not in s or "validate_address(self.mining_address).valid" not in s:
         raise SystemExit("FAIL: RPC wallet-derived address contract missing: " + name)
     if name.endswith("/txpool.py") or name.endswith("/speed.py"):

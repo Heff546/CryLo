@@ -39,8 +39,9 @@ from framework.wallet import Wallet
 class ProofsTest():
     def run_test(self):
         self.reset()
-        self.mine('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 80)
+        # Restore two CryLo wallets before mining to the sender.
         self.create_wallets()
+        self.mine(self.address[0], 80)
         txid, tx_key, amount = self.transfer()
         self.check_tx_key(txid, tx_key, amount)
         self.check_tx_proof(txid, amount)
@@ -62,12 +63,12 @@ class ProofsTest():
     def transfer(self):
         print('Creating transaction')
         self.wallet[0].refresh()
-        dst = {'address': '44Kbx4sJ7JDRDV5aAhLJzQCjDz2ViLRduE3ijDZu3osWKBjMGkV1XPk4pfDUMqt1Aiezvephdqm6YD19GKFD9ZcXVUTp6BW', 'amount':123456789000}
+        dst = {'address': self.address[1], 'amount':123456789000}
         res = self.wallet[0].transfer([dst], get_tx_key = True)
         assert len(res.tx_hash) == 64
         assert len(res.tx_key) == 64
         daemon = Daemon()
-        daemon.generateblocks('42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm', 1)
+        daemon.generateblocks(self.address[0], 1)
         return (res.tx_hash, res.tx_key, 123456789000)
 
     def create_wallets(self):
@@ -77,11 +78,16 @@ class ProofsTest():
         'peeled mixture ionic radar utopia puddle buying illness nuns gadget river spout cavernous bounced paradise drunk looking cottage jump tequila melting went winter adjust spout',
       ]
       self.wallet = [None, None]
+      self.address = []
       for i in range(2):
         self.wallet[i] = Wallet(idx = i)
         try: self.wallet[i].close_wallet()
         except: pass
         res = self.wallet[i].restore_deterministic_wallet(seed = seeds[i])
+        assert res.seed == seeds[i]
+        self.address.append(res.address)
+        assert self.wallet[i].validate_address(self.address[i]).valid
+      assert self.address[0] != self.address[1]
 
     def check_tx_key(self, txid, tx_key, amount):
         daemon = Daemon()
@@ -91,8 +97,8 @@ class ProofsTest():
         self.wallet[0].refresh()
         self.wallet[1].refresh()
 
-        sending_address = '42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm'
-        receiving_address = '44Kbx4sJ7JDRDV5aAhLJzQCjDz2ViLRduE3ijDZu3osWKBjMGkV1XPk4pfDUMqt1Aiezvephdqm6YD19GKFD9ZcXVUTp6BW'
+        sending_address = self.address[0]
+        receiving_address = self.address[1]
         res = self.wallet[0].get_tx_key(txid)
         assert res.tx_key == tx_key
         res = self.wallet[0].check_tx_key(txid = txid, tx_key = tx_key, address = receiving_address)
@@ -127,8 +133,8 @@ class ProofsTest():
         self.wallet[0].refresh()
         self.wallet[1].refresh()
 
-        sending_address = '42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm'
-        receiving_address = '44Kbx4sJ7JDRDV5aAhLJzQCjDz2ViLRduE3ijDZu3osWKBjMGkV1XPk4pfDUMqt1Aiezvephdqm6YD19GKFD9ZcXVUTp6BW'
+        sending_address = self.address[0]
+        receiving_address = self.address[1]
         res = self.wallet[0].get_tx_proof(txid, sending_address, 'foo');
         assert res.signature.startswith('InProofV2');
         signature0i = res.signature
@@ -276,8 +282,8 @@ class ProofsTest():
 
         print('Checking reserve proof')
 
-        address0 = '42ey1afDFnn4886T7196doS9GPMzexD9gXpsZJDwVjeRVdFCSoHnv7KPbBeGpzJBzHRCAs9UxqeoyFQMYbqSWYTfJJQAWDm'
-        address1 = '44Kbx4sJ7JDRDV5aAhLJzQCjDz2ViLRduE3ijDZu3osWKBjMGkV1XPk4pfDUMqt1Aiezvephdqm6YD19GKFD9ZcXVUTp6BW'
+        address0 = self.address[0]
+        address1 = self.address[1]
 
         self.wallet[0].refresh()
         res = self.wallet[0].get_balance()
