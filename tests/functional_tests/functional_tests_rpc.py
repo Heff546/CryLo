@@ -95,7 +95,7 @@ def build_plan(python, srcdir, builddir, tests, payment_address, wallet_dir, ses
         if i < 2:
             cmd.append('--offline')
         else:
-            cmd.extend(['--add-exclusive-node', '127.0.0.1:' + str(P2P_PORTS[7-i])])
+            cmd.extend(['--add-exclusive-node', '127.0.0.1:' + str(P2P_PORTS[5-i])])
         if i == 1 and payment_address:
             cmd.extend(['--rpc-payment-address', payment_address,
                         '--rpc-payment-difficulty', str(DIFFICULTY),

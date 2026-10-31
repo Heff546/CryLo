@@ -92,8 +92,10 @@ class WindowsRpcLauncherPreflight(unittest.TestCase):
             self.make_plan()
 
     def test_windows_path_separator_and_seed_flags(self):
-        _, env = self.make_plan()
+        with mock.patch.dict(os.environ, {'PYTHONPATH': 'C:/existing-python'}):
+            _, env = self.make_plan()
         self.assertIn(os.pathsep, env['PYTHONPATH'])
+        self.assertEqual(env['PYTHONPATH'].split(os.pathsep)[0], 'C:/existing-python')
         self.assertTrue(env['SOURCE_DIRECTORY'].endswith('functional_tests'))
         self.assertEqual(env['SEEDHASH_EPOCH_BLOCKS'], '8')
         self.assertEqual(env['SEEDHASH_EPOCH_LAG'], '4')
