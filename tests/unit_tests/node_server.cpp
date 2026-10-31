@@ -521,7 +521,9 @@ TEST(cryptonote_protocol_handler, race_condition)
       reward,
       hardfork
     );
-    block.miner_tx.vout.push_back(cryptonote::tx_out{reward, cryptonote::txout_to_key{}});
+    // A default-constructed txout_to_key leaves its key uninitialized.
+    // Use a deterministic dummy key for this protocol/race-condition fixture.
+    block.miner_tx.vout.push_back(cryptonote::tx_out{reward, cryptonote::txout_to_key{crypto::null_pkey}});
     diff = storage.get_difficulty_for_next_block(cryptonote::network_type::MAINNET);
   };
   struct stat {
