@@ -49,3 +49,28 @@ Workflow: [electron-upstream-v26-security-gate.yml](../../.github/workflows/elec
 4. Mainnet-targeted security sign-off. Only Pi1 may sign/publish official releases; all other platform releases remain frozen until approval.
 
 No CryLo mainline, canonical package-lock, native runtime, wallet data, or official release artifacts are modified by this handoff.
+
+## October 31 follow-up: nested install compatibility trial
+
+- [CI run #41220337440](https://github.com/Heff546/CryLo/actions/runs/41220337440) exercised *two new disposable nested-resolution candidates* on Node 24.21.0 and npm 12.1.0: `scoped-10-nested` and `scoped-9-10-nested`. The experiments are implemented only in [scripts/tests/electron-minimatch-nested-trial.js](../../scripts/tests/electron-minimatch-nested-trial.js) and [its workflow](../../.github/workflows/electron-minimatch-nested-trial.yml).
+- Both jobs **executed successfully as trials**, with **0** full-audit and **0** production-audit findings in the *modified disposable dependency trees*. Neither candidate passed packaging compatibility (`candidateSafe=false`).
+- Despite attempted targeted `app-builder-lib`/`@electron/universal` overrides and `--install-strategy=nested`, npm resolved `minimatch 11.0.3` even for legacy `@electron/asar` and `glob`. The callable legacy matcher API checks failed; ASAR create/extract also failed. The modern `app-builder-lib` class and CryLo's basic Windows/Linux/macOS file-selection patterns continued to pass.
+- **Decision:** Do not change npm installation strategy, canonical lockfile, or replace nested minimatch APIs. A clean npm audit in an incompatible test tree is not release evidence. This also rules out using `--install-strategy=nested` as a quick repair for earlier scoped-overrides failures.
+- Upstream's own draft [v26 fix PR #10538](https://github.com/electron-userland/electron-builder/pull/10538) remained open/unmerged on October 31, with no corresponding newer stable v26 release found. Its proposed fix addresses only the direct builder dependency, not the entire transitive security tree.
+
+### Advisory code-path evidence (not a risk waiver)
+
+The publicly released `isaacs/minimatch` sources were compared across exact tagged versions:
+
+| Version | Implements `optimizationLevel` ≥ 2, `firstPhasePreProcess`, `secondPhasePreProcess`? | Source |
+| --- | --- | --- |
+| 3.1.5 | No | [v3.1.5/minimatch.js](https://github.com/isaacs/minimatch/blob/v3.1.5/minimatch.js) |
+| 5.1.9 | No | [v5.1.9/minimatch.js](https://github.com/isaacs/minimatch/blob/v5.1.9/minimatch.js) |
+| 9.0.9 | Yes | [v9.0.9/src/index.ts](https://github.com/isaacs/minimatch/blob/v9.0.9/src/index.ts) |
+| 10.2.6 | Yes | [v10.2.6/src/index.ts](https://github.com/isaacs/minimatch/blob/v10.2.6/src/index.ts) |
+
+The advisory's specific described `**/..` amplification path does not exist in 3.1.5/5.1.9. That is useful evidence for a **possible upstream advisory range clarification**, not permission to remove or ignore those packages' npm flags. The reviewed GitHub advisory currently declares *all* versions below 11.0.1 affected. There may be other vulnerabilities not addressed by this specific analysis.
+
+For `@electron/universal@2.0.3`, reviewed source call sites pass `{matchBase:true}` to `minimatch` (not `optimizationLevel:2`); for `app-builder-lib`, `FileMatcher` passes `{dot:true}`. Thus the specifically described amplification path was not observed from these call sites, but a full security exposure assessment is still required. Do not treat static call-site review as a zero-risk claim.
+
+**Latest decision:** All testnet and mainnet-targeted release signing/publishing remains frozen. Native binaries, updater behavior, Electron runtime, and the canonical package-lock have not been modified by these trials. The next actionable candidate is an upstream-reviewed stable v26 fix **and** independent correction of any remaining actionable transitive exposure; only then run the consolidated release gates.
