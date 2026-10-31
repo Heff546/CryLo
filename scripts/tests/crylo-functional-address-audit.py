@@ -23,6 +23,7 @@ ACTIVE = (
     "tests/functional_tests/wallet.py",
     "tests/functional_tests/address_book.py",
     "tests/functional_tests/transfer.py",
+    "tests/functional_tests/multisig.py",
 )
 # Detect legacy Monero-form base58 constants; do not treat copyright headers as an address.
 MONERO_ADDRESS_LIKE = re.compile(r"(?<![A-Za-z0-9])[48][1-9A-HJ-NP-Za-km-z]{80,115}(?![A-Za-z0-9])")
@@ -79,6 +80,23 @@ for name in ACTIVE[1:]:
                     "self.wallet[0].validate_address(INTEGRATED_ADDRESS_VALIDATION).valid")
         if any(item not in s for item in required):
             raise SystemExit("FAIL: CryLo transfer destinations are not wallet-derived or independently pinned")
+    elif name.endswith("/multisig.py"):
+        if 'from crylo_address_vectors import PRIMARY_ADDRESS' not in s or 'assert addresses[i] == expected_address' not in s:
+            raise SystemExit("FAIL: CryLo multisig independent expected address checks missing")
+        suite = ast.parse(s, filename=name)
+        cases = [node for node in suite.body if isinstance(node, ast.Assign)
+                 and any(isinstance(t, ast.Name) and t.id == "TEST_CASES" for t in node.targets)]
+        if len(cases) != 1:
+            raise SystemExit("FAIL: missing or duplicated multisig M-of-N fixture")
+        expected_mn = [(2, 2), (2, 3), (3, 3), (3, 4), (2, 4), (1, 2)]
+        actual_cases = ast.literal_eval(cases[0].value)
+        if len(actual_cases) != len(expected_mn):
+            raise SystemExit("FAIL: multisig expected case count changed")
+        if any((m, n) != pair or not addr.startswith("Wo") or len(addr) != 97
+               for (m, n, addr), pair in zip(actual_cases, expected_mn)):
+            raise SystemExit("FAIL: CryLo multisig fixed expected addresses or thresholds changed")
+        if len(set(addr for _, _, addr in actual_cases)) != 6:
+            raise SystemExit("FAIL: duplicate CryLo multisig expected address")
     elif "self.mining_address = res.address" not in s or "validate_address(self.mining_address).valid" not in s:
         raise SystemExit("FAIL: RPC wallet-derived address contract missing: " + name)
     if name.endswith("/txpool.py") or name.endswith("/speed.py"):
