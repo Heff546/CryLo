@@ -1,0 +1,20 @@
+# Public-only deterministic CryLo address reference vectors.
+# These expected values were derived OFFLINE from checksum-validated public
+# key payloads of the older CryptoNote test fixtures by re-encoding the same
+# key material with CryLo's configured address prefixes:
+# standard 4146, integrated 6810, subaddress 12208.
+# No private keys or live wallet addresses are embedded here.
+# These are independent expected output strings, NOT computed by wallet RPC.
+# Native CryLo RPC execution is still required before release approval.
+
+PRIMARY_ADDRESS = 'Wo3JR7CRjoAADH2pu4VKVE2mi7f4WS53W8ywgQWPWGcieuyAoNPa3F1JpT9772RTBBAo9vLfYKTzbVA5GR48bBf1263S5goSe'
+SECOND_ADDRESS = 'Wo3gJyc36qK7T8mL2KTR8qYfCFCRVXSo3P8XEc1VsgWoMJyMVru9K5uYxohPt36zidK3eJScbZZoLKwxjKZXLBYi1fLWC4sLz'
+ACCOUNT_1_ADDRESS = 'WW2GtR2qsBuZTaBtDrGzhHQG1TtYGuCERXfn5DCFk4UaWpvViWJmoXAQJD4yhzVFS3jHxkZQrFnctRPAAmKeUFtQ2VCPtRFLf'
+ACCOUNT_2_ADDRESS = 'WW4GhzL8QedYkQs8P4jBGtR7AL3uoXuNmNVhAx1unwm25Z5erQHq9dTUrEhjyXnmACFmd8A7qRpXmh2JejvWnSfA37SWvxi4e'
+SUB_0_1_ADDRESS = 'WW2djtKMyy8hkXnisKyqe7ctwR65mj71q6tKXkNezVVz4UEWaH16QjHFCjzmGhzU6EBdsKV1LDqzgZT3epTRtQfz1LJB6ipMN'
+SUB_1_1_ADDRESS = 'WW3QxCBQqzn2LNKwJrUijn3kWFScb2Sc6Y8KtzsesJrZStBagzz2shjKKobLV1GdUENBFvAtJjSC8FypfHm7fSg11i3Gff68q'
+SUB_1_2_ADDRESS = 'WW3J5sPfF75H73mrmr8sCXLif3fsqihZbdwPZcw3p4hvTUcWj5wRm9PcpW2n8zLwqgKJN6qdUcHiq143G2L1gpgu2DxR9HtHw'
+SUB_0_999_ADDRESS = 'WW4DhfcKc5vB84TzLsYRF87yfXs7LP5XTMe2geQ1dX4gfc9BnMjDUAn3rmy3jBHqabb8zNGJU4XHZ9wiaxcj4uco2pGWkCVJJ'
+INTEGRATED_ADDRESS_VALIDATION = 'So1Dv7rnmwG11FAUNRFmX5WR1nGsr44NfCW32t69kYFZPh8HA5R2EAiSAYmKH7xP8cDaYeqSryKjnekVqhPLTyrzKiM6L8L55JF136eVFvBy'
+SUB_VALIDATION_1 = 'WW46gs4hUppRdQnjLkgTGMJwTFT1UcY6pNrSNGKPUFimaJaKNJb5saDhAyftQiFNjQYSDSy6B6kDwfaEAZdXMrCg1hLnhxrT1'
+SUB_VALIDATION_2 = 'WW3AXiiduzBPKnoBPnkhPjQLGmP8bU8sT2o7hYkHyE9wApSTAHy58U9W9YeXtzizeH4brKfdAjXViECrR449ywWv2oWJJTNqQ'

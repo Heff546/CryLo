@@ -20,6 +20,7 @@ ACTIVE = (
     "tests/functional_tests/proofs.py",
     "tests/functional_tests/cold_signing.py",
     "tests/functional_tests/integrated_address.py",
+    "tests/functional_tests/wallet.py",
 )
 # Detect legacy Monero-form base58 constants; do not treat copyright headers as an address.
 MONERO_ADDRESS_LIKE = re.compile(r"(?<![A-Za-z0-9])[48][1-9A-HJ-NP-Za-km-z]{80,115}(?![A-Za-z0-9])")
@@ -59,6 +60,9 @@ for name in ACTIVE[1:]:
                     "wallet.validate_address(corrupt_address).valid")
         if any(x not in s for x in expected):
             raise SystemExit("FAIL: integrated-address roundtrip/negative coverage missing")
+    elif name.endswith("/wallet.py"):
+        if "from crylo_address_vectors import" not in s or "assert res.address == PRIMARY_ADDRESS" not in s or "address_0_999 = SUB_0_999_ADDRESS" not in s:
+            raise SystemExit("FAIL: wallet deterministic vectors or lookahead vector missing")
     elif "self.mining_address = res.address" not in s or "validate_address(self.mining_address).valid" not in s:
         raise SystemExit("FAIL: RPC wallet-derived address contract missing: " + name)
     if name.endswith("/txpool.py") or name.endswith("/speed.py"):
@@ -67,6 +71,18 @@ for name in ACTIVE[1:]:
     if name.endswith("/speed.py"):
         if s.index("from __future__ import print_function") > s.index("import time"):
             raise SystemExit("FAIL: Python future import must precede ordinary imports")
+# Fixed public-address expected strings must remain independent of runtime RPC.
+vectors_src = (ROOT / "tests/functional_tests/crylo_address_vectors.py").read_text(encoding="utf8")
+ast.parse(vectors_src, filename="crylo_address_vectors.py")
+if vectors_src.count(" = '") != 11:
+    raise SystemExit("FAIL: expected 11 fixed CryLo address vectors")
+if "PRIVATE KEY" in vectors_src.upper() or "SECRET_KEY" in vectors_src:
+    raise SystemExit("FAIL: review public-only fixture file")
+validation_src = (ROOT / "tests/functional_tests/validate_address.py").read_text(encoding="utf8")
+ast.parse(validation_src, filename="validate_address.py")
+if "INTEGRATED_ADDRESS_VALIDATION" not in validation_src or "SUB_VALIDATION_1" not in validation_src:
+    raise SystemExit("FAIL: CryLo mainnet network validation vectors missing")
+
 # URI support is part of the same address-migration release gate.
 wallet_cpp = (ROOT / "src/wallet/wallet2.cpp").read_text(encoding="utf8")
 unit_cpp = (ROOT / "tests/unit_tests/wallet_storage.cpp").read_text(encoding="utf8")
