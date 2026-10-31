@@ -1,0 +1,33 @@
+name: CryLo Windows RPC functional launcher preflight (no native build)
+
+on:
+  push:
+    branches:
+      - audit/windows-warning-fixes
+    paths:
+      - .github/workflows/windows-rpc-launcher-preflight.yml
+      - tests/functional_tests/functional_tests_rpc.py
+      - scripts/tests/windows_rpc_launcher_preflight_test.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-launcher-preflight:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - name: Checkout audit source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Validate Windows launcher syntax and mock lifecycle gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python --version
+          python -m py_compile tests/functional_tests/functional_tests_rpc.py scripts/tests/windows_rpc_launcher_preflight_test.py
+          python -m unittest discover -s scripts/tests -p windows_rpc_launcher_preflight_test.py -v
+          echo 'PASS: test-only Windows launcher preflight. No daemon, wallet or release binaries executed.'
