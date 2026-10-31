@@ -49,7 +49,7 @@ jobs:
           const {spawnSync} = require('node:child_process');
           const {createRequire} = require('node:module');
           const exact = process.env.BUILDER_VERSION;
-          if (!/^26\\.\\d+\\.\\d+$/.test(exact)) throw Error('Use an exact stable v26 version');
+          if (!/^26\.\d+\.\d+$/.test(exact)) throw Error('Use an exact stable v26 version');
           const src = path.resolve('electron');
           const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crylo-v26-trial-'));
           const sha = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
@@ -89,7 +89,7 @@ jobs:
             const lock=JSON.parse(fs.readFileSync(path.join(dir,'package-lock.json'),'utf8'));
             report.resolvedBuilder=lock.packages?.['node_modules/electron-builder']?.version;
             report.resolvedAppBuilder=lock.packages?.['node_modules/app-builder-lib']?.version;
-            must(report.resolvedBuilder===exact && /^26\\./.test(report.resolvedAppBuilder||''),
+            must(report.resolvedBuilder===exact && /^26\./.test(report.resolvedAppBuilder||''),
               'Dependency candidate mismatch; no v27 migration authorized');
             report.minimatch=Object.entries(lock.packages||{}).filter(([k])=>
               k==='node_modules/minimatch'||k.endsWith('/node_modules/minimatch'))
@@ -109,7 +109,7 @@ jobs:
             report.builderMinimatch=mmVersion;
             await check('patched app-builder-lib Minimatch class',()=>{
               must(typeof appReq('minimatch').Minimatch==='function','class missing');
-              must(mmVersion && /^11\\.(?:[1-9]\\d*|0\\.[1-9]\\d*)/.test(mmVersion),
+              must(mmVersion && /^11\.(?:[1-9]\d*|0\.[1-9]\d*)/.test(mmVersion),
                 'app-builder-lib minimatch remains below 11.0.1');
             });
             const {FileMatcher}=appReq('app-builder-lib/out/fileMatcher');
