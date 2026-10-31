@@ -67,6 +67,50 @@ class WindowsRpcLauncherPreflight(unittest.TestCase):
         self.assertEqual(cmds[3][-2:], ['--add-exclusive-node','127.0.0.1:18282'])
         self.assertTrue(all('--wallet-dir' in cmd for cmd in cmds[4:]))
 
+    def test_shared_daemon_and_wallet_commands_match_windows_and_posix(self):
+        # Both architectures consume the same CryLo code and CLI contract;
+        # only executable suffixes differ. This is a source-plan test, not
+        # proof that POSIX native binaries have been executed.
+        for name in ('CryLo-daemon', 'CryLo-wallet-rpc'):
+            (self.bin / name).write_bytes(b'fake POSIX executable for plan-only parity')
+        win_cmds, win_env = self.make_plan(windows=True)
+        posix_cmds, posix_env = self.make_plan(windows=False)
+        self.assertEqual(len(win_cmds), len(posix_cmds))
+        self.assertEqual(len(win_cmds), 10)
+        for index, (win, posix) in enumerate(zip(win_cmds, posix_cmds)):
+            self.assertTrue(win[0].endswith('.exe'), msg='Windows executable %s' % index)
+            self.assertEqual(win[0][:-4], posix[0])
+            self.assertEqual(win[1:], posix[1:], msg='Shared service CLI diverges at index %s' % index)
+            self.assertIn('--rpc-bind-ip', win)
+            self.assertIn('127.0.0.1', win)
+            self.assertNotIn('powershell', ' '.join(win).lower())
+            self.assertNotIn('cmd.exe', ' '.join(win).lower())
+        # Operating-system packaging differences must not alter wallet
+        # directory isolation, mining/test parameters or functional fixtures.
+        for key in ('WALLET_DIRECTORY', 'FUNCTIONAL_TESTS_DIRECTORY',
+                    'SOURCE_DIRECTORY', 'DIFFICULTY', 'SEEDHASH_EPOCH_BLOCKS',
+                    'SEEDHASH_EPOCH_LAG'):
+            self.assertEqual(win_env[key], posix_env[key], msg=key)
+        self.assertEqual(win_env['MAKE_TEST_SIGNATURE'][:-4], posix_env['MAKE_TEST_SIGNATURE'])
+
+    def test_same_regtest_genesis_and_peer_topology_on_both_platform_plans(self):
+        for name in ('CryLo-daemon', 'CryLo-wallet-rpc'):
+            (self.bin / name).write_bytes(b'fake POSIX executable for plan-only parity')
+        win, _ = self.make_plan(windows=True)
+        posix, _ = self.make_plan(windows=False)
+        for commands in (win, posix):
+            self.assertEqual(len(commands), 10)
+            for index in range(4):
+                self.assertIn('--regtest', commands[index])
+                self.assertEqual(commands[index][commands[index].index('--fixed-difficulty')+1], '10')
+                self.assertIn('--data-dir', commands[index])
+            self.assertEqual(commands[2][-2:], ['--add-exclusive-node', '127.0.0.1:18283'])
+            self.assertEqual(commands[3][-2:], ['--add-exclusive-node', '127.0.0.1:18282'])
+            for index in range(4, 10):
+                self.assertIn('--wallet-dir', commands[index])
+                self.assertIn('--disable-rpc-login', commands[index])
+                self.assertIn('--rpc-ssl', commands[index])
+
     def test_payment_requires_verified_caller_input_before_any_launch(self):
         tests = launcher.select_tests(['all'])
         self.assertIn('rpc_payment', tests)
