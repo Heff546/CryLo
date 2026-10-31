@@ -93,6 +93,7 @@ jobs:
           mkdir -p /tmp/crylo-msys2-pinned
           cd /tmp/crylo-msys2-pinned
           cat > packages.txt <<'PINS'
+          mingw-w64-x86_64-abseil-cpp-20260526.0-1-any.pkg.tar.zst c6b613a70906f58d5cffbcfa913ef582fa9bb418301039b6f2e4326cfe558b12
           mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst 89fb61549a437d65076a092a367fcb264fc7045ee9ebef48cd81f5a76a5588f8
           mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst 124edc26b009678a4c5e759481a364abf63ed7f2f49a53092e8bd0a47c0c0740
           mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst 4d737e09dd1137bb318e2d563962ddcbe511de02155e5835affc1f09d174c6a3
@@ -108,6 +109,7 @@ jobs:
             pacman -Qp "$file"
           done < packages.txt
           pacman -U --noconfirm \
+            mingw-w64-x86_64-abseil-cpp-20260526.0-1-any.pkg.tar.zst \
             mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst \
             mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst \
             mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst
