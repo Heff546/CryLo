@@ -1,0 +1,66 @@
+name: CryLo Windows prior unsigned ten-service RPC startup (no native rebuild)
+
+on:
+  push:
+    branches:
+      - audit/windows-warning-fixes
+    paths:
+      - .github/workflows/windows-rpc-launcher-existing-candidate-startup.yml
+      - scripts/tests/windows_rpc_launcher_existing_candidate_startup.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  prior-binary-startup:
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - name: Checkout audited functional RPC harness
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Download exact older Windows artifact only
+        shell: bash
+        env:
+          GH_$: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=40807758891
+          approved=9b876fa5aa726606d2b3dd5651f196d317ba222b
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run_id" --jq '.head_sha')" = "$approved"
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run_id" --jq '.conclusion')" = success
+          mkdir -p "$RUNNER_TEMP/crylo-older-native"
+          gh run download "$run_id" --repo Heff546/CryLo \
+            --name crylo-unified-windows-x64-unsigned-native-candidate \
+            --dir "$RUNNER_TEMP/crylo-older-native"
+          echo 'PASS: exact old candidate downloaded. No CryLo build ran.'
+
+      - name: Exercise local ten-process Windows RPC bootstrap and bounded shutdown
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tests/windows_rpc_launcher_existing_candidate_startup.py \
+            "$RUNNER_TEMP/crylo-older-native" "$RUNNER_TEMP/crylo-ten-service-startup-report.json"
+          python - "$RUNNER_TEMP/crylo-ten-service-startup-report.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert r["releaseFrozen"] is True and r["mayPublish"] is False
+          assert r["sourceCorrectionsCompiled"] is False and r["rpcIntegrationTestsExecuted"] is False
+          assert r["tenServiceStartupPassed"] is True and r["cleanupPassed"] is True
+          assert r["plannedDaemons"] == 4 and r["plannedWalletRpcServers"] == 6
+          print("PASS: ephemeral previous-binary service bootstrap; not a production release gate")
+          PY
+
+      - name: Retain nonrelease startup report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-windows-old-candidate-ten-service-startup-audit-only
+          path: ${{ runner.temp }}/crylo-ten-service-startup-report.json
+          if-no-files-found: ignore
+          retention-days: 30
