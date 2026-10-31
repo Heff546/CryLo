@@ -21,6 +21,7 @@ on:
       - tests/functional_tests/integrated_address.py
       - tests/functional_tests/wallet.py
       - tests/functional_tests/address_book.py
+      - tests/functional_tests/transfer.py
       - tests/functional_tests/validate_address.py
       - tests/functional_tests/crylo_address_vectors.py
       - tests/functional_tests/uri.py
@@ -51,7 +52,7 @@ jobs:
           report=json.load(open(sys.argv[1],encoding="utf8"))
           assert report["mayPublish"] is False and report["releaseFrozen"] is True
           assert report["rpcIntegrationExecuted"] is False
-          assert len(report["migrated"]) == 15
+          assert len(report["migrated"]) == 16
           print("PASS: active RPC-payment/mining tests no longer use the old Monero destination; remaining vectors explicitly inventoried")
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
