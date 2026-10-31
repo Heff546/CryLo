@@ -1,0 +1,45 @@
+name: CryLo Electron minimatch advisory reachability evidence (no release)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - scripts/tests/electron-minimatch-reachability-review.js
+      - .github/workflows/electron-minimatch-reachability-review.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Pin audited npm toolchain
+        run: |
+          npm install --global --no-audit --no-fund --ignore-scripts npm@12.1.0
+          test "$(npm --version)" = '12.1.0'
+      - name: Install exact existing Electron dependency tree without lifecycle scripts
+        run: |
+          cd electron
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Report specific advisory code path and dependency consumers
+        run: |
+          node scripts/tests/electron-minimatch-reachability-review.js "$RUNNER_TEMP/minimatch-reachability.json"
+          echo "Evidence only, not release approval"
+      - name: Preserve full review evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-minimatch-advisory-reachability
+          path: ${{ runner.temp }}/minimatch-reachability.json
+          if-no-files-found: warn
+          retention-days: 30
