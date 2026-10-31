@@ -21,6 +21,7 @@ ACTIVE = (
     "tests/functional_tests/cold_signing.py",
     "tests/functional_tests/integrated_address.py",
     "tests/functional_tests/wallet.py",
+    "tests/functional_tests/address_book.py",
 )
 # Detect legacy Monero-form base58 constants; do not treat copyright headers as an address.
 MONERO_ADDRESS_LIKE = re.compile(r"(?<![A-Za-z0-9])[48][1-9A-HJ-NP-Za-km-z]{80,115}(?![A-Za-z0-9])")
@@ -63,6 +64,12 @@ for name in ACTIVE[1:]:
     elif name.endswith("/wallet.py"):
         if "from crylo_address_vectors import" not in s or "assert res.address == PRIMARY_ADDRESS" not in s or "address_0_999 = SUB_0_999_ADDRESS" not in s:
             raise SystemExit("FAIL: wallet deterministic vectors or lookahead vector missing")
+    elif name.endswith("/address_book.py"):
+        required = ('self.primary_address == PRIMARY_ADDRESS', 'SUB_1_2_ADDRESS',
+                    'CRYLO_TEST_OPENALIAS', 'CRYLO_TEST_OPENALIAS_EXPECTED_ADDRESS',
+                    'SKIP: external OpenAlias DNS integration')
+        if any(item not in s for item in required) or "donate@getmonero.org" in s:
+            raise SystemExit("FAIL: address book uses old Monero address or unreviewed external OpenAlias fixture")
     elif "self.mining_address = res.address" not in s or "validate_address(self.mining_address).valid" not in s:
         raise SystemExit("FAIL: RPC wallet-derived address contract missing: " + name)
     if name.endswith("/txpool.py") or name.endswith("/speed.py"):
