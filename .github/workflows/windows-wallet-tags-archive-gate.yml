@@ -1,7 +1,7 @@
 name: CryLo Windows wallet account-tag archive compatibility gate
 on:
   push:
-    branches: [feature/mac-first-build-gate]
+    branches: [feature/mac-first-build-gate, audit/windows-warning-fixes]
     paths:
       - .github/workflows/windows-wallet-tags-archive-gate.yml
       - scripts/tests/windows-wallet-tags-archive-gate.cpp
@@ -11,7 +11,7 @@ permissions:
   contents: read
 jobs:
   verify-wallet-archive:
-    name: Windows-only original versus proposed account-tag archive
+    name: Windows-only historical byte-golden account-tag archive
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
@@ -34,6 +34,10 @@ jobs:
             exit 1
           fi
           grep -Fq 'm_account_tags.first.parent() = std::move(account_tags.first);' src/wallet/wallet2.h
+          if grep -Fq 'ar & (ArchivedTags&)tags;' scripts/tests/windows-wallet-tags-archive-gate.cpp; then
+            echo 'ERROR: unsafe legacy archive cast remains in test harness'
+            exit 1
+          fi
           export PATH="/c/msys64/mingw64/bin:$PATH"
           shopt -s nullglob
           libs=(/c/msys64/mingw64/lib/libboost_serialization*.dll.a /c/msys64/mingw64/lib/libboost_serialization*.a)

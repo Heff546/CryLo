@@ -1,5 +1,7 @@
-// Isolated wallet account-tag archive compatibility gate.
-// Reproduces wallet2.h v23+ Boost portable archive semantics; no wallet keys used.
+// Windows wallet account-tag archive compatibility against captured v23 wire bytes.
+// The four historical reference archives were captured from the original
+// Boost portable archive path in CryLo Windows run #41208292564.
+// No wallet keys, addresses or user data are involved.
 #include "serialization/containers.h"
 #include <boost/archive/portable_binary_iarchive.hpp>
 #include <boost/archive/portable_binary_oarchive.hpp>
@@ -7,26 +9,24 @@
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/utility.hpp>
+#include <array>
+#include <iostream>
 #include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
-#include <iostream>
 
 using ActualTags = std::pair<serializable_map<std::string, std::string>, std::vector<std::string>>;
 using ArchivedTags = std::pair<std::map<std::string, std::string>, std::vector<std::string>>;
 
 template <class Archive>
-void existing_wallet_v23_tag_archive(Archive &ar, ActualTags &tags) {
-  // Exact expression at wallet2.h:1338.
-  ar & (ArchivedTags&)tags;
-}
-
-template <class Archive>
-void proposed_wallet_v23_tag_archive(Archive &ar, ActualTags &tags) {
-  if (Archive::is_saving::value) {
+void wallet_v23_tag_archive(Archive &ar, ActualTags &tags)
+{
+  // Use the production wallet's archive representation without type-punning
+  // one std::pair specialization into another (undefined behavior).
+  if constexpr (Archive::is_saving::value) {
     ArchivedTags stored(tags.first.parent(), tags.second);
     ar & stored;
   } else {
@@ -37,39 +37,64 @@ void proposed_wallet_v23_tag_archive(Archive &ar, ActualTags &tags) {
   }
 }
 
-template <class Func>
-std::string encode(ActualTags tags, Func f) {
+std::string encode(ActualTags tags)
+{
   std::ostringstream stream(std::ios::out | std::ios::binary);
   {
     boost::archive::portable_binary_oarchive ar(stream);
-    f(ar, tags);
+    wallet_v23_tag_archive(ar, tags);
   }
   return stream.str();
 }
 
-template <class Func>
-ActualTags decode(const std::string &bytes, Func f) {
+ActualTags decode(const std::string &bytes)
+{
   ActualTags tags;
   std::istringstream stream(bytes, std::ios::in | std::ios::binary);
   {
     boost::archive::portable_binary_iarchive ar(stream);
-    f(ar, tags);
+    wallet_v23_tag_archive(ar, tags);
   }
   return tags;
 }
 
-bool equal(const ActualTags &a, const ActualTags &b) {
+std::string from_hex(const std::string &hex)
+{
+  if (hex.size() % 2)
+    throw std::runtime_error("Invalid historical archive hex length");
+  const auto digit = [](char c) -> unsigned {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    throw std::runtime_error("Invalid historical archive hex digit");
+  };
+  std::string bytes;
+  bytes.reserve(hex.size() / 2);
+  for (size_t i = 0; i < hex.size(); i += 2)
+    bytes.push_back(static_cast<char>((digit(hex[i]) << 4) | digit(hex[i + 1])));
+  return bytes;
+}
+
+bool equal(const ActualTags &a, const ActualTags &b)
+{
   using Map = std::map<std::string, std::string>;
   return static_cast<const Map&>(a.first) == static_cast<const Map&>(b.first)
       && a.second == b.second;
 }
 
-void require(bool yes, const char *reason) {
+void require(bool yes, const char *reason)
+{
   if (!yes) throw std::runtime_error(reason);
 }
 
-int main() {
+int main()
+{
   try {
+    const std::array<const char*, 4> historicalV23Hex = {{
+    "011673657269616c697a6174696f6e3a3a61726368697665008000000000000000000000",
+    "011673657269616c697a6174696f6e3a3a617263686976650080000000000101000000010573617665640107536176696e67730000010300010573617665640001057361766564",
+    "011673657269616c697a6174696f6e3a3a61726368697665008000000000010200000001036e6577010b557064617465642074616701036f6c64010e486973746f726963616c20746167000001040001036f6c6401036e65770001036f6c64",
+    "011673657269616c697a6174696f6e3a3a6172636869766500800000000001010000000107756e69636f64650109555446383a20e282ac00000102000107756e69636f64650107756e69636f6465"
+    }};
     std::vector<ActualTags> fixtures(4);
     fixtures[1].first["saved"] = "Savings";
     fixtures[1].second = {"saved", "", "saved"};
@@ -78,32 +103,19 @@ int main() {
     fixtures[2].second = {"old", "new", "", "old"};
     fixtures[3].first["unicode"] = "UTF8: \xE2\x82\xAC";
     fixtures[3].second = {"unicode", "unicode"};
-    unsigned int n = 0;
-    for (const auto &expected: fixtures) {
-      const auto oldBytes = encode(expected, existing_wallet_v23_tag_archive<boost::archive::portable_binary_oarchive>);
-      // Temporary audit evidence: record historical bytes before removing
-      // the unsafe legacy cast from the isolated comparison harness.
-      static constexpr char hex_digits[] = "0123456789abcdef";
-      std::string legacyHex;
-      legacyHex.reserve(oldBytes.size() * 2);
-      for (unsigned char b : oldBytes) {
-        legacyHex.push_back(hex_digits[b >> 4]);
-        legacyHex.push_back(hex_digits[b & 15]);
-      }
-      std::cout << "ARCHIVE_V23_GOLDEN_" << n << "=" << legacyHex << "\n";
-      const auto newBytes = encode(expected, proposed_wallet_v23_tag_archive<boost::archive::portable_binary_oarchive>);
-      require(oldBytes == newBytes, "FAIL: account-tag output bytes differ from legacy wallet archive");
-      const auto corrected = decode(oldBytes, proposed_wallet_v23_tag_archive<boost::archive::portable_binary_iarchive>);
-      require(equal(corrected, expected), "FAIL: proposed code cannot load legacy account-tag archive");
-      const auto roundtrip = decode(newBytes, proposed_wallet_v23_tag_archive<boost::archive::portable_binary_iarchive>);
-      require(equal(roundtrip, expected), "FAIL: proposed wallet archive roundtrip");
-      // Measure, do not require, legacy load behavior (may have silently discarded tags).
-      const auto legacyDecoded = decode(oldBytes, existing_wallet_v23_tag_archive<boost::archive::portable_binary_iarchive>);
-      std::cout << "fixture=" << n++ << " archived_bytes=" << oldBytes.size()
-                << " legacy_load_preserved=" << equal(legacyDecoded, expected)
-                << " corrected_load_preserved=" << equal(corrected, expected) << "\n";
+
+    for (size_t n = 0; n < fixtures.size(); ++n) {
+      const auto oldBytes = from_hex(historicalV23Hex[n]);
+      const auto newBytes = encode(fixtures[n]);
+      require(newBytes == oldBytes, "FAIL: wallet tag archive bytes differ from historical v23 output");
+      const auto legacyDecoded = decode(oldBytes);
+      require(equal(legacyDecoded, fixtures[n]), "FAIL: cannot load historical v23 wallet tags");
+      const auto roundtrip = decode(newBytes);
+      require(equal(roundtrip, fixtures[n]), "FAIL: current wallet tag archive roundtrip");
+      std::cout << "fixture=" << n << " archived_bytes=" << oldBytes.size()
+                << " golden_match=1 legacy_load_preserved=1\n";
     }
-    std::cout << "PASS: old/new portable archive bytes identical; legacy archives load correctly with proposed code\n";
+    std::cout << "PASS: all four historical wallet tag archive fixtures are byte-exact and load correctly\n";
   } catch (const std::exception &e) {
     std::cerr << e.what() << "\n";
     return 1;
