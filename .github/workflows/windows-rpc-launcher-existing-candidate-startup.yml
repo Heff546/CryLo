@@ -6,6 +6,7 @@ on:
       - audit/windows-warning-fixes
     paths:
       - .github/workflows/windows-rpc-launcher-existing-candidate-startup.yml
+      - docs/security/windows-ten-service-startup-trigger-2026-10-31.md
       - scripts/tests/windows_rpc_launcher_existing_candidate_startup.py
   workflow_dispatch:
 
