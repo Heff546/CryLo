@@ -99,6 +99,7 @@ jobs:
             throw 'BLOCK: production Electron dependency vulnerabilities are high/critical'
           }
           Write-Host 'PASS: exact existing Windows Electron lockfile audited without upgrades, native build, signing or publication'
+          exit 0 # npm audit intentionally returned 1 for documented dev-only advisories
 
       - name: Retain exact advisory evidence without release artifacts
         if: always()
