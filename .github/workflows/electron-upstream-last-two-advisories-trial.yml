@@ -1,0 +1,59 @@
+name: CryLo final glob7 rimraf2 removal compatibility gate (isolated, no release)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/electron-upstream-last-two-advisories-trial.yml
+      - scripts/tests/electron-upstream-modern-stack-trial.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-upstream:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [modern-purge-legacy, modern-purge-legacy-builder]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Pin npm release toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g --ignore-scripts --no-audit --no-fund npm@12.1.0
+          test "$(npm --version)" = '12.1.0'
+      - name: Replace legacy glob/rimraf only in disposable package lock and verify real APIs
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+          REPORT: ${{ runner.temp }}/crylo-last-two.json
+        run: |
+          set -euo pipefail
+          node --check scripts/tests/electron-upstream-modern-stack-trial.js
+          node scripts/tests/electron-upstream-modern-stack-trial.js "$VARIANT" "$REPORT"
+          node - "$REPORT" <<'NODE'
+          const r=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));
+          if(!r.sourceUnchanged || !r.executionValid)throw Error('No trustworthy trial evidence');
+          if(!r.candidateSafe)throw Error('LEGACY ADVISORY NOT YET FIXED: '+JSON.stringify({
+           findings:r.fullAudit?.findings,parents:r.dependencyParents,checks:r.checks,error:r.error}));
+          console.log('PASS: 0 full npm advisories, actual ASAR archive, temp cleanup, CryLo package matching');
+          NODE
+      - name: Retain trial evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-final-glob-rimraf-${{ matrix.variant }}-evidence
+          path: ${{ runner.temp }}/crylo-last-two.json
+          retention-days: 30
+          if-no-files-found: warn
