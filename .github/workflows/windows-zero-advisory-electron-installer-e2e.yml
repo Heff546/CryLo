@@ -53,7 +53,7 @@ jobs:
           }
           $fullAudit=Get-Content $auditFiles[0].FullName -Raw | ConvertFrom-Json
           $pkg=Get-Content $packages[0].FullName -Raw | ConvertFrom-Json
-          $lock=Get-Content $locks[0].FullName -Raw | ConvertFrom-Json
+          $lock=Get-Content $locks[0].FullName -Raw | ConvertFrom-Json -AsHashtable
           if($fullAudit.metadata.vulnerabilities.total -ne 0 -or
              $pkg.devDependencies.electron -ne '44.9.3' -or
              $pkg.devDependencies.'electron-builder' -ne '26.17.0' -or
