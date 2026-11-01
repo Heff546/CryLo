@@ -1,0 +1,113 @@
+name: CryLo Windows CMD-only updater live fail-closed check against historical signed releases
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/windows-crylo-update-live-failclosed-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cli-live-signed-updater-rejection:
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - name: Checkout current release-audit source without saved credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Run genuine crylo.cmd update with isolated user data and no token
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $before=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $before -ne $env:GITHUB_SHA){throw 'Source checkout revision differs from current workflow'}
+          $cleanBefore=(& git status --porcelain)
+          if($LASTEXITCODE -ne 0 -or $cleanBefore){throw 'Updater test refuses a modified checkout'}
+          $env:LOCALAPPDATA=Join-Path $env:RUNNER_TEMP 'CryLo Update Safety Local Data'
+          $env:APPDATA=Join-Path $env:RUNNER_TEMP 'CryLo Update Safety Roaming'
+          $env:GIT_CONFIG_COUNT='1'
+          $env:GIT_CONFIG_KEY_0='credential.helper'
+          $env:GIT_CONFIG_VALUE_0=''
+          $env:GIT_TERMINAL_PROMPT='0'
+          $env:GCM_INTERACTIVE='never'
+          $env:CRYLO_UPDATE_RESUMED=''
+          if($env:GH_TOKEN -or $env:GITHUB_TOKEN){throw 'CMD update check must not have a GitHub token'}
+          $wallet=Join-Path $env:APPDATA 'crylo-wallet\wallets\existing-user-wallet-fixture'
+          $configuration=Join-Path $env:APPDATA 'CryLo\CryLo.conf'
+          $releaseState=Join-Path $env:APPDATA 'crylo-wallet\release-security.json'
+          $log=Join-Path $env:RUNNER_TEMP 'crylo-windows-update-live-output.txt'
+          $report=Join-Path $env:RUNNER_TEMP 'crylo-windows-update-live-safety.json'
+          New-Item -ItemType Directory -Force -Path (Split-Path $wallet),(Split-Path $configuration)|Out-Null
+          [IO.File]::WriteAllText($wallet,'existing-user-wallet-must-survive-refused-update',[Text.Encoding]::UTF8)
+          [IO.File]::WriteAllText($configuration,('testnet=1'+[Environment]::NewLine+'# preserve existing user config'),[Text.Encoding]::UTF8)
+          $walletHash=(Get-FileHash $wallet -Algorithm SHA256).Hash
+          $configurationHash=(Get-FileHash $configuration -Algorithm SHA256).Hash
+          if(Test-Path $releaseState){throw 'Refusing test with preexisting release-security state'}
+          $result=[ordered]@{
+            type='CRYLO_WINDOWS_LIVE_CMD_UPDATE_HISTORICAL_RELEASE_REFUSAL'
+            workingTreeCommit=$before
+            updateInvokedViaCmd=$false
+            receivedNonzeroExit=$false
+            rejectedForIncompatibleRelease=$false
+            headUnchanged=$false
+            workingTreeClean=$false
+            walletPreserved=$false
+            configurationPreserved=$false
+            releaseSecurityStateNotCreated=$false
+            nativeRebuilt=$false
+            releasePublished=$false
+            existingWalletDataNeverUploaded=$true
+          }
+          try {
+            # Only the test harness uses PowerShell; ordinary CryLo users use CMD.
+            $line='call crylo.cmd update > "'+$log+'" 2>&1'
+            $p=Start-Process -FilePath $env:ComSpec -ArgumentList @('/D','/C',$line) -PassThru
+            $result.updateInvokedViaCmd=$true
+            if(!$p.WaitForExit(540000)){
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              throw 'CMD updater did not finish within the bounded nine-minute test window'
+            }
+            $p.Refresh()
+            if(!(Test-Path $log)){throw 'CMD updater produced no output'}
+            $outputText=Get-Content -LiteralPath $log -Raw
+            foreach($textLine in ($outputText -split '\r?\n')){
+              if($textLine -match '^(=====|ERROR:|No trusted signed|Signed release|Release source|Authenticating|Current commit|Target:|Rollback floor:|CryLo source|Release:|Current:|Node.js|npm|CryLo runtime)'){
+                Write-Host ($textLine.Substring(0,[Math]::Min($textLine.Length,350)))
+              }
+            }
+            if($p.ExitCode -eq 0){throw 'Historical signed release unexpectedly accepted for current source'}
+            $result.receivedNonzeroExit=$true
+            if($outputText -notmatch 'No trusted signed CryLo testnet release|not a fast-forward descendant|The local and remote CryLo histories have diverged|The candidate CryLo source commit was not authorized'){
+              throw 'CMD update failed for unrelated reason, not signed-release downgrade/incompatibility protection'
+            }
+            $result.rejectedForIncompatibleRelease=$true
+            $after=(& git rev-parse HEAD).Trim()
+            $result.headUnchanged=($LASTEXITCODE -eq 0 -and $after -eq $before)
+            $status=(& git status --porcelain)
+            $result.workingTreeClean=($LASTEXITCODE -eq 0 -and !$status)
+            $result.walletPreserved=((Test-Path $wallet) -and (Get-FileHash $wallet -Algorithm SHA256).Hash -eq $walletHash)
+            $result.configurationPreserved=((Test-Path $configuration) -and (Get-FileHash $configuration -Algorithm SHA256).Hash -eq $configurationHash)
+            $result.releaseSecurityStateNotCreated=!(Test-Path $releaseState)
+            if(!$result.headUnchanged -or !$result.workingTreeClean -or !$result.walletPreserved -or
+               !$result.configurationPreserved -or !$result.releaseSecurityStateNotCreated){
+              throw 'CMD updater modified source, wallet, config or release-security state during failed update'
+            }
+            Write-Host 'PASS: actual Windows CMD crylo update safely refused incompatible historical release and preserved user data'
+          } finally {
+            [IO.File]::WriteAllText($report,($result|ConvertTo-Json -Depth 4)+[Environment]::NewLine,[Text.Encoding]::UTF8)
+          }
+
+      - name: Retain only nonrelease Windows CMD signed-updater refusal evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-windows-cmd-signed-update-refusal-security-audit
+          path: ${{ runner.temp }}/crylo-windows-update-live-safety.json
+          if-no-files-found: ignore
+          retention-days: 30
