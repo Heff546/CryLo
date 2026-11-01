@@ -2343,55 +2343,8 @@ function installAuthorizedWindowsBundle(
     const installerName =
       `CryLo-Wallet-Setup-${authorization.version}-x64.exe`;
 
-    const powershell =
-      windowsPowerShellExecutable();
-
-    if (!fs.existsSync(powershell)) {
-      throw new Error(
-        `Trusted Windows PowerShell executable was not found: ${powershell}`
-      );
-    }
-
-    const archiveEnvironment = {
-      ...process.env,
-      CRYLO_SIGNED_BUNDLE: release.bundlePath
-    };
-
-    const listing = spawnSync(
-      powershell,
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        [
-          "$ErrorActionPreference = 'Stop'",
-          "Add-Type -AssemblyName System.IO.Compression.FileSystem",
-          "$archive = [System.IO.Compression.ZipFile]::OpenRead($env:CRYLO_SIGNED_BUNDLE)",
-          "try { $archive.Entries | ForEach-Object { $_.FullName } } finally { $archive.Dispose() }"
-        ].join('; ')
-      ],
-      {
-        cwd: root,
-        env: archiveEnvironment,
-        encoding: 'utf8',
-        shell: false
-      }
-    );
-
-    if (
-      listing.error ||
-      listing.status !== 0
-    ) {
-      throw new Error(
-        'Unable to inspect the authenticated CryLo Windows release bundle.'
-      );
-    }
-
-    const entries = String(
-      listing.stdout || ''
-    )
-      .split(/\r?\n/)
-      .filter(Boolean);
+    const { listBundle, extractBundle } = require('./windows-update-tools');
+    const entries = listBundle(release.bundlePath);
 
     if (!entries.length) {
       throw new Error(
@@ -2452,39 +2405,7 @@ function installAuthorizedWindowsBundle(
       }
     );
 
-    const extractionEnvironment = {
-      ...process.env,
-      CRYLO_SIGNED_BUNDLE: release.bundlePath,
-      CRYLO_SIGNED_EXTRACTION: extractionDirectory
-    };
-
-    const extraction = spawnSync(
-      powershell,
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        [
-          "$ErrorActionPreference = 'Stop'",
-          "Expand-Archive -LiteralPath $env:CRYLO_SIGNED_BUNDLE -DestinationPath $env:CRYLO_SIGNED_EXTRACTION -Force"
-        ].join('; ')
-      ],
-      {
-        cwd: root,
-        env: extractionEnvironment,
-        stdio: 'inherit',
-        shell: false
-      }
-    );
-
-    if (
-      extraction.error ||
-      extraction.status !== 0
-    ) {
-      throw new Error(
-        'Unable to extract the authenticated CryLo Windows release bundle.'
-      );
-    }
+    extractBundle(release.bundlePath, extractionDirectory);
 
     for (const entry of entries) {
       const extracted = path.join(
@@ -4405,150 +4326,14 @@ function ensureLinuxBuildDependencies() {
 function installUserCommand() {
   if (process.platform === 'win32') {
     const localAppData = process.env.LOCALAPPDATA;
-
-    if (!localAppData) {
-      fail(
-        'Unable to determine the current Windows user application directory.'
-      );
+    const systemRoot = process.env.SystemRoot || process.env.WINDIR;
+    if (!localAppData || !systemRoot) {
+      fail('Windows LOCALAPPDATA and SystemRoot are required for command registration.');
     }
-
-    const launcher = path.join(root, 'crylo.cmd');
-
-    if (!fs.existsSync(launcher)) {
-      fail(
-        `CryLo Windows launcher was not found: ${launcher}`
-      );
-    }
-
-    const commandDirectory = path.join(
-      localAppData,
-      'CryLo',
-      'bin'
-    );
-
-    const commandPath = path.join(
-      commandDirectory,
-      'crylo.cmd'
-    );
-
-    fs.mkdirSync(
-      commandDirectory,
-      { recursive: true }
-    );
-
-    const marker = ':: CryLo managed launcher';
-
-    if (fs.existsSync(commandPath)) {
-      const existing = fs.readFileSync(
-        commandPath,
-        'utf8'
-      );
-
-      if (!existing.includes(marker)) {
-        fail(
-          `Cannot replace existing CryLo command: ${commandPath}`
-        );
-      }
-    }
-
-    const wrapper = [
-      '@echo off',
-      marker,
-      `call "${launcher}" %*`,
-      ''
-    ].join('\r\n');
-
-    fs.writeFileSync(
-      commandPath,
-      wrapper,
-      'utf8'
-    );
-
-    const userPathResult = spawnSync(
-      windowsPowerShellExecutable(),
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        '[Environment]::GetEnvironmentVariable("Path","User")'
-      ],
-      {
-        cwd: root,
-        env: process.env,
-        encoding: 'utf8',
-        shell: false
-      }
-    );
-
-    if (
-      userPathResult.error ||
-      userPathResult.status !== 0
-    ) {
-      fail(
-        'Unable to read the Windows user PATH.'
-      );
-    }
-
-    const userPath = String(
-      userPathResult.stdout || ''
-    ).trim();
-
-    const userEntries = userPath
-      .split(';')
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-
-    const alreadyRegistered = userEntries.some(
-      (entry) =>
-        entry.toLowerCase() ===
-        commandDirectory.toLowerCase()
-    );
-
-    if (!alreadyRegistered) {
-      const updatedPath = userEntries.length
-        ? `${userEntries.join(';')};${commandDirectory}`
-        : commandDirectory;
-
-      const pathUpdate = spawnSync(
-        windowsPowerShellExecutable(),
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `$value = [Environment]::GetEnvironmentVariable("CRYLO_USER_PATH_VALUE","Process"); ` +
-            '[Environment]::SetEnvironmentVariable("Path",$value,"User")'
-        ],
-        {
-          cwd: root,
-          env: {
-            ...process.env,
-            CRYLO_USER_PATH_VALUE: updatedPath
-          },
-          stdio: 'inherit',
-          shell: false
-        }
-      );
-
-      if (
-        pathUpdate.error ||
-        pathUpdate.status !== 0
-      ) {
-        fail(
-          'Unable to register CryLo in the Windows user PATH.'
-        );
-      }
-    }
-
-    console.log(
-      `CryLo command registered: ${commandPath}`
-    );
-
-    if (!alreadyRegistered) {
-      console.log(
-        'Open a new terminal to use "crylo" from anywhere.'
-      );
-    }
-
+    const { registerCryLoCommand } = require('../electron/build/windows-installer-runtime');
+    registerCryLoCommand(root, localAppData, systemRoot);
+    console.log(`CryLo command registered: ${path.join(localAppData, 'CryLo', 'bin', 'crylo.cmd')}`);
+    console.log('Open a new terminal to use "crylo" from anywhere.');
     return;
   }
 
@@ -4767,66 +4552,13 @@ function installWindowsDesktopLaunchers() {
     'utf8'
   );
 
-  const commandProcessor =
-    process.env.ComSpec ||
-    path.join(
-      process.env.SystemRoot || 'C:\\Windows',
-      'System32',
-      'cmd.exe'
-    );
-
-  const shortcutResult = spawnSync(
-    windowsPowerShellExecutable(),
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      [
-        "$ErrorActionPreference = 'Stop'",
-        "$shell = New-Object -ComObject WScript.Shell",
-        "$desktop = [Environment]::GetFolderPath('Desktop')",
-        "$programs = [Environment]::GetFolderPath('Programs')",
-        "$targets = @(",
-        "  (Join-Path $desktop 'CryLo Daemon.lnk'),",
-        "  (Join-Path $programs 'CryLo Daemon.lnk')",
-        ")",
-        "foreach ($target in $targets) {",
-        "  $shortcut = $shell.CreateShortcut($target)",
-        "  $shortcut.TargetPath = $env:CRYLO_COMMAND_PROCESSOR",
-        "  $shortcut.Arguments = '/d /c \"\"' + $env:CRYLO_DAEMON_LAUNCHER + '\"\"'",
-        "  $shortcut.WorkingDirectory = $env:CRYLO_ROOT",
-        "  $shortcut.IconLocation = $env:CRYLO_DAEMON_ICON",
-        "  $shortcut.Description = 'Start the local CryLo Layer 1 daemon'",
-        "  $shortcut.Save()",
-        "}",
-        "$obsolete = Join-Path $programs 'CryLo Daemon - Background.lnk'",
-        "if (Test-Path -LiteralPath $obsolete) {",
-        "  Remove-Item -LiteralPath $obsolete -Force",
-        "}"
-      ].join('\n')
-    ],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        CRYLO_COMMAND_PROCESSOR: commandProcessor,
-        CRYLO_DAEMON_LAUNCHER: daemonLauncher,
-        CRYLO_DAEMON_ICON: sourceIcon,
-        CRYLO_ROOT: root
-      },
-      stdio: 'inherit',
-      shell: false
-    }
-  );
-
-  if (
-    shortcutResult.error ||
-    shortcutResult.status !== 0
-  ) {
-    fail(
-      'Unable to create the CryLo Daemon Windows desktop launcher.'
-    );
-  }
+  const { systemTool, createDaemonShortcuts } = require('./windows-update-tools');
+  createDaemonShortcuts({
+    CRYLO_COMMAND_PROCESSOR: systemTool('cmd.exe'),
+    CRYLO_DAEMON_LAUNCHER: daemonLauncher,
+    CRYLO_DAEMON_ICON: sourceIcon,
+    CRYLO_ROOT: root
+  });
 
   console.log();
   console.log('CryLo Windows daemon launchers installed:');
@@ -5814,3 +5546,4 @@ switch (command) {
   default:
     fail(`Unknown CryLo command: ${command}`);
 }
+
