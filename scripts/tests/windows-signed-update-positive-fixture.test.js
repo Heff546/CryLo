@@ -256,7 +256,7 @@ test('real production Windows update() authorizes an ephemeral signed fast-forwa
   assert.equal(result.code, 0, 'Orchestrator failed: ' + sim.log.join('\n'));
   assert.equal(command(f.client, 'rev-parse', 'HEAD'), f.after);
   assert.equal(command(f.client, 'status', '--porcelain'), '');
-  assert.equal(fs.readFileSync(path.join(f.client, 'fixture.txt'), 'utf8'), 'after-signed-release\n');
+  assert.equal(fs.readFileSync(path.join(f.client, 'fixture.txt'), 'utf8').replace(/\r\n/g, '\n'), 'after-signed-release\n');
   assert.equal(fs.readFileSync(path.join(f.appDir, 'installed-synthetic-artifact'), 'utf8'),
     fs.readFileSync(f.artifactPath, 'utf8'));
   const releaseState = JSON.parse(fs.readFileSync(path.join(f.configDir, 'crylo-wallet', 'release-security.json'), 'utf8'));
