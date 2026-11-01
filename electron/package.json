@@ -193,5 +193,14 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Heff546/CryLo.git"
+  },
+  "overrides": {
+    "@electron/asar": "4.3.1",
+    "electron-winstaller": "5.4.4",
+    "dir-compare": "5.0.0",
+    "filelist": "2.0.2",
+    "minimatch": "11.0.3",
+    "glob": "14.0.3",
+    "rimraf": "6.0.1"
   }
 }
