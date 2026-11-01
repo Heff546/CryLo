@@ -61,14 +61,16 @@ const getVersion=(req,name)=>{try{return req(name+'/package.json').version}catch
   const root=createRequire(path.join(dir,'package.json'));
   const builder=createRequire(root.resolve('electron-builder/package.json'));
   const lib=createRequire(builder.resolve('app-builder-lib/package.json'));
-  const asar=createRequire(lib.resolve('@electron/asar/package.json'));
+  const asar=createRequire(lib.resolve('@electron/asar'));
   const universal=createRequire(lib.resolve('@electron/universal/package.json'));
-  const dircompare=createRequire(universal.resolve('dir-compare/package.json'));
-  const win=createRequire(root.resolve('electron-winstaller/package.json'));
+  const dircompare=createRequire(universal.resolve('dir-compare'));
+  const win=createRequire(root.resolve('electron-winstaller'));
   report.installed={
    builder:getVersion(root,'electron-builder'),lib:getVersion(builder,'app-builder-lib'),
-   asar:getVersion(lib,'@electron/asar'),universal:getVersion(lib,'@electron/universal'),
-   dircompare:getVersion(universal,'dir-compare'),winstaller:getVersion(root,'electron-winstaller'),
+   asar:report.chosen.find(x=>x.location.endsWith('/@electron/asar'))?.version,
+   universal:getVersion(lib,'@electron/universal'),
+   dircompare:report.chosen.find(x=>x.location.endsWith('/dir-compare'))?.version,
+   winstaller:report.chosen.find(x=>x.location.endsWith('/electron-winstaller'))?.version,
    minimatch:getVersion(lib,'minimatch'), universalMinimatch:getVersion(universal,'minimatch')
   };
   await check('app-builder-lib minimatch class and CryLo NSIS/Wallet/Linux/Mac file filters',()=>{
