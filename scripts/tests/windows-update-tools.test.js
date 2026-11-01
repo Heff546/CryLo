@@ -83,9 +83,9 @@ function zip(entries) {
 test('Windows system tar extracts real ZIP bytes and refuses unsafe names and symlink entries', { skip: process.platform !== 'win32' }, t => {
   const dir = temporary(t), bundle = path.join(dir, 'signed fixture.zip'), out = path.join(dir, 'extracted');
   fs.mkdirSync(out);
-  fs.writeFileSync(bundle, zip([['CryLo-daemon.exe', 'native fixture'], ['BINARY-MANIFEST.txt', 'manifest fixture']]));
+  fs.writeFileSync(bundle, zip([['CryLo-daemon.exe', 'native fixture'], ['BINARY-MANIFEST.txt', 'manifest fixture'], ['libstdc++-6.dll', 'runtime fixture']]));
   const names = helper.listBundle(bundle);
-  assert.deepEqual(names, ['CryLo-daemon.exe', 'BINARY-MANIFEST.txt']);
+  assert.deepEqual(names, ['CryLo-daemon.exe', 'BINARY-MANIFEST.txt', 'libstdc++-6.dll']);
   helper.extractBundle(bundle, out);
   assert.equal(fs.readFileSync(path.join(out, names[0]), 'utf8'), 'native fixture');
   for (const entries of [[['../outside', 'bad']], [['a', 'one'], ['A', 'two']], [['link', '../outside', 0o120777]]]) {

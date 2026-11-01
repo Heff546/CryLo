@@ -36,7 +36,7 @@ function listBundle(bundle) {
   for (const entry of entries) {
     // Restrict Windows filenames, including alternate streams, device names,
     // trailing dot/space aliases, and case-insensitive duplicates.
-    if (!/^[A-Za-z0-9][A-Za-z0-9._ -]*$/.test(entry) || /[. ]$/.test(entry) ||
+    if (!/^[A-Za-z0-9][A-Za-z0-9._+ -]*$/.test(entry) || /[. ]$/.test(entry) ||
         /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(entry) || seen.has(entry.toLowerCase())) {
       throw new Error(`Unsafe or duplicate Windows bundle entry: ${entry}`);
     }
