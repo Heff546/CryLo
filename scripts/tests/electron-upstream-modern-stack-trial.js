@@ -6,7 +6,8 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process'),{createRequire}=require('node:module');
 const variant=process.argv[2],out=process.argv[3];
-if(!['modern-current-builder','modern-upstream-v26','modern-parents-only'].includes(variant)||!out)
+if(!['modern-current-builder','modern-upstream-v26','modern-parents-only',
+ 'modern-purge-legacy','modern-purge-legacy-builder'].includes(variant)||!out)
  throw Error('Expected modern-current-builder, modern-upstream-v26, or modern-parents-only and output');
 const source=path.resolve(__dirname,'../../electron');
 const canonical=['package.json','package-lock.json'];
@@ -41,7 +42,8 @@ const getVersion=(req,name)=>{try{return req(name+'/package.json').version}catch
   for(const f of canonical)fs.copyFileSync(path.join(source,f),path.join(dir,f));
   const pkg=JSON.parse(fs.readFileSync(path.join(dir,'package.json'),'utf8'));
   must(!pkg.overrides,'Expected canonical CryLo Electron package without overrides');
-  if(variant==='modern-upstream-v26')pkg.devDependencies['electron-builder']='26.18.1';
+  if(['modern-upstream-v26','modern-purge-legacy-builder'].includes(variant))
+   pkg.devDependencies['electron-builder']='26.18.1';
   pkg.overrides={
    '@electron/asar':'4.3.1',
    'electron-winstaller':'5.4.4',
@@ -49,12 +51,19 @@ const getVersion=(req,name)=>{try{return req(name+'/package.json').version}catch
    'filelist':'2.0.2'
   };
   if(variant!=='modern-parents-only')pkg.overrides.minimatch='11.0.3';
+  if(variant.startsWith('modern-purge-legacy')){
+   pkg.overrides.glob='14.0.3';
+   pkg.overrides.rimraf='6.0.1';
+  }
   fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify(pkg,null,2)+'\n');
   run(['install','--package-lock-only','--ignore-scripts','--no-audit','--no-fund']);
   const lock=JSON.parse(fs.readFileSync(path.join(dir,'package-lock.json'),'utf8'));
   report.chosen=Object.entries(lock.packages).filter(([k])=>
    /\/(minimatch|glob|@electron\/asar|@electron\/universal|app-builder-lib|electron-builder|electron-winstaller|dir-compare|filelist|rimraf|temp)$/.test(k))
    .map(([location,p])=>({location,version:p.version,dependencies:p.dependencies}));
+  report.dependencyParents=Object.entries(lock.packages||{})
+   .filter(([,x])=>x.dependencies && (x.dependencies.glob||x.dependencies.rimraf||x.dependencies.temp))
+   .map(([location,x])=>({location,glob:x.dependencies.glob,rimraf:x.dependencies.rimraf,temp:x.dependencies.temp}));
   report.fullAudit=audit([]);
   report.productionAudit=audit(['--omit=dev']);
   run(['ci','--ignore-scripts','--no-audit','--no-fund']);
@@ -132,6 +141,17 @@ const getVersion=(req,name)=>{try{return req(name+'/package.json').version}catch
    must(typeof squirrel.createWindowsInstaller==='function',
      'New squirrel installer API cannot load from electron-winstaller');
   });
+  await check('legacy temp cleanup and glob consumers still function',()=>{
+   const tempModule=report.chosen.some(x=>x.location.endsWith('/temp'));
+   if(!tempModule)return;
+   const mod=win('temp');
+   must(typeof mod.mkdirSync==='function'&&typeof mod.cleanupSync==='function','Legacy temp API missing');
+   mod.track();
+   const p=mod.mkdirSync('crylo-ci-modern-temp');
+   must(fs.statSync(p).isDirectory(),'temp could not create directory');
+   mod.cleanupSync();
+   must(!fs.existsSync(p),'temp cleanup failed after npm overrides');
+  });
   await check('no unsupported legacy minimatch 3/5, glob7 or rimraf2 remain',()=>{
    const bad=report.chosen.filter(x=>
     (x.location.endsWith('/minimatch') && !/^11\./.test(x.version)) ||
@@ -149,7 +169,8 @@ const getVersion=(req,name)=>{try{return req(name+'/package.json').version}catch
   fs.writeFileSync(out,JSON.stringify(report,null,2)+'\n');
   fs.rmSync(dir,{recursive:true,force:true});
   console.log(JSON.stringify({variant,full:report.fullAudit?.counts?.total,
-   prod:report.productionAudit?.counts?.total,installed:report.installed,
+   prod:report.productionAudit?.counts?.total,findings:report.fullAudit?.findings,
+   dependencyParents:report.dependencyParents,installed:report.installed,
    checks:report.checks,executionValid:report.executionValid,candidateSafe:report.candidateSafe,
    sourceUnchanged:report.sourceUnchanged,error:report.error}).slice(0,16000));
  }
