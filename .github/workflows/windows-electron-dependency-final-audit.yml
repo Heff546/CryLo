@@ -1,0 +1,113 @@
+name: CryLo Windows Electron dependency advisory final audit (no upgrade/build)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/windows-electron-dependency-final-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-electron-audit:
+    runs-on: windows-2022
+    timeout-minutes: 14
+    steps:
+      - name: Checkout exact Windows release Electron lockfile
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Use release Node.js runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Use pinned release npm for audit reproducibility
+        shell: cmd
+        run: |
+          npm install --global --no-audit --no-fund --ignore-scripts npm@12.1.0
+          if errorlevel 1 exit /b 1
+          npm --version
+          node -e "if(process.version!=='v24.21.0')process.exit(1)"
+          if errorlevel 1 exit /b 1
+
+      - name: Audit both production and development dependencies without installing or modifying locks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $auditFolder=Join-Path $env:RUNNER_TEMP 'crylo-electron-audit'
+          New-Item -ItemType Directory -Force -Path $auditFolder | Out-Null
+          $lockHash=(Get-FileHash 'electron/package-lock.json' -Algorithm SHA256).Hash
+          $packageHash=(Get-FileHash 'electron/package.json' -Algorithm SHA256).Hash
+          $prodFile=Join-Path $auditFolder 'production.json'
+          $allFile=Join-Path $auditFolder 'full.json'
+          & npm.cmd --prefix electron audit --omit=dev --json | Out-File -LiteralPath $prodFile -Encoding utf8
+          $prodExit=$LASTEXITCODE
+          & npm.cmd --prefix electron audit --json | Out-File -LiteralPath $allFile -Encoding utf8
+          $allExit=$LASTEXITCODE
+          if($prodExit -notin @(0,1) -or $allExit -notin @(0,1)){throw "npm audit could not complete; production rc=$prodExit full rc=$allExit"}
+          $prod=Get-Content $prodFile -Raw | ConvertFrom-Json
+          $full=Get-Content $allFile -Raw | ConvertFrom-Json
+          if($prod.error -or $full.error -or !$prod.metadata.vulnerabilities -or !$full.metadata.vulnerabilities){
+            throw 'npm registry audit returned missing/invalid security metadata'
+          }
+          if((Get-FileHash 'electron/package-lock.json' -Algorithm SHA256).Hash -ne $lockHash -or
+             (Get-FileHash 'electron/package.json' -Algorithm SHA256).Hash -ne $packageHash){
+            throw 'Dependency audit unexpectedly changed canonical Electron package or lockfile'
+          }
+          Write-Host '===== ELECTRON PRODUCTION RUNTIME AUDIT ====='
+          Write-Host ($prod.metadata.vulnerabilities | ConvertTo-Json -Compress)
+          Write-Host '===== ELECTRON FULL DEPENDENCY AUDIT ====='
+          Write-Host ($full.metadata.vulnerabilities | ConvertTo-Json -Compress)
+          $items=@()
+          if($full.vulnerabilities){
+            foreach($v in $full.vulnerabilities.PSObject.Properties){
+              $info=$v.Value
+              $affected=@($info.via | ForEach-Object {
+                if($_ -is [string]){$_}
+                elseif($_.name){($_.name+':'+$_.range)}
+              })
+              $items+=@([ordered]@{
+                package=$v.Name
+                severity=$info.severity
+                direct=$info.isDirect
+                range=$info.range
+                advisoryDependencies=$affected
+                fixAvailable=$info.fixAvailable
+              })
+              Write-Host ("AUDIT: "+$v.Name+" | "+$info.severity+" | direct="+$info.isDirect+" | via="+($affected -join ','))
+            }
+          }
+          $report=[ordered]@{
+            classification='WINDOWS_ELECTRON_PINNED_LOCKFILE_ADVISORY_REVIEW'
+            sourceCommit=$env:GITHUB_SHA
+            nodeVersion='24.21.0'
+            npmVersion='12.1.0'
+            production=$prod.metadata.vulnerabilities
+            all=$full.metadata.vulnerabilities
+            findings=$items
+            filesUnchanged=$true
+            dependenciesModified=$false
+            nativeRebuilt=$false
+            electronRebuilt=$false
+            releasePublished=$false
+          }
+          $report | ConvertTo-Json -Depth 9 | Out-File -LiteralPath (Join-Path $auditFolder 'triage.json') -Encoding utf8
+          if($prod.metadata.vulnerabilities.high -gt 0 -or $prod.metadata.vulnerabilities.critical -gt 0){
+            throw 'BLOCK: production Electron dependency vulnerabilities are high/critical'
+          }
+          Write-Host 'PASS: exact existing Windows Electron lockfile audited without upgrades, native build, signing or publication'
+
+      - name: Retain exact advisory evidence without release artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-windows-electron-dependency-final-advisory-evidence
+          path: |
+            ${{ runner.temp }}/crylo-electron-audit/production.json
+            ${{ runner.temp }}/crylo-electron-audit/full.json
+            ${{ runner.temp }}/crylo-electron-audit/triage.json
+          if-no-files-found: warn
+          retention-days: 30
