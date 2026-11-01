@@ -1,0 +1,47 @@
+name: CryLo Windows signed update positive-path local fixture gate (no release/native build)
+
+on:
+  push:
+    branches: [audit/windows-warning-fixes]
+    paths:
+      - .github/workflows/windows-signed-update-positive-fixture-gate.yml
+      - scripts/tests/windows-signed-update-positive-fixture.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  win-signed-positive-fixture:
+    runs-on: windows-2022
+    timeout-minutes: 16
+    steps:
+      - name: Checkout exact production updater and Windows-only fixture without retained credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Use existing pinned Node Windows verification runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Validate unchanged production update function with ephemeral signature and real local Git fast-forward
+        shell: cmd
+        run: |
+          node --check scripts\crylo.js
+          if errorlevel 1 exit /b 1
+          node --check scripts\release\verify-release-manifest.js
+          if errorlevel 1 exit /b 1
+          node --check scripts\tests\windows-signed-update-positive-fixture.test.js
+          if errorlevel 1 exit /b 1
+          node --test scripts\tests\windows-signed-update-positive-fixture.test.js
+          if errorlevel 1 exit /b 1
+          echo PASS: signed positive-path Git fast-forward and source update-state orchestration on isolated fixture
+
+      - name: Certification scope guard
+        shell: cmd
+        run: |
+          echo NOTE: This is a Windows-only signed UPDATE ORCHESTRATION integration test.
+          echo NOTE: Local Git origin, CI-only Ed25519 key, synthetic artifact and test-only installation sink.
+          echo NOTE: Production HTTPS release discovery, actual signed Windows ZIP extraction, NSIS installation, and daemon restart are NOT exercised.
+          echo PASS: no release published, no native binaries built, no production signer used
