@@ -1,0 +1,126 @@
+name: CryLo Testnet.23 Windows unsigned signing handoff
+
+on:
+  push:
+    branches: [release/testnet23-merged-candidate]
+    paths:
+      - .github/workflows/windows-testnet23-unsigned-handoff.yml
+      - scripts/release/windows-testnet23-unsigned-handoff.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  assemble-verified-release-zip:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - name: Checkout CI-only source without persistent credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Pin Node 24.21.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+
+      - name: Verify release source is exactly the audited NSIS packaging commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 5c7a5ac842eda8f143abacfe6b4e8c22161e0931 25ff0f466647761d30fcab532b89f729f3e68df2
+          git merge-base --is-ancestor 416a037c4f42a4adcb8c554e6b89a69598dca44c 25ff0f466647761d30fcab532b89f729f3e68df2
+          git merge-base --is-ancestor 25ff0f466647761d30fcab532b89f729f3e68df2 HEAD
+          node --check scripts/release/windows-testnet23-unsigned-handoff.js
+          git diff --name-only 25ff0f466647761d30fcab532b89f729f3e68df2 HEAD > "$RUNNER_TEMP/crylo-post-package-changes.txt"
+          node <<'NODE'
+          const fs=require('fs');
+          const actual=fs.readFileSync(process.env.RUNNER_TEMP+'/crylo-post-package-changes.txt','utf8').split(/\r?\n/).filter(Boolean);
+          const allowed=new Set([
+            '.github/workflows/windows-testnet23-installer-e2e.yml',
+            '.github/workflows/windows-testnet23-real-update-e2e.yml',
+            '.github/workflows/windows-testnet23-unsigned-handoff.yml',
+            'scripts/tests/windows-testnet23-real-update-rehearsal.js',
+            'scripts/release/windows-testnet23-unsigned-handoff.js'
+          ]);
+          for(const file of actual)if(!allowed.has(file))throw Error('Release-affecting source changed after packaging: '+file);
+          console.log('PASS: packaged production source frozen and both Windows histories preserved');
+          NODE
+
+      - name: Download exact GitHub installer and native artifacts by immutable digest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo=Heff546/CryLo
+          installer_run=41372650525
+          installer_id=13109649519
+          native_run=41244508425
+          native_id=13060610636
+          test "$(gh api "repos/$repo/actions/runs/$installer_run" --jq '.head_sha')" = 25ff0f466647761d30fcab532b89f729f3e68df2
+          test "$(gh api "repos/$repo/actions/runs/$installer_run" --jq '.conclusion')" = success
+          test "$(gh api "repos/$repo/actions/artifacts/$installer_id" --jq '.workflow_run.id')" = "$installer_run"
+          test "$(gh api "repos/$repo/actions/artifacts/$installer_id" --jq '.digest')" = sha256:499295611e83f48062c5a404ef759e681870943b11b54bcaab14e97c690147e9
+          test "$(gh api "repos/$repo/actions/runs/$native_run" --jq '.head_sha')" = 5120debcc2a75fa0c7198ee0137f142dd0a5f6a8
+          test "$(gh api "repos/$repo/actions/runs/$native_run" --jq '.conclusion')" = success
+          test "$(gh api "repos/$repo/actions/artifacts/$native_id" --jq '.workflow_run.id')" = "$native_run"
+          test "$(gh api "repos/$repo/actions/artifacts/$native_id" --jq '.digest')" = sha256:27e7bbba85dfdea965d7bb66e49554b858a01bc493263a376ad48b1337250a23
+          mkdir -p "$RUNNER_TEMP/crylo-testnet23-native" "$RUNNER_TEMP/crylo-testnet23-installer"
+          gh run download "$native_run" --repo "$repo" --name crylo-unified-windows-x64-unsigned-native-candidate --dir "$RUNNER_TEMP/crylo-testnet23-native"
+          gh run download "$installer_run" --repo "$repo" --name crylo-testnet23-windows-unsigned-ci-candidate --dir "$RUNNER_TEMP/crylo-testnet23-installer"
+          echo 'PASS: immutable origin commit, run success, GitHub artifact digest and download'
+
+      - name: Install actual audited NSIS under no-credential Windows CMD
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:GH_TOKEN -or $env:GITHUB_TOKEN){throw 'GitHub credential must not enter real NSIS install'}
+          $root=Join-Path $env:RUNNER_TEMP 'crylo-testnet23-installer'
+          $setups=@(Get-ChildItem $root -Recurse -File -Filter 'CryLo Wallet Setup 1.1.1.exe')
+          if($setups.Count -ne 1){throw 'Expected exactly one pinned Testnet.23 setup executable'}
+          $installer=$setups[0].FullName
+          if((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne '8107804a6239f4fad57db23829aea029f8687452ff7e94c0e8b3669a39bc43df'){throw 'Downloaded NSIS installer hash changed'}
+          $install=Join-Path $env:RUNNER_TEMP 'crylo-testnet23-verified-install'
+          if((Test-Path $install) -or (Test-Path (Join-Path $env:USERPROFILE 'CryLo'))){throw 'Test must start from a clean runner'}
+          $env:GIT_CONFIG_COUNT='1'
+          $env:GIT_CONFIG_KEY_0='credential.helper'
+          $env:GIT_CONFIG_VALUE_0=''
+          $env:GIT_TERMINAL_PROMPT='0'
+          $env:GCM_INTERACTIVE='never'
+          $cmd='start /wait "" "'+$installer+'" /S /D='+$install
+          $process=Start-Process -FilePath $env:ComSpec -ArgumentList @('/D','/C',$cmd) -PassThru
+          if(!$process.WaitForExit(360000)){
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw 'Real CMD/NSIS installer exceeded bounded runtime'
+          }
+          $process.Refresh()
+          if($process.ExitCode -ne 0){throw 'CMD installer exited nonzero: '+$process.ExitCode}
+          $bootstrap=Join-Path $env:LOCALAPPDATA 'CryLo\installer-bootstrap.log'
+          if(!(Test-Path $bootstrap) -or !((Get-Content $bootstrap -Raw) -match 'RESULT=READY')){throw 'Real NSIS bootstrap did not reach READY'}
+          $packaged=Join-Path $install 'resources\bin\win\WINDOWS-BUILD-RUNTIME-MANIFEST.json'
+          if(!(Test-Path $packaged)){throw 'NSIS installed runtime manifest missing'}
+          $manifest=Get-Content $packaged -Raw | ConvertFrom-Json
+          if($manifest.gitCommit -ne '25ff0f466647761d30fcab532b89f729f3e68df2'){throw 'Real NSIS source commit differs from signable source'}
+          Write-Host 'PASS: real CMD-only NSIS installer produced authenticated source and READY receipt'
+
+      - name: Assemble and roundtrip-verify 61 native, DLL, manifest and NSIS files
+        shell: cmd
+        run: |
+          node scripts\release\windows-testnet23-unsigned-handoff.js
+          if errorlevel 1 exit /b 1
+
+      - name: Retain unsigned ZIP for Pi1 signing; never publish or sign in CI
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-testnet23-unsigned-windows-signing-handoff
+          path: |
+            ${{ runner.temp }}/crylo-testnet23-handoff/CryLo-Release-1.1.1-win-x64.zip
+            ${{ runner.temp }}/crylo-testnet23-handoff/crylo-testnet23-unsigned-handoff-audit.json
+          if-no-files-found: error
+          retention-days: 30
