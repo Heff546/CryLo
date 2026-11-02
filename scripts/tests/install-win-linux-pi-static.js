@@ -193,11 +193,12 @@ assert(
   installerRuntime.includes(
     "const CRYLO_LAUNCHER_MARKER = ':: CryLo managed launcher';"
   ) &&
-  installerRuntime.includes("path.join(localAppData, 'CryLo', 'bin')") &&
+  installerRuntime.includes("path.join(localAppData, 'CryLo', 'bin-v2')") &&
   installerRuntime.includes("const regExe = options.regExe || path.join(systemRoot, 'System32', 'reg.exe');") &&
   installerRuntime.includes("'HKCU\\\\Environment'") &&
   installerRuntime.includes("'Path'") &&
-  installerRuntime.includes('previousWrapper') &&
+  installerRuntime.includes('wrapperCreated') &&
+  installerRuntime.includes('Existing immutable CryLo snapshot launcher differs') &&
   installerRuntime.includes('registryRun(regExe, ['),
   'Windows installer must register its CMD launcher using reg.exe and restore prior state on failure.'
 );
@@ -211,3 +212,4 @@ assert(
 console.log(
   'Windows/Linux/Pi crylo install static checks passed.'
 );
+

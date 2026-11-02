@@ -1,54 +1,28 @@
 'use strict';
 
-/**
- * Fail closed before packaging Windows NSIS if the embedded authenticated
- * runtime helper does not match the exact SHA-256 that NSIS checks at install.
- *
- * This is a packaging-time integrity gate, not a replacement for runtime
- * certutil/findstr verification. Other platform packaging is unaffected.
- */
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
-function verifyWindowsInstallerHelperPin(electronDir, options = {}) {
-  const helper = options.helperPath ||
-    path.join(electronDir, 'build', 'windows-installer-runtime.js');
-  const nsis = options.nsisPath ||
-    path.join(electronDir, 'build', 'installer.nsh');
-  const helperFile = fs.lstatSync(helper);
-  const nsisFile = fs.lstatSync(nsis);
-  if (!helperFile.isFile() || helperFile.isSymbolicLink() ||
-      !nsisFile.isFile() || nsisFile.isSymbolicLink()) {
-    throw new Error('Windows NSIS helper and trust configuration must be regular files');
+// Preserve the packaging gate entry point. Derive the helper pin from
+// canonical committed bytes; the two Node trust pins remain explicit.
+function verifyWindowsInstallerHelperPin(electronDir) {
+  const { stageWindowsInstallerHelper } = require('./before-pack');
+  const result = stageWindowsInstallerHelper(electronDir);
+  const source = fs.readFileSync(path.join(electronDir, 'build', 'installer.nsh'), 'utf8');
+  const hashes = [...source.matchAll(/findstr\.exe[^\r\n]*?([0-9a-f]{64})[^\r\n]*?crylo-hash-output\.txt/gi)].map(m => m[1].toLowerCase());
+  const expected = [
+    '158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541',
+    'ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32'
+  ];
+  if (JSON.stringify(hashes) !== JSON.stringify(expected)) {
+    throw new Error('Windows NSIS Node archive/executable trust pins differ.');
   }
-
-  const installer = fs.readFileSync(nsis, 'utf8');
-  const checks = [...installer.matchAll(
-    /findstr\.exe[^\r\n]*?([0-9a-f]{64})[^\r\n]*?crylo-hash-output\.txt/gi
-  )];
-  if (checks.length !== 3) {
-    throw new Error('Expected three explicit Windows NSIS trust hashes (helper, Node archive and Node EXE)');
-  }
-
-  const expected = checks[0][1].toLowerCase();
-  const actual = crypto.createHash('sha256').update(fs.readFileSync(helper)).digest('hex');
-  if (actual !== expected) {
-    throw new Error('Windows NSIS helper SHA256 mismatch; packaging refused. Expected: ' +
-      expected + ' Actual: ' + actual);
-  }
-
-  console.log('PASS: Windows NSIS authenticated installer helper pin ' + actual);
-  return actual;
+  console.log('PASS: generated NSIS helper pin and pinned Node hashes verified');
+  return result.hash;
 }
 
 module.exports = Object.freeze({ verifyWindowsInstallerHelperPin });
-
 if (require.main === module) {
-  try {
-    verifyWindowsInstallerHelperPin(path.resolve(__dirname, '..'));
-  } catch (error) {
-    console.error('ERROR: ' + error.message);
-    process.exitCode = 1;
-  }
+  try { verifyWindowsInstallerHelperPin(path.resolve(__dirname, '..')); }
+  catch (error) { console.error('ERROR: ' + error.message); process.exitCode = 1; }
 }

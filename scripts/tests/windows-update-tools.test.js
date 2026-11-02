@@ -53,8 +53,8 @@ test('shared CLI registration preserves registry type and existing PATH, and rol
   registerCryLoCommand(dir, dir, dir, { regExe: reg, spawnSync: query, run: (tool, args) => writes.push(args) });
   assert.equal(writes.length, 1);
   assert.equal(writes[0][writes[0].indexOf('/t') + 1], 'REG_EXPAND_SZ');
-  assert.equal(writes[0][writes[0].indexOf('/d') + 1], existingPath + ';' + path.join(dir, 'CryLo', 'bin'));
-  const wrapper = path.join(dir, 'CryLo/bin/crylo.cmd');
+  assert.equal(writes[0][writes[0].indexOf('/d') + 1], path.join(dir, 'CryLo', 'bin-v2') + ';' + existingPath);
+  const wrapper = path.join(dir, 'CryLo/bin-v2/crylo.cmd');
   const before = fs.readFileSync(wrapper);
   assert.throws(() => registerCryLoCommand(dir, dir, dir, { regExe: reg, spawnSync: query, run: () => { throw new Error('registry denied'); } }), /registry denied/);
   assert.deepEqual(fs.readFileSync(wrapper), before);
@@ -113,3 +113,4 @@ test('Windows Script Host creates usable daemon shortcuts with literal paths', {
     assert.equal(lines[offset + 2].toLowerCase(), dir.toLowerCase());
   }
 });
+

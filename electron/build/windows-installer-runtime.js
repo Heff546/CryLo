@@ -739,7 +739,7 @@ function queryUserPath(regExe, spawn = spawnSync) {
 
 function registerCryLoCommand(checkout, localAppData, systemRoot, options = {}) {
   const launcher = path.join(checkout, 'crylo.cmd');
-  const commandDirectory = path.join(localAppData, 'CryLo', 'bin');
+  const commandDirectory = path.join(localAppData, 'CryLo', 'bin-v2');
   const commandPath = path.join(commandDirectory, 'crylo.cmd');
   const regExe = options.regExe || path.join(systemRoot, 'System32', 'reg.exe');
   const registrySpawn = options.spawnSync || spawnSync;
@@ -749,6 +749,14 @@ function registerCryLoCommand(checkout, localAppData, systemRoot, options = {}) 
     fail('Managed CryLo launcher is missing.');
   }
 
+  /*
+   * Never replace the active legacy bin/crylo.cmd launcher. A separately
+   * named immutable command snapshots the root batch file inside the
+   * checkout, preserving %~dp0 while Git fast-forwards the source.
+   *
+   * To modify the managed launcher in the future, register a new versioned
+   * directory instead of overwriting an existing command.
+   */
   let createdCommandDirectory = false;
   if (fs.existsSync(commandDirectory)) {
     assertExistingPathIsNotReparse(commandDirectory, 'CryLo command directory');
@@ -757,18 +765,27 @@ function registerCryLoCommand(checkout, localAppData, systemRoot, options = {}) 
     createdCommandDirectory = true;
   }
 
-  let previousWrapper = null;
-  if (fs.existsSync(commandPath)) {
-    const existing = fs.readFileSync(commandPath);
-    const existingText = existing.toString('utf8');
-    if (!existingText.includes(CRYLO_LAUNCHER_MARKER)) {
-      fail(`Cannot replace existing CryLo command: ${commandPath}`);
-    }
-    previousWrapper = existing;
-  }
+  const marker = ':: CryLo managed snapshot launcher v2';
+  const wrapper = [
+    '@echo off',
+    marker,
+    'setlocal EnableExtensions DisableDelayedExpansion',
+    'set "CRYLO_SNAPSHOT_SOURCE=%USERPROFILE%\\CryLo\\crylo.cmd"',
+    'if not exist "%CRYLO_SNAPSHOT_SOURCE%" exit /b 1',
+    'set "CRYLO_SNAPSHOT_FILE=%USERPROFILE%\\CryLo\\.crylo-launcher-run-%RANDOM%-%RANDOM%-%RANDOM%.cmd"',
+    'if exist "%CRYLO_SNAPSHOT_FILE%" exit /b 1',
+    'copy /B /Y "%CRYLO_SNAPSHOT_SOURCE%" "%CRYLO_SNAPSHOT_FILE%" >nul 2>nul',
+    'if errorlevel 1 exit /b 1',
+    'set "CRYLO_WINDOWS_SNAPSHOT_ACTIVE=1"',
+    'call "%CRYLO_SNAPSHOT_FILE%" %*',
+    'set "CRYLO_SNAPSHOT_RC=%ERRORLEVEL%"',
+    'del /Q "%CRYLO_SNAPSHOT_FILE%" >nul 2>nul',
+    'exit /b %CRYLO_SNAPSHOT_RC%',
+    ''
+  ].join('\r\n');
 
   if (!fs.existsSync(regExe)) {
-    fail(`Windows reg.exe is unavailable: ${regExe}`);
+    fail('Windows reg.exe is unavailable: ' + regExe);
   }
 
   const current = queryUserPath(regExe, registrySpawn);
@@ -777,29 +794,33 @@ function registerCryLoCommand(checkout, localAppData, systemRoot, options = {}) 
     .map((entry) => entry.trim())
     .filter(Boolean);
 
-  const canonicalCommandDirectory = commandDirectory.replace(/[\\/]+$/, '').toLowerCase();
-  const registered = entries.some(
-    (entry) => entry.replace(/[\\/]+$/, '').toLowerCase() === canonicalCommandDirectory
+  const canonicalCommandDirectory =
+    commandDirectory.replace(/[\\/]+$/, '').toLowerCase();
+
+  const remainingEntries = entries.filter(
+    (entry) => entry.replace(/[\\/]+$/, '').toLowerCase() !==
+      canonicalCommandDirectory
   );
+  const desiredEntries = [commandDirectory, ...remainingEntries];
 
-  const wrapper = [
-    '@echo off',
-    CRYLO_LAUNCHER_MARKER,
-    `call "${launcher}" %*`,
-    ''
-  ].join('\r\n');
+  const pathAlreadyFirst =
+    entries.length === desiredEntries.length &&
+    entries.every((entry, index) => entry === desiredEntries[index]);
 
-  let wrapperWritten = false;
-
+  let wrapperCreated = false;
   try {
-    fs.writeFileSync(commandPath, wrapper, 'utf8');
-    wrapperWritten = true;
+    if (fs.existsSync(commandPath)) {
+      const existing = fs.readFileSync(commandPath, 'utf8');
+      if (existing !== wrapper) {
+        fail('Existing immutable CryLo snapshot launcher differs from ' +
+          'the trusted v2 template; it was not overwritten: ' + commandPath);
+      }
+    } else {
+      fs.writeFileSync(commandPath, wrapper, { encoding: 'utf8', flag: 'wx' });
+      wrapperCreated = true;
+    }
 
-    if (!registered) {
-      const updated = entries.length > 0
-        ? `${entries.join(';')};${commandDirectory}`
-        : commandDirectory;
-
+    if (!pathAlreadyFirst) {
       registryRun(regExe, [
         'add',
         'HKCU\\Environment',
@@ -808,32 +829,29 @@ function registerCryLoCommand(checkout, localAppData, systemRoot, options = {}) 
         '/t',
         current.type,
         '/d',
-        updated,
+        desiredEntries.join(';'),
         '/f'
       ], {
-        label: 'CryLo per-user PATH registration'
+        label: 'CryLo update-safe per-user PATH registration'
       });
     }
   } catch (error) {
-    if (wrapperWritten) {
+    if (wrapperCreated) {
       try {
-        if (previousWrapper !== null) {
-          fs.writeFileSync(commandPath, previousWrapper);
-        } else {
-          fs.rmSync(commandPath, { force: true });
-        }
+        fs.rmSync(commandPath, { force: true });
       } catch (_) {
-        // Preserve the original registration failure as the primary error.
+        // Preserve the registration failure as the primary error.
       }
     }
 
     if (createdCommandDirectory) {
       try {
-        if (fs.existsSync(commandDirectory) && fs.readdirSync(commandDirectory).length === 0) {
+        if (fs.existsSync(commandDirectory) &&
+            fs.readdirSync(commandDirectory).length === 0) {
           fs.rmdirSync(commandDirectory);
         }
       } catch (_) {
-        // Preserve the original registration failure as the primary error.
+        // Preserve the registration failure as the primary error.
       }
     }
 
