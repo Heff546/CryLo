@@ -90,7 +90,7 @@ function prepareAndRun() {
     assert.equal(receipt.published, false);
     assert.equal(receipt.eligibleForPublication, false);
     assert.equal(receipt.nativeRebuilt, false);
-    assert.equal(json(find(artifact, 'crylo-electron-zero-audit.json')).metadata.vulnerabilities.total, 0);
+    assert.equal(json(find(artifact, 'testnet23-electron-npm-audit.json')).metadata.vulnerabilities.total, 0);
     const nativeArtifact = path.join(temp, 'crylo-verified-native');
     const manifestPath = find(nativeArtifact, 'WINDOWS-BUILD-RUNTIME-MANIFEST.json');
     const originalManifest = json(manifestPath);
