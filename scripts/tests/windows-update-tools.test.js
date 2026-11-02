@@ -44,19 +44,24 @@ test('archive validation rejects traversal, aliases, duplicate names and links b
 
 test('shared CLI registration preserves registry type and existing PATH, and rolls back its wrapper on failure', t => {
   const dir = temporary(t);
-  fs.writeFileSync(path.join(dir, 'crylo.cmd'), '@echo off\r\n');
+  const checkout = path.join(dir, 'CryLo');
+  fs.mkdirSync(checkout);
+  fs.writeFileSync(path.join(checkout, 'crylo.cmd'), '@echo off\r\n');
   const reg = path.join(dir, 'reg.exe');
   fs.writeFileSync(reg, 'test placeholder');
   const existingPath = '%USERPROFILE%\\Tools;C:\\Existing Tools';
   const query = () => ({ status: 0, stdout: '    Path    REG_EXPAND_SZ    ' + existingPath + '\r\n' });
   const writes = [];
-  registerCryLoCommand(dir, dir, dir, { regExe: reg, spawnSync: query, run: (tool, args) => writes.push(args) });
+  assert.throws(() => registerCryLoCommand(dir, dir, dir, {
+    userProfile: dir, regExe: reg, spawnSync: query, run: () => {}
+  }), /Managed CryLo checkout must be/);
+  registerCryLoCommand(checkout, dir, dir, { userProfile: dir, regExe: reg, spawnSync: query, run: (tool, args) => writes.push(args) });
   assert.equal(writes.length, 1);
   assert.equal(writes[0][writes[0].indexOf('/t') + 1], 'REG_EXPAND_SZ');
-  assert.equal(writes[0][writes[0].indexOf('/d') + 1], existingPath + ';' + path.join(dir, 'CryLo', 'bin'));
-  const wrapper = path.join(dir, 'CryLo/bin/crylo.cmd');
+  assert.equal(writes[0][writes[0].indexOf('/d') + 1], path.join(dir, 'CryLo', 'bin-v2') + ';' + existingPath);
+  const wrapper = path.join(dir, 'CryLo/bin-v2/crylo.cmd');
   const before = fs.readFileSync(wrapper);
-  assert.throws(() => registerCryLoCommand(dir, dir, dir, { regExe: reg, spawnSync: query, run: () => { throw new Error('registry denied'); } }), /registry denied/);
+  assert.throws(() => registerCryLoCommand(checkout, dir, dir, { userProfile: dir, regExe: reg, spawnSync: query, run: () => { throw new Error('registry denied'); } }), /registry denied/);
   assert.deepEqual(fs.readFileSync(wrapper), before);
 });
 

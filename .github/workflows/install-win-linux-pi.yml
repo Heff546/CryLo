@@ -44,6 +44,9 @@ jobs:
       - name: Verify install contract
         run: node scripts/tests/install-win-linux-pi-static.js
 
+      - name: Test active Windows CMD launcher during source replacement
+        run: node scripts/tests/windows-launcher-snapshot.test.js
+
       - name: Check Unix launcher syntax
         if: runner.os != 'Windows'
         run: sh -n crylo

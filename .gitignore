@@ -22,3 +22,6 @@ electron/build/*
 # Python-generated cache files
 __pycache__/
 *.pyc
+
+# Immutable snapshot of the running Windows batch during signed updates
+/.crylo-launcher-run-*.cmd

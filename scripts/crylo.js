@@ -3568,6 +3568,37 @@ function update() {
       'Signed release authorized. Updating CryLo source...'
     );
 
+    if (process.platform === 'win32' && signedTarget) {
+      /*
+       * A legacy command may still invoke the source batch directly.
+       * Refuse to replace that running batch; the managed v2 command
+       * launches from an ignored snapshot and explicitly marks that
+       * context. The initial v2 migration does not change crylo.cmd.
+       */
+      const launcherDiff = spawnSync(
+        gitExecutable(),
+        ['diff', '--quiet', before, remote, '--', 'crylo.cmd'],
+        { cwd: root, env: process.env, shell: false }
+      );
+
+      if (launcherDiff.error ||
+          ![0, 1].includes(launcherDiff.status)) {
+        fail('Unable to inspect CryLo Windows launcher changes safely.');
+      }
+
+      if (
+        launcherDiff.status === 1 &&
+        process.env.CRYLO_WINDOWS_SNAPSHOT_ACTIVE !== '1'
+      ) {
+        fail(
+          'This signed update changes crylo.cmd. To avoid replacing ' +
+          'an executing batch, open a NEW Command Prompt and run ' +
+          'crylo update using the registered update-safe CryLo launcher. ' +
+          'No source files were modified.'
+        );
+      }
+    }
+
     git([
       'merge',
       '--ff-only',
@@ -4330,10 +4361,11 @@ function installUserCommand() {
     if (!localAppData || !systemRoot) {
       fail('Windows LOCALAPPDATA and SystemRoot are required for command registration.');
     }
+    // CLI and installer share one immutable snapshot launcher implementation.
     const { registerCryLoCommand } = require('../electron/build/windows-installer-runtime');
     registerCryLoCommand(root, localAppData, systemRoot);
-    console.log(`CryLo command registered: ${path.join(localAppData, 'CryLo', 'bin', 'crylo.cmd')}`);
-    console.log('Open a new terminal to use "crylo" from anywhere.');
+    console.log(`CryLo command registered: ${path.join(localAppData, 'CryLo', 'bin-v2', 'crylo.cmd')}`);
+    console.log('Open a new Command Prompt to use the update-safe CryLo launcher.');
     return;
   }
 
@@ -4452,7 +4484,7 @@ function installWindowsDesktopLaunchers() {
   const commandDirectory = path.join(
     localAppData,
     'CryLo',
-    'bin'
+    'bin-v2'
   );
 
   const cryloCommand = path.join(

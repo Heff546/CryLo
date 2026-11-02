@@ -1,0 +1,118 @@
+name: CryLo Testnet.23 Windows source reconciliation security gate
+
+on:
+  push:
+    branches:
+      - release/testnet23-merged-candidate
+  pull_request:
+    branches:
+      - release/testnet23-reconciliation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconciliation-linux:
+    name: Source, ancestry and generated trust pin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          set-safe-directory: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Verify both original histories are ancestors
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 5c7a5ac842eda8f143abacfe6b4e8c22161e0931 HEAD
+          git merge-base --is-ancestor 416a037c4f42a4adcb8c554e6b89a69598dca44c HEAD
+          echo 'PASS: installed Windows source and withdrawn release histories retained'
+      - name: Parse Windows release source and run static contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/crylo.js
+          node --check electron/build/windows-installer-runtime.js
+          node --check electron/scripts/before-pack.js
+          node --check electron/scripts/verify-windows-installer-helper-pin.js
+          node --check scripts/tests/windows-launcher-snapshot.test.js
+          node --check scripts/tests/windows-update-tools.test.js
+          node scripts/tests/install-win-linux-pi-static.js
+          node scripts/tests/windows-launcher-snapshot.test.js
+      - name: Verify generated staged Windows NSIS helper pin, fail closed on tampering
+        shell: bash
+        run: |
+          set -euo pipefail
+          node electron/scripts/verify-windows-installer-helper-pin.js
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const { verifyWindowsInstallerHelperPin } = require('./electron/scripts/verify-windows-installer-helper-pin');
+          const stage = path.resolve('electron/build/crylo-installer-helper-staged');
+          const pin = path.join(stage, 'helper-sha256.generated.nsh');
+          const old = fs.readFileSync(pin);
+          try {
+            const text = old.toString('ascii');
+            const corrupt = text.replace(/[a-f0-9]{64}/i, '0'.repeat(64));
+            if (corrupt === text) throw Error('Expected hash unavailable');
+            fs.writeFileSync(pin, corrupt);
+            let rejected = false;
+            try { verifyWindowsInstallerHelperPin(path.resolve('electron')); }
+            catch (error) { rejected = /SHA256 mismatch/.test(String(error.message)); }
+            if (!rejected) throw Error('Tampered generated helper hash was accepted');
+          } finally {
+            fs.writeFileSync(pin, old);
+          }
+          console.log('PASS: tampered installer helper trust pin rejected');
+          NODE
+      - name: Verify no tracked source changed during tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          git diff --check
+
+  reconciliation-windows:
+    name: Windows CMD and signed updater fixtures
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          set-safe-directory: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Source, CMD snapshot, path registration, runtime trust
+        shell: cmd
+        run: |
+          node --check scripts\crylo.js
+          if errorlevel 1 exit /b 1
+          node scripts\tests\install-win-linux-pi-static.js
+          if errorlevel 1 exit /b 1
+          node scripts\tests\windows-launcher-snapshot.test.js
+          if errorlevel 1 exit /b 1
+          node --test scripts\tests\windows-update-tools.test.js
+          if errorlevel 1 exit /b 1
+          node electron\scripts\verify-windows-installer-helper-pin.js
+          if errorlevel 1 exit /b 1
+      - name: Local positive signed update fixture — no release signing
+        shell: cmd
+        run: |
+          node --test scripts\tests\windows-signed-update-positive-fixture.test.js
+          if errorlevel 1 exit /b 1
+      - name: Confirm no source changes
+        shell: cmd
+        run: |
+          git diff --exit-code
+          if errorlevel 1 exit /b 1
+          git diff --cached --exit-code
+          if errorlevel 1 exit /b 1
