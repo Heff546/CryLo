@@ -28,6 +28,11 @@ function executeFixture(configPath) {
   const c = json(configPath);
   assert.equal(process.platform, 'win32'); assert.equal(process.env.GITHUB_ACTIONS, 'true');
   assert.ok(!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN, 'User update must have no GitHub token');
+  // Production launcher registration insists on %USERPROFILE%\\CryLo.
+  // The fixture uses its own temporary USERPROFILE rather than weakening the
+  // production location check. The real NSIS test runs as the runner user.
+  assert.equal(path.resolve(c.client).toLowerCase(),
+    path.resolve(process.env.USERPROFILE, 'CryLo').toLowerCase());
   const script = path.join(c.client, 'scripts/crylo.js');
   const source = fs.readFileSync(script, 'utf8');
   const split = source.indexOf('const args = process.argv.slice(2);');
@@ -42,6 +47,16 @@ function executeFixture(configPath) {
     if (path.basename(exe) === 'CryLo-Wallet-Setup-1.1.1-x64.exe') {
       assert.equal(fs.existsSync(c.state), false, 'Release state advanced before installer success');
       if (c.failInstaller) return { status: 42 };
+      // This runner already installed CryLo through the real NSIS first-install
+      // gate. Re-run its NSIS installer under that real profile: the local Git
+      // fixture checkout deliberately has a separate author/origin.
+      assert.ok(path.isAbsolute(c.installerUserProfile));
+      assert.notEqual(path.resolve(c.installerUserProfile).toLowerCase(),
+        path.resolve(process.env.USERPROFILE).toLowerCase());
+      return originalSpawn(exe, args, {
+        ...options, timeout: 360000,
+        env: { ...(options.env || process.env), USERPROFILE: c.installerUserProfile }
+      });
     }
     return originalSpawn(exe, args, { timeout: 360000, ...options });
   };
@@ -115,7 +130,10 @@ function prepareAndRun() {
     report.tests.initialInstall = true;
     const managed = path.join(process.env.LOCALAPPDATA, 'CryLo/runtime');
     const gitExe = path.join(managed, 'mingit-2.56.0.windows.1-x64/cmd/git.exe');
-    const author = path.join(base, 'author'), client = path.join(base, 'client');
+    const author = path.join(base, 'author');
+    const fixtureUserProfile = path.join(base, 'fixture-user-profile');
+    fs.mkdirSync(fixtureUserProfile);
+    const client = path.join(fixtureUserProfile, 'CryLo');
     const git = (cwd, ...args) => run(gitExe, args, { cwd });
     git(base, 'clone', '--no-hardlinks', repo, author);
     git(author, 'config', 'user.name', 'CryLo ephemeral CI fixture');
@@ -157,9 +175,11 @@ function prepareAndRun() {
     const release = { id: 9001, draft: false, prerelease: true, tag_name: tag,
       assets: fs.readdirSync(assets).map(name => ({ name, browser_download_url: 'https://fixture.invalid/' + name })) };
     const state = path.join(process.env.APPDATA, 'crylo-wallet/release-security.json'); assert.ok(!fs.existsSync(state));
-    const config = { client, assets, release, state, calls: path.join(base, 'calls.jsonl'), failInstaller: false };
+    const config = { client, assets, release, state, calls: path.join(base, 'calls.jsonl'),
+      failInstaller: false, installerUserProfile: process.env.USERPROFILE };
     const configPath = path.join(base, 'fixture.json');
-    const env = { ...process.env, CRYLO_GIT_RUNTIME: path.dirname(path.dirname(gitExe)), GIT_TERMINAL_PROMPT: '0' };
+    const env = { ...process.env, USERPROFILE: fixtureUserProfile,
+      CRYLO_GIT_RUNTIME: path.dirname(path.dirname(gitExe)), GIT_TERMINAL_PROMPT: '0' };
     for (const name of ['CRYLO_UPDATE_RESUMED','CRYLO_AUTHORIZED_COMMIT','CRYLO_AUTHORIZED_SEQUENCE','CRYLO_AUTHORIZED_TAG','CRYLO_AUTHORIZED_VERSION']) delete env[name];
     const attempt = name => {
       write(configPath, config);
