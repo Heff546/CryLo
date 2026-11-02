@@ -1,0 +1,74 @@
+name: CryLo Testnet.23 real NSIS signed fixture updater and rollback audit
+on:
+  push:
+    branches: [release/testnet23-merged-candidate]
+    paths:
+      - scripts/tests/windows-testnet23-real-update-rehearsal.js
+      - .github/workflows/windows-testnet23-real-update-e2e.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-update:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Download only exact audited Electron-only corrected NSIS candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=41372650525
+          id=13109649519
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.head_sha')" = '25ff0f466647761d30fcab532b89f729f3e68df2'
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.workflow_run.id')" = "$run"
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.digest')" = 'sha256:499295611e83f48062c5a404ef759e681870943b11b54bcaab14e97c690147e9'
+          mkdir -p "$RUNNER_TEMP/crylo-testnet23-installer"
+          gh run download "$run" --repo Heff546/CryLo \
+            --name crylo-testnet23-windows-unsigned-ci-candidate \
+            --dir "$RUNNER_TEMP/crylo-testnet23-installer"
+          echo 'PASS: exact corrected unsigned installer downloaded; native build not repeated'
+
+      - name: Acquire original native binaries and 55 DLLs without rebuilding
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=41244508425
+          id=13060610636
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.head_sha')" = '5120debcc2a75fa0c7198ee0137f142dd0a5f6a8'
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.workflow_run.id')" = "$run"
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.digest')" = 'sha256:27e7bbba85dfdea965d7bb66e49554b858a01bc493263a376ad48b1337250a23'
+          mkdir -p "$RUNNER_TEMP/crylo-verified-native"
+          gh run download "$run" --repo Heff546/CryLo --name crylo-unified-windows-x64-unsigned-native-candidate --dir "$RUNNER_TEMP/crylo-verified-native"
+      - name: Run production updater rehearsal from CMD without GitHub credentials
+        shell: cmd
+        run: |
+          node --check scripts\tests\windows-testnet23-real-update-rehearsal.js
+          if errorlevel 1 exit /b 1
+          node --test scripts\tests\windows-update-tools.test.js
+          if errorlevel 1 exit /b 1
+          node scripts\tests\windows-testnet23-real-update-rehearsal.js
+          if errorlevel 1 exit /b 1
+      - name: Retain CI-only report and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-testnet23-real-update-rehearsal-report
+          path: |
+            ${{ runner.temp }}/crylo-testnet23-real-update-report.json
+            ${{ runner.temp }}/crylo-testnet23-real-update-rehearsal/*.log
+          if-no-files-found: warn
+          retention-days: 14
