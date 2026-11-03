@@ -1,4 +1,4 @@
-name: CryLo Testnet.24 detached release manifest regression
+name: CryLo five-platform Testnet.24 detached manifest and updater compatibility
 
 on:
   push:
@@ -15,9 +15,19 @@ permissions:
   contents: read
 
 jobs:
-  windows-release-selection:
-    runs-on: windows-2022
-    timeout-minutes: 20
+  five-platform-release-selection:
+    name: Manifest and release-selection — ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: windows-x64, runner: windows-2022, family: win }
+          - { target: linux-x64, runner: ubuntu-24.04, family: linux }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm, family: linux }
+          - { target: macos-intel, runner: macos-15-intel, family: mac }
+          - { target: macos-arm64, runner: macos-15, family: mac }
     steps:
       - name: Checkout exact recovery source without credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -29,28 +39,37 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24.21.0'
-      - name: Check exact source syntax
-        shell: cmd
+      - name: Verify all three shared release scripts and detached HEAD regression on this platform
+        shell: bash
         run: |
-          node --check scripts\release\create-release-manifest.js
-          if errorlevel 1 exit /b 1
-          node --check scripts\release\sign-release-manifest.js
-          if errorlevel 1 exit /b 1
-          node --check scripts\release\verify-release-manifest.js
-          if errorlevel 1 exit /b 1
-          node --check scripts\tests\release-manifest-detached-selection.test.js
-          if errorlevel 1 exit /b 1
-      - name: Reproduce Testnet.23 bug and test Testnet.24 selection with temporary test keys
-        shell: cmd
-        run: |
-          node --test scripts\tests\release-manifest-detached-selection.test.js
-          if errorlevel 1 exit /b 1
-      - name: Recheck production update contract without publishing
-        shell: cmd
-        run: |
-          node --test scripts\tests\signed-update-contract.test.js
-          if errorlevel 1 exit /b 1
-          node --test scripts\tests\windows-update-tools.test.js
-          if errorlevel 1 exit /b 1
+          set -euo pipefail
+          node --version
+          node --check scripts/release/create-release-manifest.js
+          node --check scripts/release/sign-release-manifest.js
+          node --check scripts/release/verify-release-manifest.js
+          node --check scripts/tests/release-manifest-detached-selection.test.js
+          node --test scripts/tests/release-manifest-detached-selection.test.js
+          node --test scripts/tests/signed-update-contract.test.js
+          node --test scripts/tests/windows-update-tools.test.js
           git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Verify previous Linux and macOS one-command update interfaces
+        if: matrix.family != 'win'
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/sh -n ./crylo
+          /bin/sh -n scripts/release/macos-installed-command.sh
+          node --test scripts/tests/macos-installed-command.test.js
+          echo 'PASS: existing Linux and Mac user-facing CryLo update contracts unchanged'
+
+      - name: Verify Windows CMD launcher and update-safe entry point
+        if: matrix.family == 'win'
+        shell: cmd
+        run: |
+          call crylo.cmd help
           if errorlevel 1 exit /b 1
+          node scripts\tests\windows-launcher-snapshot.test.js
+          if errorlevel 1 exit /b 1
+          echo PASS: Windows command remains CMD-only
