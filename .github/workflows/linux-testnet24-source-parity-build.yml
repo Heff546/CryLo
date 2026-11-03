@@ -71,6 +71,35 @@ jobs:
           df -h .
           echo 'PASS: disposable runner provisioned, no host native-library substitution'
 
+      - name: Prefetch exact checksum-pinned ncurses from its maintained upstream mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_name='ncurses-6.6-20261010.tgz'
+          source_hash='00a1d10c51c3aa1b4dae9ea4421aec2dd227fa4724e645850ed43fd6fc0a56ec'
+          package_recipe='contrib/depends/packages/ncurses.mk'
+          grep -Fx '$(package)_version=6.6-20261010' "$package_recipe"
+          grep -Fx '$(package)_sha256_hash=00a1d10c51c3aa1b4dae9ea4421aec2dd227fa4724e645850ed43fd6fc0a56ec' "$package_recipe"
+          temporary="$(mktemp "$RUNNER_TEMP/ncurses-source-XXXXXX")"
+          trap 'rm -f "$temporary"' EXIT
+          fetched=0
+          for origin in \
+            https://invisible-mirror.net/archives/ncurses/current \
+            https://www.invisible-island.net/archives/ncurses/current; do
+            if curl --fail --location --silent --show-error --retry 2 \
+              --connect-timeout 20 --max-time 180 \
+              "$origin/$source_name" --output "$temporary"; then
+              printf '%s  %s\n' "$source_hash" "$temporary" | sha256sum -c -
+              fetched=1
+              break
+            fi
+          done
+          test "$fetched" -eq 1
+          mkdir -p contrib/depends/sources
+          install -m 0644 "$temporary" "contrib/depends/sources/$source_name"
+          printf '%s  %s\n' "$source_hash" "contrib/depends/sources/$source_name" | sha256sum -c -
+          echo 'PASS: exact ncurses source SHA256 checked without changing Testnet.24 dependency definitions'
+
       - name: Build unchanged Testnet.24 native daemon, wallet, wallet RPC and Electron
         shell: bash
         env:
