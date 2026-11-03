@@ -1,0 +1,56 @@
+name: CryLo Testnet.24 detached release manifest regression
+
+on:
+  push:
+    branches: [release/testnet24-manifest-recovery]
+    paths:
+      - .github/workflows/windows-testnet24-manifest-regression.yml
+      - scripts/release/create-release-manifest.js
+      - scripts/release/sign-release-manifest.js
+      - scripts/release/verify-release-manifest.js
+      - scripts/tests/release-manifest-detached-selection.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-release-selection:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact recovery source without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Pin Node 24.21.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Check exact source syntax
+        shell: cmd
+        run: |
+          node --check scripts\release\create-release-manifest.js
+          if errorlevel 1 exit /b 1
+          node --check scripts\release\sign-release-manifest.js
+          if errorlevel 1 exit /b 1
+          node --check scripts\release\verify-release-manifest.js
+          if errorlevel 1 exit /b 1
+          node --check scripts\tests\release-manifest-detached-selection.test.js
+          if errorlevel 1 exit /b 1
+      - name: Reproduce Testnet.23 bug and test Testnet.24 selection with temporary test keys
+        shell: cmd
+        run: |
+          node --test scripts\tests\release-manifest-detached-selection.test.js
+          if errorlevel 1 exit /b 1
+      - name: Recheck production update contract without publishing
+        shell: cmd
+        run: |
+          node --test scripts\tests\signed-update-contract.test.js
+          if errorlevel 1 exit /b 1
+          node --test scripts\tests\windows-update-tools.test.js
+          if errorlevel 1 exit /b 1
+          git diff --exit-code
+          if errorlevel 1 exit /b 1
