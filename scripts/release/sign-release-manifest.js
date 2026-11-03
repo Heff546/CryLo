@@ -84,6 +84,18 @@ if (manifestData.signatureAlgorithm !== 'Ed25519') {
   );
 }
 
+// Keep the Pi1 signing gate aligned with the production updater: a branch
+// may be omitted for an annotated tag on detached HEAD, but never empty.
+if (
+  manifestData.gitBranch !== undefined &&
+  (
+    typeof manifestData.gitBranch !== 'string' ||
+    !manifestData.gitBranch
+  )
+) {
+  fail('Optional release gitBranch must be nonempty when present.');
+}
+
 const privateKey = crypto.createPrivateKey(
   fs.readFileSync(keyPath)
 );

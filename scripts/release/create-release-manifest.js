@@ -288,6 +288,10 @@ artifacts.sort((left, right) =>
 
 const now = new Date();
 
+// A tagged signing worktree may deliberately use detached HEAD. Its source
+// identity is the annotated tag plus exact Git commit; branch is optional.
+const releaseBranch = git(['branch', '--show-current']);
+
 const manifest = {
   schema: 1,
   product: 'CryLo',
@@ -296,7 +300,7 @@ const manifest = {
   releaseTag,
   releaseSequence,
   gitCommit: git(['rev-parse', 'HEAD']),
-  gitBranch: git(['branch', '--show-current']),
+  ...(releaseBranch ? { gitBranch: releaseBranch } : {}),
   createdUtc: now.toISOString(),
   signatureAlgorithm: 'Ed25519',
   hashAlgorithm: 'SHA-256',
