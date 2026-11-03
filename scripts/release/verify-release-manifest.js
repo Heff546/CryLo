@@ -272,6 +272,16 @@ if (
   fail('Manifest Git commit is invalid.');
 }
 
+if (
+  manifest.gitBranch !== undefined &&
+  (
+    typeof manifest.gitBranch !== 'string' ||
+    !manifest.gitBranch
+  )
+) {
+  fail('Optional release gitBranch must be nonempty when present.');
+}
+
 if (manifest.signatureAlgorithm !== 'Ed25519') {
   fail(
     `Unsupported signature algorithm: ` +
