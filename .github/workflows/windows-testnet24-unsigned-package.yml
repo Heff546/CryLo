@@ -2,7 +2,7 @@ name: CryLo Testnet.24 Windows unsigned Electron and NSIS repack
 
 on:
   push:
-    branches: [release/testnet24-merged-candidate]
+    branches: [release/testnet24-manifest-recovery]
     paths:
       - .github/workflows/windows-testnet24-unsigned-package.yml
       - electron/**
