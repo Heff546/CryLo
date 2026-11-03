@@ -1,0 +1,96 @@
+name: CryLo Linux Testnet.24 parity — no-build manifest and address gate
+
+on:
+  push:
+    branches:
+      - feature/linux-testnet24-parity
+    paths:
+      - .github/workflows/linux-testnet24-parity-no-build.yml
+      - scripts/release/create-release-manifest.js
+      - scripts/release/sign-release-manifest.js
+      - scripts/release/verify-release-manifest.js
+      - scripts/crylo.js
+      - scripts/tests/release-manifest-detached-selection.test.js
+      - scripts/tests/signed-update-contract.test.js
+      - scripts/tests/install-win-linux-pi-static.js
+      - scripts/tests/crylo-functional-address-audit.py
+      - src/wallet/wallet2.cpp
+      - src/wallet/wallet2.h
+      - tests/functional_tests/**
+      - tests/unit_tests/wallet_storage.cpp
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-build-regressions:
+    name: Read-only source contracts — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, runner: ubuntu-24.04 }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - name: Checkout reviewed integration branch without saved credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Pin verification-only Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+
+      - name: Verify source and manifest script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = 'v24.21.0'
+          sh -n crylo
+          node --check scripts/crylo.js
+          node --check scripts/release/create-release-manifest.js
+          node --check scripts/release/sign-release-manifest.js
+          node --check scripts/release/verify-release-manifest.js
+          echo 'PASS: updater and manifest syntax'
+
+      - name: Test detached-tag release manifest recovery without production keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/tests/release-manifest-detached-selection.test.js
+
+      - name: Test signed-update and installed-command static contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/tests/signed-update-contract.test.js
+          node scripts/tests/install-win-linux-pi-static.js
+
+      - name: Audit CryLo address migration and wallet URI regression source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/tests/crylo-functional-address-audit.py > "$RUNNER_TEMP/crylo-address-audit.json"
+          python3 - "$RUNNER_TEMP/crylo-address-audit.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf8') as stream:
+              report = json.load(stream)
+          assert report['mayPublish'] is False
+          assert report['releaseFrozen'] is True
+          assert report['rpcIntegrationExecuted'] is False
+          assert len(report['migrated']) == 17
+          print('PASS: 17 migrated RPC tests audited; native RPC integration still required')
+          PY
+
+      - name: Display source and audit integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo 'PASS: no native builds, signing, publication, source mutation or services'
