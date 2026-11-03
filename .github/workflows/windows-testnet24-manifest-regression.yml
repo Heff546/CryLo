@@ -50,7 +50,6 @@ jobs:
           node --check scripts/tests/release-manifest-detached-selection.test.js
           node --test scripts/tests/release-manifest-detached-selection.test.js
           node --test scripts/tests/signed-update-contract.test.js
-          node --test scripts/tests/windows-update-tools.test.js
           git diff --exit-code
           git diff --cached --exit-code
 
@@ -64,10 +63,12 @@ jobs:
           node --test scripts/tests/macos-installed-command.test.js
           echo 'PASS: existing Linux and Mac user-facing CryLo update contracts unchanged'
 
-      - name: Verify Windows CMD launcher and update-safe entry point
+      - name: Verify Windows-only runtime registration and CMD launcher
         if: matrix.family == 'win'
         shell: cmd
         run: |
+          node --test scripts\tests\windows-update-tools.test.js
+          if errorlevel 1 exit /b 1
           call crylo.cmd help
           if errorlevel 1 exit /b 1
           node scripts\tests\windows-launcher-snapshot.test.js
