@@ -1,0 +1,337 @@
+name: CryLo Testnet.24 Windows unsigned Electron and NSIS repack
+
+on:
+  push:
+    branches: [release/testnet24-merged-candidate]
+    paths:
+      - .github/workflows/windows-testnet24-unsigned-package.yml
+      - electron/**
+      - scripts/crylo.js
+      - scripts/release/create-release-manifest.js
+      - scripts/release/sign-release-manifest.js
+      - scripts/release/verify-release-manifest.js
+      - scripts/tests/release-manifest-detached-selection.test.js
+      - scripts/tests/windows-launcher-snapshot.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  unsigned-testnet24:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - name: Checkout reconciled source without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Pin Node.js 24.21.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+
+      - name: Verify historical ancestry, native-source invariance and pinned Electron dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 5120debcc2a75fa0c7198ee0137f142dd0a5f6a8 HEAD
+          git merge-base --is-ancestor 5c7a5ac842eda8f143abacfe6b4e8c22161e0931 HEAD
+          git merge-base --is-ancestor 416a037c4f42a4adcb8c554e6b89a69598dca44c HEAD
+          drift="$(git diff --name-only 5120debcc2a75fa0c7198ee0137f142dd0a5f6a8 HEAD -- src external cmake contrib/depends CMakeLists.txt tests translations)"
+          if test -n "$drift"; then echo "Native source drift demands a native rebuild:"; printf '%s\n' "$drift"; exit 1; fi
+          node -e "const p=require('./electron/package.json'); if(p.devDependencies.electron!=='44.9.3'||p.devDependencies['electron-builder']!=='26.17.0'||p.overrides?.['@electron/asar']!=='4.3.1'||p.overrides?.minimatch!=='11.0.3'||p.overrides?.glob!=='14.0.3') throw Error('Electron security pins drifted')"
+          node scripts/tests/install-win-linux-pi-static.js
+          echo "PASS: source-only changes since exact compiled native candidate"
+
+      - name: Fail closed on withdrawn release metadata regression before packaging
+        shell: cmd
+        run: |
+          node --test scripts\tests\release-manifest-detached-selection.test.js
+          if errorlevel 1 exit /b 1
+          node --test scripts\tests\signed-update-contract.test.js
+          if errorlevel 1 exit /b 1
+          echo PASS: detached annotated release manifest accepted by production updater; invalid branch rejected
+
+      - name: Pin npm 12.1.0 for Electron packaging
+        shell: cmd
+        run: |
+          npm install --global --no-audit --no-fund --ignore-scripts npm@12.1.0
+          if errorlevel 1 exit /b 1
+          node -e "if(process.version!=='v24.21.0')process.exit(1)"
+          if errorlevel 1 exit /b 1
+          node -e "const cp=require('child_process');if(cp.execFileSync('npm',['--version'],{encoding:'utf8'}).trim()!=='12.1.0')process.exit(1)"
+          if errorlevel 1 exit /b 1
+
+      - name: Validate pinned Electron lockfile security before build
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const l=require('./electron/package-lock.json'),p=require('./electron/package.json');if(l.packages['node_modules/electron-builder']?.version!=='26.17.0'||l.packages['node_modules/@electron/asar']?.version!=='4.3.1'||p.overrides?.minimatch!=='11.0.3') throw Error('Electron dependency lock mismatch')"
+          npm --prefix electron audit --json > "$RUNNER_TEMP/testnet24-electron-npm-audit.json" || rc=$?
+          node -e "const a=require(process.env.RUNNER_TEMP+'/testnet24-electron-npm-audit.json');if(a.error||a.metadata?.vulnerabilities?.total!==0)throw Error('Electron dependency audit not clean: '+JSON.stringify(a.metadata?.vulnerabilities||a.error))"
+          echo "PASS: canonical Electron dependency lock security audit"
+
+      - name: Initialize MSYS2
+        shell: cmd
+        run: |
+          if not exist C:\msys64\usr\bin\bash.exe exit /b 1
+          C:\msys64\usr\bin\bash.exe -lc "true"
+          C:\msys64\usr\bin\bash.exe -lc "pacman --version"
+          if errorlevel 1 exit /b 1
+      - name: Finish MSYS2 core upgrade across fresh Windows CMD processes
+        shell: cmd
+        run: |
+          rem A first MSYS2 core update can replace pacman and terminate its own
+          rem shell with exit 1. Never suppress failure of the second fresh run.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          rem After the first core phase, a second archive-tool upgrade may also
+          rem exit 1 even though its packages were installed successfully.
+          rem Only the fresh third audit is allowed to determine final success.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          if errorlevel 1 exit /b 1
+          rem pacman -Qu may exit 1 when no packages are pending; the third
+          rem pacman -Syu command above is the definitive no-drift gate.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Q pacman filesystem bsdtar"
+          if errorlevel 1 exit /b 1
+          echo PASS: MSYS2 core and full upgrade completed in fresh shells
+      - name: Acquire exactly pinned and signed Windows build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/crylo-reviewed-win-deps.sh"
+          cat > "$script" <<'SH'
+          set -euo pipefail
+          export MSYSTEM=MINGW64
+          export PATH=/mingw64/bin:/usr/bin
+          pacman -S --needed --noconfirm \
+            mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-pkgconf make python python-pip perl \
+            patch diffutils tar wget curl \
+            mingw-w64-x86_64-boost mingw-w64-x86_64-protobuf \
+            mingw-w64-x86_64-abseil-cpp mingw-w64-x86_64-zeromq \
+            mingw-w64-x86_64-libsodium mingw-w64-x86_64-zstd \
+            mingw-w64-x86_64-zlib mingw-w64-x86_64-icu \
+            mingw-w64-x86_64-libiconv mingw-w64-x86_64-readline \
+            mingw-w64-x86_64-ncurses mingw-w64-x86_64-miniupnpc \
+            mingw-w64-x86_64-ldns
+          mkdir -p /tmp/crylo-msys2-pinned
+          cd /tmp/crylo-msys2-pinned
+          cat > packages.txt <<'PINS'
+          mingw-w64-x86_64-abseil-cpp-20260817.0-1-any.pkg.tar.zst 2fb525de7a87f25b4b5cfd2d0c8f2a40c24f7bebfc18aca4dd693e92e624c481
+          mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst 89fb61549a437d65076a092a367fcb264fc7045ee9ebef48cd81f5a76a5588f8
+          mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst 124edc26b009678a4c5e759481a364abf63ed7f2f49a53092e8bd0a47c0c0740
+          mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst 4d737e09dd1137bb318e2d563962ddcbe511de02155e5835affc1f09d174c6a3
+          PINS
+          while read -r file hash; do
+            url="https://repo.msys2.org/mingw/mingw64/$file"
+            curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+              --silent --show-error --output "$file" "$url"
+            curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+              --silent --show-error --output "$file.sig" "$url.sig"
+            printf '%s  %s\n' "$hash" "$file" | sha256sum -c -
+            gpgv --keyring /etc/pacman.d/gnupg/pubring.gpg "$file.sig" "$file"
+            pacman -Qp "$file"
+          done < packages.txt
+          pacman -U --noconfirm \
+            mingw-w64-x86_64-abseil-cpp-20260817.0-1-any.pkg.tar.zst \
+            mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst \
+            mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst \
+            mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst
+          cat > versions.txt <<'VERSIONS'
+          mingw-w64-x86_64-hidapi 0.15.0
+          mingw-w64-x86_64-libusb 1.0.30
+          mingw-w64-x86_64-unbound 1.26.1
+          mingw-w64-x86_64-boost 1.92.0
+          mingw-w64-x86_64-protobuf 36.2
+          mingw-w64-x86_64-abseil-cpp 20260817.0
+          mingw-w64-x86_64-zeromq 4.3.5
+          mingw-w64-x86_64-libsodium 1.0.22
+          mingw-w64-x86_64-libiconv 1.19
+          mingw-w64-x86_64-icu 78.3
+          VERSIONS
+          while read -r pkg expected; do
+            actual="$(pacman -Q "$pkg" | awk '{print $2}' | sed -E 's/-[0-9]+$//')"
+            test "$actual" = "$expected" || { echo "ERROR: pinned $pkg: expected $expected found $actual"; exit 1; }
+            echo "VERIFIED: $pkg $actual"
+          done < versions.txt
+          for tool in x86_64-w64-mingw32-gcc cmake make pkg-config python3 protoc patch curl perl tar; do
+            command -v "$tool"
+          done
+          echo 'PASS: pinned MSYS2 Windows build dependencies'
+          SH
+          tr -d '\r' < "$script" > "$script.unix"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
+      - name: Fail-fast diagnostic of native Protobuf DLL resolution before OpenSSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/crylo-protoc-runtime-gate.sh"
+          cat > "$script" <<'SH'
+          set -uo pipefail
+          export MSYSTEM=MINGW64
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          echo '===== CRYLO MSYS2 CMAKE-SHELL PROTOC RUNTIME GATE ====='
+          printf 'MSYSTEM=%s\nPATH=%s\n' "$MSYSTEM" "$PATH"
+          echo "protoc=$(command -v protoc)"
+          echo '===== Native protoc launch ====='
+          protoc --version
+          rc=$?
+          echo "protoc exit status=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo '===== protoc imported Windows DLL names ====='
+            /mingw64/bin/objdump.exe -p /mingw64/bin/protoc.exe | grep 'DLL Name:' || true
+            echo '===== MSYS2 cygcheck runtime dependency resolution ====='
+            if [ -x /usr/bin/cygcheck.exe ]; then
+              /usr/bin/cygcheck.exe /mingw64/bin/protoc.exe || true
+            else
+              echo 'cygcheck.exe unavailable'
+            fi
+            echo '===== Selected environment variables ====='
+            env | grep -Ei '^(MSYSTEM|MINGW_PREFIX|MSYS2_PATH_TYPE|PATH|LD_LIBRARY_PATH|PROTOBUF|CMAKE)=' || true
+            echo 'FAIL: pinned protoc cannot execute from the exact Windows CMake shell'
+            exit 1
+          fi
+          for required in libabsl_hash-2608.0.0.dll libabsl_log_initialize-2608.0.0.dll libabsl_strings-2608.0.0.dll; do
+            test -f "/mingw64/bin/$required" || {
+              echo "FAIL: matching Abseil runtime DLL missing: $required"
+              exit 1
+            }
+          done
+          pacman -Qkk mingw-w64-x86_64-protobuf mingw-w64-x86_64-abseil-cpp
+          echo 'PASS: pinned protoc executes from Windows CMake shell'
+          SH
+          tr -d '\r' < "$script" > "$script.unix"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
+
+      - name: Acquire exact original verified native binaries (no CMake)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=41244508425
+          id=13060610636
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.head_sha')" = '5120debcc2a75fa0c7198ee0137f142dd0a5f6a8'
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.digest')" = 'sha256:27e7bbba85dfdea965d7bb66e49554b858a01bc493263a376ad48b1337250a23'
+          mkdir -p "$RUNNER_TEMP/crylo-verified-native"
+          gh run download "$run" --repo Heff546/CryLo \
+            --name crylo-unified-windows-x64-unsigned-native-candidate \
+            --dir "$RUNNER_TEMP/crylo-verified-native"
+          echo 'PASS: original successfully compiled unsigned native artifact only'
+
+      - name: Restore precisely the prior validated native executable hashes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'crylo-verified-native'
+          $source=@(Get-ChildItem $root -Recurse -File -Filter 'SOURCE-COMMIT.txt')
+          if($source.Count -ne 1 -or (Get-Content $source[0].FullName -Raw).Trim() -ne '5120debcc2a75fa0c7198ee0137f142dd0a5f6a8'){throw 'Original compiled source revision mismatch'}
+          $map=@{
+            'CryLo-daemon.exe'='DAEMON-SHA256.txt'
+            'CryLo-wallet.exe'='WALLET-SHA256.txt'
+            'CryLo-wallet-rpc.exe'='RPC-SHA256.txt'
+          }
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'build\win-x64\bin'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          foreach($name in $map.Keys){
+            $binary=@(Get-ChildItem $root -Recurse -File -Filter $name)
+            $record=@(Get-ChildItem $root -Recurse -File -Filter $map[$name])
+            if($binary.Count -ne 1 -or $record.Count -ne 1){throw "Unexpected original compiled $name count"}
+            $digest=[regex]::Match((Get-Content $record[0].FullName -Raw),'(?i)\b[0-9a-f]{64}\b').Value
+            if(!$digest -or (Get-FileHash $binary[0].FullName -Algorithm SHA256).Hash -ne $digest){throw "Original native hash mismatch: $name"}
+            Copy-Item $binary[0].FullName (Join-Path $dest $name)
+            if((Get-FileHash (Join-Path $dest $name) -Algorithm SHA256).Hash -ne $digest){throw "Reused native file changed: $name"}
+            Write-Host "PASS: reused exact original $name SHA256=$digest"
+          }
+          $original=@(Get-ChildItem $root -Recurse -File -Filter 'WINDOWS-BUILD-RUNTIME-MANIFEST.json')
+          if($original.Count -ne 1){throw 'Expected one original 55-DLL runtime manifest'}
+          $runtime=Get-Content $original[0].FullName -Raw | ConvertFrom-Json
+          if($runtime.runtime.Count -ne 55 -or $runtime.gitCommit -ne '5120debcc2a75fa0c7198ee0137f142dd0a5f6a8'){throw 'Original runtime provenance unexpectedly differs'}
+          Write-Host 'PASS: original compiled native sources and 55-DLL manifest authenticated, no native compilation'
+
+      - name: Run full standard Electron packaging only, preserving native hashes
+        shell: cmd
+        run: |
+          set "CSC_IDENTITY_AUTO_DISCOVERY=false"
+          set "CRYLO_NETWORK=testnet"
+          set "CRYLO_RELEASE_BIN=%GITHUB_WORKSPACE%\build\win-x64\bin"
+          set "PATH=C:\msys64\mingw64\bin;C:\msys64\usr\bin;%PATH%"
+          node electron\scripts\verify-windows-installer-helper-pin.js
+          if errorlevel 1 exit /b 1
+          cd electron
+          npm run build-win
+          if errorlevel 1 exit /b 1
+          if not exist "dist\CryLo Wallet Setup 1.1.1.exe" exit /b 1
+          if not exist "dist\CryLo Wallet 1.1.1.exe" exit /b 1
+          echo PASS: Windows Electron NSIS packaging completed without native rebuild
+
+      - name: Verify exact native executable and DLL hashes, record staged installer provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs'),path=require('path'),crypto=require('crypto');
+          const sha=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+          function unique(dir,name) {
+            const found=[];
+            function walk(d) { for(const e of fs.readdirSync(d,{withFileTypes:true})){
+              const p=path.join(d,e.name);
+              if(e.isDirectory())walk(p);
+              else if(e.isFile()&&e.name===name)found.push(p);
+            }}
+            walk(dir);
+            if(found.length!==1)throw Error('Expected exactly one '+name+' in '+dir+' found '+found.length);
+            return found[0];
+          }
+          const old=JSON.parse(fs.readFileSync(unique(path.join(process.env.RUNNER_TEMP,'crylo-verified-native'),'WINDOWS-BUILD-RUNTIME-MANIFEST.json'),'utf8'));
+          const now=JSON.parse(fs.readFileSync('build/electron-runtime/win/WINDOWS-BUILD-RUNTIME-MANIFEST.json','utf8'));
+          if(old.gitCommit!=='5120debcc2a75fa0c7198ee0137f142dd0a5f6a8')throw Error('Original native source mismatch');
+          if(old.roots.length!==3||now.roots.length!==3||old.runtime.length!==55||now.runtime.length!==55)throw Error('Native closure count mismatch');
+          if(now.gitCommit!==process.env.GITHUB_SHA)throw Error('Repackaged runtime source commit mismatch');
+          for(const kind of ['roots','runtime']){
+            const a=new Map(old[kind].map(x=>[x.file.toLowerCase(),x]));
+            for(const entry of now[kind]) {
+              const before=a.get(entry.file.toLowerCase());
+              if(!before||entry.sha256!==before.sha256||entry.size!==before.size||
+                 (kind==='runtime'&&entry.packageVersion!==before.packageVersion))throw Error('Native byte/version drift: '+entry.file);
+              a.delete(entry.file.toLowerCase());
+            }
+            if(a.size)throw Error('Missing previously verified '+kind);
+          }
+          const setup='electron/dist/CryLo Wallet Setup 1.1.1.exe';
+          const portable='electron/dist/CryLo Wallet 1.1.1.exe';
+          const pin=fs.readFileSync('electron/build/crylo-installer-helper-staged/helper-sha256.generated.nsh','utf8').match(/!define CRYLO_INSTALLER_HELPER_SHA256 "([0-9a-f]{64})"/)?.[1];
+          const helper='electron/build/crylo-installer-helper-staged/windows-installer-runtime.js';
+          if(!pin||pin!==sha(helper))throw Error('Generated NSIS helper authenticity pin mismatch');
+          const report={kind:'CRYLO_TESTNET24_UNSIGNED_CI_PACKAGING_CANDIDATE',network:'testnet',
+            gitCommit:process.env.GITHUB_SHA,nativeSourceCommit:old.gitCommit,sourceMergedHistories:true,
+            nativeRebuilt:false,nativeRoots:3,nativeDlls:55,nsisHelperSha256:pin,
+            installer:{file:path.basename(setup),sha256:sha(setup),size:fs.statSync(setup).size},
+            portable:{file:path.basename(portable),sha256:sha(portable),size:fs.statSync(portable).size},
+            nativeRuntimeManifestSha256:sha('build/electron-runtime/win/WINDOWS-BUILD-RUNTIME-MANIFEST.json'),
+            signed:false,published:false,eligibleForPublication:false};
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP,'crylo-testnet24-package-audit.json'),JSON.stringify(report,null,2)+'\n');
+          console.log('PASS: 3 unchanged native executables + 55 pinned DLLs, authenticated NSIS helper');
+          console.log(JSON.stringify(report,null,2));
+          NODE
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Upload unsigned Windows package for further CI testing, never publish
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-testnet24-windows-unsigned-ci-candidate
+          path: |
+            electron/dist/CryLo Wallet Setup 1.1.1.exe
+            electron/dist/CryLo Wallet 1.1.1.exe
+            ${{ runner.temp }}/crylo-testnet24-package-audit.json
+            ${{ runner.temp }}/testnet24-electron-npm-audit.json
+          if-no-files-found: error
+          retention-days: 30
