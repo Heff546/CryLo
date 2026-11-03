@@ -49,6 +49,9 @@ const {
 const {
   stageVerifiedMacPackage
 } = require('./release/macos-unsigned-update-stage');
+const {
+  inspectLinuxInfrastructureRoles
+} = require('./release/linux-infrastructure-roles');
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -237,29 +240,28 @@ function deployInfrastructureRelease() {
     return;
   }
 
-  const roles = [
-    {
-      service: 'crylo-anchor.service',
-      label: 'Canonical Anchor',
-      config: '/etc/crylo/crylo-anchor.conf'
-    },
-    {
-      service: 'crylo-relay.service',
-      label: 'Public Relay',
-      config: '/etc/crylo/crylo-relay.conf'
+  const roles = inspectLinuxInfrastructureRoles({
+    platform: process.platform,
+    exists: fs.existsSync,
+    probe
+  });
+  const activeRoles = roles.filter((candidate) => candidate.active);
+
+  if (activeRoles.length > 1) {
+    fail('Multiple CryLo infrastructure services are active; ' +
+      'refusing ambiguous daemon deployment.');
+  }
+
+  // An installed but stopped service is NOT permission to restart it.
+  if (!activeRoles.length) {
+    if (roles.length) {
+      console.log('CryLo infrastructure service is configured but offline; ' +
+        'preserving /opt/crylo/bin and leaving services stopped.');
     }
-  ];
-
-  const role = roles.find(
-    (candidate) => probe(
-      'systemctl',
-      ['is-active', '--quiet', candidate.service]
-    ).ok
-  );
-
-  if (!role) {
     return;
   }
+
+  const role = activeRoles[0];
 
   const { service, label, config } = role;
 
@@ -4604,19 +4606,13 @@ function installLinuxDesktopLaunchers() {
     return;
   }
 
-  const infrastructureServices = [
-    'crylo-anchor.service',
-    'crylo-relay.service'
-  ];
+  const infrastructureRoles = inspectLinuxInfrastructureRoles({
+    platform: process.platform,
+    exists: fs.existsSync,
+    probe
+  });
 
-  const infrastructureHost = infrastructureServices.some(
-    (service) => probe(
-      'systemctl',
-      ['is-active', '--quiet', service]
-    ).ok
-  );
-
-  if (infrastructureHost) {
+  if (infrastructureRoles.length) {
     console.log(
       'Skipping desktop launchers on CryLo infrastructure host.'
     );
@@ -4956,6 +4952,21 @@ function install() {
 
 function start() {
   console.log('===== CRYLO START =====');
+
+  // Never launch a standalone user daemon on an anchor or relay host,
+  // including when its infrastructure service is intentionally stopped.
+  if (process.platform === 'linux') {
+    const infrastructureRoles = inspectLinuxInfrastructureRoles({
+      platform: process.platform,
+      exists: fs.existsSync,
+      probe
+    });
+
+    if (infrastructureRoles.length) {
+      fail('CryLo infrastructure host detected; refusing standalone ' +
+        'daemon startup. Manage its dedicated service explicitly.');
+    }
+  }
 
   if (runningDaemon()) {
     console.log('CryLo daemon is already running.');

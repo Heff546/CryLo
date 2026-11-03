@@ -10,6 +10,8 @@ on:
       - scripts/release/sign-release-manifest.js
       - scripts/release/verify-release-manifest.js
       - scripts/crylo.js
+      - scripts/release/linux-infrastructure-roles.js
+      - scripts/tests/linux-infrastructure-offline-protection.test.js
       - scripts/tests/release-manifest-detached-selection.test.js
       - scripts/tests/signed-update-contract.test.js
       - scripts/tests/install-win-linux-pi-static.js
@@ -63,6 +65,13 @@ jobs:
         run: |
           set -euo pipefail
           node --test scripts/tests/release-manifest-detached-selection.test.js
+
+      - name: Verify offline infrastructure host protections
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/release/linux-infrastructure-roles.js
+          node --test scripts/tests/linux-infrastructure-offline-protection.test.js
 
       - name: Test signed-update and installed-command static contracts
         shell: bash
