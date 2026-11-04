@@ -1,0 +1,868 @@
+name: "CryLo final alignment \u2014 Mac builds from Windows Testnet.24 source"
+'on':
+  push:
+    branches:
+    - release/final-testnet24-alignment
+    paths:
+    - .github/workflows/final-testnet24-mac-alignment.yml
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: crylo-final-mac-alignment-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  mac-x64:
+    name: "Windows Testnet.24 exact source \u2014 mac-x64"
+    runs-on: macos-15-intel
+    timeout-minutes: 240
+    steps:
+    - name: Checkout immutable shared Windows Testnet.24 source
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      with:
+        persist-credentials: false
+        submodules: recursive
+        ref: 25ff0f466647761d30fcab532b89f729f3e68df2
+        set-safe-directory: false
+    - name: Pinned packaging Node
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: 24.21.0
+    - name: Verify all tracked source, shared address contracts and package lock
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(git rev-parse HEAD)" = '25ff0f466647761d30fcab532b89f729f3e68df2'
+        test "$(uname -m)" = 'x86_64'
+        test -z "$(git status --porcelain --untracked-files=all)"
+        test "$(node --version)" = v24.21.0
+        npm install --global --no-audit --no-fund --ignore-scripts npm@12.1.0
+        test "$(npm --version)" = 12.1.0
+        out="$RUNNER_TEMP/crylo-final-parity"
+        mkdir -p "$out"
+        git rev-parse HEAD > "$out/SOURCE-COMMIT.txt"
+        git ls-tree -r HEAD > "$out/ALL-TRACKED-FILES.txt"
+        git submodule status --recursive > "$out/SUBMODULES.txt"
+        shasum -a 256 electron/package.json electron/package-lock.json node-operator/runtime/package-lock.json > "$out/SHARED-PACKAGE-HASHES.txt"
+        node scripts/tests/install-win-linux-pi-static.js
+        node --test scripts/tests/signed-update-contract.test.js electron/test/release-packaging-security.test.js
+        python3 scripts/tests/crylo-functional-address-audit.py > "$out/ADDRESS-AUDIT.json"
+        printf '%s\n' 'Unsigned CI candidate only. No official signing or publication.' > "$out/UNSIGNED.txt"
+    - name: Prefetch unchanged hash-pinned ncurses source
+      shell: bash
+      run: |
+        set -euo pipefail
+        source_name='ncurses-6.6-20261010.tgz'
+        source_hash='00a1d10c51c3aa1b4dae9ea4421aec2dd227fa4724e645850ed43fd6fc0a56ec'
+        grep -Fx '$(package)_version=6.6-20261010' contrib/depends/packages/ncurses.mk
+        grep -Fx "\$(package)_sha256_hash=$source_hash" contrib/depends/packages/ncurses.mk
+        temporary="$(mktemp "$RUNNER_TEMP/ncurses-source-XXXXXX")"
+        trap 'rm -f "$temporary"' EXIT
+        fetched=0
+        for origin in https://invisible-mirror.net/archives/ncurses/current https://www.invisible-island.net/archives/ncurses/current; do
+          if curl --fail --location --silent --show-error --retry 2 --connect-timeout 20 --max-time 180 "$origin/$source_name" --output "$temporary"; then
+            printf '%s  %s\n' "$source_hash" "$temporary" | shasum -a 256 -c -
+            fetched=1
+            break
+          fi
+        done
+        test "$fetched" -eq 1
+        mkdir -p contrib/depends/sources
+        install -m 0644 "$temporary" "contrib/depends/sources/$source_name"
+    - name: Read-only macOS toolchain and source audit
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== EXACT SOURCE ====="
+        git rev-parse HEAD
+        git status --short
+        echo "===== HOST ====="
+        sw_vers
+        uname -m
+        sysctl -n hw.ncpu
+        df -h .
+        xcode-select -p
+        xcrun --find clang
+        clang --version
+        echo "===== TOOLS ====="
+        for tool in git cmake make python3 perl pkg-config autoconf automake glibtoolize brew; do
+          if command -v "$tool" >/dev/null 2>&1; then
+            echo "$tool: $(command -v "$tool")"
+          else
+            echo "MISSING: $tool"
+          fi
+        done
+        echo "===== PINNED DEPENDENCY RECIPES ====="
+        grep -E '^\$\(package\)_version=' contrib/depends/packages/{boost,openssl,zeromq,unbound,libusb,hidapi,protobuf,abseil,sodium}.mk
+    - name: Provision host-only dependency build tools on disposable runner
+      shell: bash
+      run: |
+        set -euo pipefail
+        export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+        packages=()
+        command -v cmake >/dev/null 2>&1 || packages+=(cmake)
+        command -v pkg-config >/dev/null 2>&1 || packages+=(pkgconf)
+        command -v autoconf >/dev/null 2>&1 || packages+=(autoconf)
+        command -v automake >/dev/null 2>&1 || packages+=(automake)
+        command -v glibtoolize >/dev/null 2>&1 || packages+=(libtool)
+        if [ "${#packages[@]}" -gt 0 ]; then
+          brew install "${packages[@]}"
+        fi
+        cmake --version
+        make --version | head -2
+    - name: Probe Intel macOS compiler deployment target
+      shell: bash
+      run: |
+        set -euo pipefail
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        printf 'int main(void) { return 0; }\n' > "$tmp/probe.c"
+        xcrun --show-sdk-version
+        for version in 10.8 11.0 15.0; do
+          echo "===== COMPILER LINK TEST: macOS $version ====="
+          set +e
+          clang "-mmacosx-version-min=$version" "$tmp/probe.c" -o "$tmp/probe-$version" >"$tmp/log-$version" 2>&1
+          rc=$?
+          set -e
+          cat "$tmp/log-$version"
+          echo "EXIT=$rc"
+        done
+    - name: Preflight exact libiconv compiler flags with explicit SDK
+      shell: bash
+      run: |
+        set -euo pipefail
+        export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+        test -d "$SDKROOT"
+        echo "SDKROOT=$SDKROOT"
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        printf 'int main(void) { return 0; }\n' > "$tmp/conftest.c"
+        prefix="$GITHUB_WORKSPACE/contrib/depends/x86_64-apple-darwin11"
+        mkdir -p "$prefix/include" "$prefix/lib"
+        xcrun clang -mmacosx-version-min=10.8 -pipe -O1 \
+          -I"$prefix/include" -L"$prefix/lib" \
+          "$tmp/conftest.c" -o "$tmp/conftest"
+        file "$tmp/conftest"
+        "$tmp/conftest"
+        echo "===== EXACT LIBICONV COMPILER PREFLIGHT PASSED ====="
+    - name: Build hash-pinned native CryLo dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== COMPILER ENVIRONMENT ====="
+        xcrun --show-sdk-path
+        xcrun --show-sdk-version
+        xcrun --find clang
+        export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+        echo "SDKROOT=$SDKROOT"
+        echo "===== DEPENDENCIES ====="
+        set +e
+        make -C contrib/depends HOST=x86_64-apple-darwin11 -j2
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          echo "===== DEPENDS FAILED (EXIT $rc) ====="
+          echo "===== LIBICONV CONFIGURATION LOGS ====="
+          find contrib/depends/work/build -path '*/libiconv/*/config.log' -type f -print | while IFS= read -r log; do
+            echo "===== $log ====="
+            sed -n '1,170p' "$log"
+          done
+          exit "$rc"
+        fi
+        test -f contrib/depends/x86_64-apple-darwin11/share/toolchain.cmake
+        echo "===== DEPENDS TOOLCHAIN READY ====="
+        ls -l contrib/depends/x86_64-apple-darwin11/share/toolchain.cmake
+        df -h .
+    - name: Audit required pinned Boost static libraries
+      shell: bash
+      run: |
+        set -euo pipefail
+        libdir="contrib/depends/x86_64-apple-darwin11/lib"
+        echo "===== BOOST 1.92 STATIC ARCHIVE AUDIT ====="
+        for component in chrono filesystem program_options thread date_time regex serialization locale; do
+          archive="$libdir/libboost_$component.a"
+          if [ ! -s "$archive" ]; then
+            echo "ERROR: missing or empty required Boost archive: $archive"
+            exit 1
+          fi
+          if ! /usr/bin/ar -t "$archive" | grep -q .; then
+            echo "ERROR: Boost archive has no members: $archive"
+            exit 1
+          fi
+          echo "PASS: $archive"
+        done
+        echo "===== REQUIRED BOOST ARCHIVES VERIFIED ====="
+    - name: Configure native CryLo with full Trezor support
+      shell: bash
+      run: |
+        set -euo pipefail
+        cmake -S . -B build/mac-x64 \
+          -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/contrib/depends/x86_64-apple-darwin11/share/toolchain.cmake" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_TAG=mac-x64 \
+          -DBUILD_TESTS=OFF \
+          -DBUILD_DOCUMENTATION=OFF \
+          -DBUILD_DEBUG_UTILITIES=OFF \
+          -DBUILD_GUI_DEPS=OFF \
+          -DSTATIC=ON \
+          -DUSE_DEVICE_TREZOR=ON \
+          -DUSE_DEVICE_TREZOR_LIBUSB=ON \
+          -DTREZOR_DEBUG=OFF \
+          -DBUILD_64=ON \
+          -DARCH=x86-64
+        git status --short
+    - name: Compile daemon wallet and wallet-RPC
+      shell: bash
+      run: |
+        set -euo pipefail
+        cmake --build build/mac-x64 --parallel 2 --target daemon simplewallet wallet_rpc_server
+    - name: Report exact generated CMake linker archive duplicates
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import collections
+        import pathlib
+        import shlex
+        paths = {
+          "daemon": "build/mac-x64/src/daemon/CMakeFiles/daemon.dir/link.txt",
+          "wallet": "build/mac-x64/src/simplewallet/CMakeFiles/simplewallet.dir/link.txt",
+          "wallet-rpc": "build/mac-x64/src/wallet/CMakeFiles/wallet_rpc_server.dir/link.txt",
+        }
+        for name, filename in paths.items():
+            path = pathlib.Path(filename)
+            if not path.is_file():
+                raise SystemExit(f"Missing generated linker command: {path}")
+            command = shlex.split(path.read_text())
+            archives = [word for word in command if word.endswith(".a")]
+            counts = collections.Counter(archives)
+            duplicates = sorted((value, count) for value, count in counts.items() if count > 1)
+            print(f"===== {name}: {len(archives)} archive inputs, {len(duplicates)} duplicated paths =====")
+            for value, count in duplicates:
+                print(f"  {count}x {value}")
+        print("READ ONLY: no link arguments or CMake sources were modified")
+        PY
+    - name: Verify native macOS runtime binaries
+      shell: bash
+      run: |
+        set -euo pipefail
+        for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+          test "$(lipo -archs "build/mac-x64/bin/$name")" = x86_64
+          file "build/mac-x64/bin/$name"
+          otool -L "build/mac-x64/bin/$name"
+          "build/mac-x64/bin/$name" --version
+        done
+        test -z "$(git status --porcelain --untracked-files=all -- . ':!build' ':!contrib/depends')"
+        echo "===== NATIVE MAC X64 COMPILE GATE COMPLETE ====="
+    - name: Audit native Mach-O load commands and unwind sections
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== READ-ONLY INTEL MACH-O DIAGNOSTICS ====="
+        for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+          binary="build/mac-x64/bin/$name"
+          test -s "$binary"
+          echo "===== $name: ARCHITECTURE AND HEADER ====="
+          file "$binary"
+          lipo -archs "$binary"
+          otool -hv "$binary"
+          echo "===== $name: DYNAMIC LIBRARY REFERENCES ====="
+          otool -L "$binary"
+          echo "===== $name: BUILD VERSION ====="
+          xcrun vtool -show-build "$binary" || true
+          echo "===== $name: UNWIND / ENVIRONMENT SECTIONS ====="
+          loadcmds="$(mktemp)"
+          otool -l "$binary" > "$loadcmds"
+          grep -n -B 10 -A 16 -E 'sectname (__unwind_info|__eh_frame|text_env)|segname __TEXT|cmd LC_CODE_SIGNATURE' "$loadcmds" || true
+          rm -f "$loadcmds"
+          echo "===== $name: SIGNATURE DETAILS (UNSIGNED VALIDATION EXPECTED) ====="
+          if codesign -dv --verbose=4 "$binary" 2>&1; then
+            echo "Signature metadata present"
+          else
+            echo "No valid signature metadata reported (may be expected for unsigned build)"
+          fi
+          if codesign --verify --verbose=2 "$binary" 2>&1; then
+            echo "Code signature verification succeeded"
+          else
+            echo "Code signature verification unavailable or failed (not a release signing gate)"
+          fi
+        done
+        echo "===== MACH-O DIAGNOSTICS COMPLETE; NO FILES OR LINK FLAGS MODIFIED ====="
+    - name: Gate native LMDB Mach-O executable sections
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== MACOS LMDB SECTION REGRESSION GATE ====="
+        archive="build/mac-x64/external/db_drivers/liblmdb/liblmdb.a"
+        test -s "$archive"
+        if otool -l "$archive" | grep -Eq 'sectname[[:space:]]+text_env([[:space:]]|$)'; then
+          echo "ERROR: LMDB still emits legacy text_env section"
+          exit 1
+        fi
+        for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+          binary="build/mac-x64/bin/$name"
+          test -x "$binary"
+          sections="$(mktemp)"
+          otool -l "$binary" > "$sections"
+          if grep -Eq 'sectname[[:space:]]+text_env([[:space:]]|$)' "$sections"; then
+            echo "ERROR: unexpected text_env section in $name"
+            rm -f "$sections"
+            exit 1
+          fi
+          if ! grep -Eq 'sectname[[:space:]]+__unwind_info([[:space:]]|$)' "$sections"; then
+            echo "ERROR: missing unwind information in $name"
+            rm -f "$sections"
+            exit 1
+          fi
+          rm -f "$sections"
+          echo "PASS: $name has no legacy section and retains unwind metadata"
+        done
+        echo "===== MACOS LMDB SECTION REGRESSION GATE PASSED ====="
+    - name: Trace Mach-O text_env sections in static archives
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== READ-ONLY STATIC ARCHIVE SECTION ORIGIN AUDIT ====="
+        archive_list="$(mktemp)"
+        section_log="$(mktemp)"
+        trap 'rm -f "$archive_list" "$section_log"' EXIT
+        find build/mac-x64 contrib/depends/x86_64-apple-darwin11/lib \
+          -type f -name '*.a' -print > "$archive_list"
+        echo "Archive count: $(wc -l < "$archive_list")"
+        matches=0
+        inspected=0
+        failed=0
+        while IFS= read -r archive; do
+          inspected=$((inspected + 1))
+          if ! otool -l "$archive" > "$section_log" 2>/dev/null; then
+            failed=$((failed + 1))
+            echo "UNREADABLE ARCHIVE: $archive"
+            continue
+          fi
+          if grep -Eq 'sectname[[:space:]]+text_env([[:space:]]|$)' "$section_log"; then
+            matches=$((matches + 1))
+            echo "===== MATCHING ARCHIVE: $archive ====="
+            awk '
+              /\\.o\\):$/ || /\\.o:$/ || /\\.obj\\):$/ { member=$0 }
+              /sectname[[:space:]]+text_env([[:space:]]|$)/ {
+                print "MEMBER: " member
+                print "SECTION: " $0
+              }
+            ' "$section_log"
+          fi
+        done < "$archive_list"
+        echo "Archives inspected: $inspected"
+        echo "Archives with text_env: $matches"
+        echo "Archives unreadable by otool: $failed"
+        echo "===== ARCHIVE SECTION AUDIT COMPLETE (DIAGNOSTIC ONLY) ====="
+    - name: Package unsigned CryLo macOS x64 application and PKG
+      shell: bash
+      env:
+        CRYLO_RELEASE_BIN: ${{ github.workspace }}/build/mac-x64/bin
+        CRYLO_NETWORK: testnet
+        CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      run: |
+        set -euo pipefail
+        node --version
+        npm --version
+        npm run --prefix electron build-mac-x64
+    - name: Verify unsigned Mac installer package only
+      shell: bash
+      run: |
+        set -euo pipefail
+        app="electron/dist/mac/CryLo Wallet.app"
+        pkg="electron/dist/CryLo-1.1.1-mac-x64-unsigned.pkg"
+        test -d "$app/Contents/Resources/bin/mac"
+        for name in CryLo-daemon CryLo-wallet-rpc; do
+          bundled="$app/Contents/Resources/bin/mac/$name"
+          original="build/mac-x64/bin/$name"
+          test -x "$bundled"
+          cmp "$original" "$bundled"
+          file "$bundled"
+          otool -L "$bundled"
+        done
+        test -f "$app/Contents/Resources/bin/mac/BINARY-MANIFEST.txt"
+        test -f "$pkg"
+        if find electron/dist -maxdepth 1 -type f -name '*.dmg' -print -quit | grep -q .; then
+          echo "ERROR: DMG is forbidden for macOS releases"
+          exit 1
+        fi
+        shasum -a 256 "$pkg"
+        pkgutil --payload-files "$pkg" | grep -F 'CryLo Wallet.app'
+        pkgutil --payload-files "$pkg" | grep -F 'CryLo Daemon.app'
+        pkgutil --expand "$pkg" "$RUNNER_TEMP/crylo-pkg-audit"
+        scripts_dir="$(find "$RUNNER_TEMP/crylo-pkg-audit" -name Scripts -type d -print -quit)"
+        test -n "$scripts_dir"
+        test -f "$scripts_dir/postinstall"
+        sh -n "$scripts_dir/postinstall"
+        test -z "$(find "$RUNNER_TEMP/crylo-pkg-audit" -name 'preinstall' -print)"
+        echo "===== MAC PKG-ONLY INSTALLER GATE COMPLETE ====="
+    - name: Record actual native and installer hashes
+      shell: bash
+      run: |
+        set -euo pipefail
+        out="$RUNNER_TEMP/crylo-final-parity"
+        test "$(git rev-parse HEAD)" = '25ff0f466647761d30fcab532b89f729f3e68df2'
+        shasum -a 256 build/mac-x64/bin/CryLo-daemon build/mac-x64/bin/CryLo-wallet build/mac-x64/bin/CryLo-wallet-rpc > "$out/NATIVE-SHA256SUMS.txt"
+        shasum -a 256 electron/dist/*.pkg > "$out/PKG-SHA256SUMS.txt"
+        git diff --exit-code HEAD -- src external cmake contrib/depends CMakeLists.txt tests translations electron/package.json electron/package-lock.json node-operator/runtime/package-lock.json
+    - name: Retain exact-baseline native binaries, PKG and provenance
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: crylo-final-testnet24-mac-x64-UNSIGNED
+        path: |-
+          build/mac-x64/bin/CryLo-daemon
+          build/mac-x64/bin/CryLo-wallet
+          build/mac-x64/bin/CryLo-wallet-rpc
+          electron/dist/*.pkg
+          ${{ runner.temp }}/crylo-final-parity/*
+        if-no-files-found: error
+        retention-days: 30
+        compression-level: 0
+  mac-arm64:
+    name: "Windows Testnet.24 exact source \u2014 mac-arm64"
+    runs-on: macos-15
+    timeout-minutes: 240
+    steps:
+    - name: Checkout immutable shared Windows Testnet.24 source
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      with:
+        persist-credentials: false
+        set-safe-directory: false
+        submodules: recursive
+        ref: 25ff0f466647761d30fcab532b89f729f3e68df2
+    - name: Pinned packaging Node
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: 24.21.0
+    - name: Verify all tracked source, shared address contracts and package lock
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(git rev-parse HEAD)" = '25ff0f466647761d30fcab532b89f729f3e68df2'
+        test "$(uname -m)" = 'arm64'
+        test -z "$(git status --porcelain --untracked-files=all)"
+        test "$(node --version)" = v24.21.0
+        npm install --global --no-audit --no-fund --ignore-scripts npm@12.1.0
+        test "$(npm --version)" = 12.1.0
+        out="$RUNNER_TEMP/crylo-final-parity"
+        mkdir -p "$out"
+        git rev-parse HEAD > "$out/SOURCE-COMMIT.txt"
+        git ls-tree -r HEAD > "$out/ALL-TRACKED-FILES.txt"
+        git submodule status --recursive > "$out/SUBMODULES.txt"
+        shasum -a 256 electron/package.json electron/package-lock.json node-operator/runtime/package-lock.json > "$out/SHARED-PACKAGE-HASHES.txt"
+        node scripts/tests/install-win-linux-pi-static.js
+        node --test scripts/tests/signed-update-contract.test.js electron/test/release-packaging-security.test.js
+        python3 scripts/tests/crylo-functional-address-audit.py > "$out/ADDRESS-AUDIT.json"
+        printf '%s\n' 'Unsigned CI candidate only. No official signing or publication.' > "$out/UNSIGNED.txt"
+    - name: Prefetch unchanged hash-pinned ncurses source
+      shell: bash
+      run: |
+        set -euo pipefail
+        source_name='ncurses-6.6-20261010.tgz'
+        source_hash='00a1d10c51c3aa1b4dae9ea4421aec2dd227fa4724e645850ed43fd6fc0a56ec'
+        grep -Fx '$(package)_version=6.6-20261010' contrib/depends/packages/ncurses.mk
+        grep -Fx "\$(package)_sha256_hash=$source_hash" contrib/depends/packages/ncurses.mk
+        temporary="$(mktemp "$RUNNER_TEMP/ncurses-source-XXXXXX")"
+        trap 'rm -f "$temporary"' EXIT
+        fetched=0
+        for origin in https://invisible-mirror.net/archives/ncurses/current https://www.invisible-island.net/archives/ncurses/current; do
+          if curl --fail --location --silent --show-error --retry 2 --connect-timeout 20 --max-time 180 "$origin/$source_name" --output "$temporary"; then
+            printf '%s  %s\n' "$source_hash" "$temporary" | shasum -a 256 -c -
+            fetched=1
+            break
+          fi
+        done
+        test "$fetched" -eq 1
+        mkdir -p contrib/depends/sources
+        install -m 0644 "$temporary" "contrib/depends/sources/$source_name"
+    - name: Read-only macOS toolchain and source audit
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== EXACT SOURCE ====="
+        git rev-parse HEAD
+        git status --short
+        echo "===== HOST ====="
+        sw_vers
+        uname -m
+        test "$(uname -m)" = arm64
+        sysctl -n hw.ncpu
+        df -h .
+        xcode-select -p
+        xcrun --find clang
+        clang --version
+        echo "===== TOOLS ====="
+        for tool in git cmake make python3 perl pkg-config autoconf automake glibtoolize brew; do
+          if command -v "$tool" >/dev/null 2>&1; then
+            echo "$tool: $(command -v "$tool")"
+          else
+            echo "MISSING: $tool"
+          fi
+        done
+        echo "===== PINNED DEPENDENCY RECIPES ====="
+        grep -E '^\$\(package\)_version=' contrib/depends/packages/{boost,openssl,zeromq,unbound,libusb,hidapi,protobuf,abseil,sodium}.mk
+    - name: Provision host-only dependency build tools on disposable runner
+      shell: bash
+      run: |
+        set -euo pipefail
+        export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+        packages=()
+        command -v cmake >/dev/null 2>&1 || packages+=(cmake)
+        command -v pkg-config >/dev/null 2>&1 || packages+=(pkgconf)
+        command -v autoconf >/dev/null 2>&1 || packages+=(autoconf)
+        command -v automake >/dev/null 2>&1 || packages+=(automake)
+        command -v glibtoolize >/dev/null 2>&1 || packages+=(libtool)
+        if [ "${#packages[@]}" -gt 0 ]; then
+          brew install "${packages[@]}"
+        fi
+        cmake --version
+        make --version | head -2
+    - name: Probe Apple Silicon macOS 11 deployment target
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(uname -m)" = arm64
+        export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        printf 'int main(void) { return 0; }\n' > "$tmp/probe.c"
+        xcrun clang -arch arm64 -mmacosx-version-min=11.0 -isysroot "$SDKROOT" \
+          -Wall -Wextra -Werror "$tmp/probe.c" -o "$tmp/probe"
+        file "$tmp/probe"
+        test "$(lipo -archs "$tmp/probe")" = arm64
+        xcrun vtool -show-build "$tmp/probe"
+        "$tmp/probe"
+        echo "PASS: macOS 11 ARM64 deployment target"
+    - name: Preflight exact libiconv compiler flags with explicit SDK
+      shell: bash
+      run: |
+        set -euo pipefail
+        export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+        test -d "$SDKROOT"
+        echo "SDKROOT=$SDKROOT"
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        printf 'int main(void) { return 0; }\n' > "$tmp/conftest.c"
+        prefix="$GITHUB_WORKSPACE/contrib/depends/aarch64-apple-darwin11"
+        mkdir -p "$prefix/include" "$prefix/lib"
+        xcrun clang -arch arm64 -mmacosx-version-min=11.0 -pipe -O1 \
+          -I"$prefix/include" -L"$prefix/lib" \
+          "$tmp/conftest.c" -o "$tmp/conftest"
+        file "$tmp/conftest"
+        test "$(lipo -archs "$tmp/conftest")" = arm64
+        "$tmp/conftest"
+        echo "===== EXACT LIBICONV COMPILER PREFLIGHT PASSED ====="
+    - name: Build hash-pinned native CryLo dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== COMPILER ENVIRONMENT ====="
+        xcrun --show-sdk-path
+        xcrun --show-sdk-version
+        xcrun --find clang
+        export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+        echo "SDKROOT=$SDKROOT"
+        echo "===== DEPENDENCIES ====="
+        set +e
+        make -C contrib/depends HOST=aarch64-apple-darwin11 -j2
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          echo "===== DEPENDS FAILED (EXIT $rc) ====="
+          echo "===== LIBICONV CONFIGURATION LOGS ====="
+          find contrib/depends/work/build -path '*/libiconv/*/config.log' -type f -print | while IFS= read -r log; do
+            echo "===== $log ====="
+            sed -n '1,170p' "$log"
+          done
+          exit "$rc"
+        fi
+        test -f contrib/depends/aarch64-apple-darwin11/share/toolchain.cmake
+        echo "===== DEPENDS TOOLCHAIN READY ====="
+        ls -l contrib/depends/aarch64-apple-darwin11/share/toolchain.cmake
+        df -h .
+    - name: Audit required pinned Boost static libraries
+      shell: bash
+      run: |
+        set -euo pipefail
+        libdir="contrib/depends/aarch64-apple-darwin11/lib"
+        echo "===== BOOST 1.92 STATIC ARCHIVE AUDIT ====="
+        for component in chrono filesystem program_options thread date_time regex serialization locale; do
+          archive="$libdir/libboost_$component.a"
+          if [ ! -s "$archive" ]; then
+            echo "ERROR: missing or empty required Boost archive: $archive"
+            exit 1
+          fi
+          if ! /usr/bin/ar -t "$archive" | grep -q .; then
+            echo "ERROR: Boost archive has no members: $archive"
+            exit 1
+          fi
+          echo "PASS: $archive"
+        done
+        echo "===== REQUIRED BOOST ARCHIVES VERIFIED ====="
+    - name: Configure native CryLo with full Trezor support
+      shell: bash
+      run: |
+        set -euo pipefail
+        cmake -S . -B build/mac-arm64 \
+          -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/contrib/depends/aarch64-apple-darwin11/share/toolchain.cmake" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_TAG=mac-arm64 \
+          -DBUILD_TESTS=OFF \
+          -DBUILD_DOCUMENTATION=OFF \
+          -DBUILD_DEBUG_UTILITIES=OFF \
+          -DBUILD_GUI_DEPS=OFF \
+          -DSTATIC=ON \
+          -DUSE_DEVICE_TREZOR=ON \
+          -DUSE_DEVICE_TREZOR_LIBUSB=ON \
+          -DTREZOR_DEBUG=OFF \
+          -DBUILD_64=ON \
+          -DARCH=armv8-a
+        git status --short
+    - name: Compile daemon wallet and wallet-RPC
+      shell: bash
+      run: |
+        set -euo pipefail
+        cmake --build build/mac-arm64 --parallel 2 --target daemon simplewallet wallet_rpc_server
+    - name: Report exact generated CMake linker archive duplicates
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import collections
+        import pathlib
+        import shlex
+        paths = {
+          "daemon": "build/mac-arm64/src/daemon/CMakeFiles/daemon.dir/link.txt",
+          "wallet": "build/mac-arm64/src/simplewallet/CMakeFiles/simplewallet.dir/link.txt",
+          "wallet-rpc": "build/mac-arm64/src/wallet/CMakeFiles/wallet_rpc_server.dir/link.txt",
+        }
+        for name, filename in paths.items():
+            path = pathlib.Path(filename)
+            if not path.is_file():
+                raise SystemExit(f"Missing generated linker command: {path}")
+            command = shlex.split(path.read_text())
+            archives = [word for word in command if word.endswith(".a")]
+            counts = collections.Counter(archives)
+            duplicates = sorted((value, count) for value, count in counts.items() if count > 1)
+            print(f"===== {name}: {len(archives)} archive inputs, {len(duplicates)} duplicated paths =====")
+            for value, count in duplicates:
+                print(f"  {count}x {value}")
+        print("READ ONLY: no link arguments or CMake sources were modified")
+        PY
+    - name: Verify native macOS runtime binaries
+      shell: bash
+      run: |
+        set -euo pipefail
+        for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+          test "$(lipo -archs "build/mac-arm64/bin/$name")" = arm64
+          file "build/mac-arm64/bin/$name"
+          otool -L "build/mac-arm64/bin/$name"
+          "build/mac-arm64/bin/$name" --version
+        done
+        test -z "$(git status --porcelain --untracked-files=all -- . ':!build' ':!contrib/depends')"
+        echo "===== NATIVE MAC ARM64 COMPILE GATE COMPLETE ====="
+    - name: Gate Apple Silicon native dynamic library dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== ARM64 EXTERNAL DYLIB VALIDATION ====="
+        for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+          binary="build/mac-arm64/bin/$name"
+          dylibs="$(otool -L "$binary" | tail -n +2 | awk '{print $1}')"
+          while IFS= read -r dylib; do
+            test -n "$dylib" || continue
+            case "$dylib" in
+              /usr/lib/*|/System/Library/Frameworks/*) ;;
+              *) echo "ERROR: unexpected dynamic dependency in $name: $dylib"; exit 1 ;;
+            esac
+          done <<< "$dylibs"
+        done
+        echo "PASS: only system macOS dynamic libraries were referenced"
+    - name: Audit native Mach-O load commands and unwind sections
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== READ-ONLY ARM64 MACH-O DIAGNOSTICS ====="
+        for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+          binary="build/mac-arm64/bin/$name"
+          test -s "$binary"
+          echo "===== $name: ARCHITECTURE AND HEADER ====="
+          file "$binary"
+          lipo -archs "$binary"
+          otool -hv "$binary"
+          echo "===== $name: DYNAMIC LIBRARY REFERENCES ====="
+          otool -L "$binary"
+          echo "===== $name: BUILD VERSION ====="
+          xcrun vtool -show-build "$binary" || true
+          echo "===== $name: UNWIND / ENVIRONMENT SECTIONS ====="
+          loadcmds="$(mktemp)"
+          otool -l "$binary" > "$loadcmds"
+          grep -n -B 10 -A 16 -E 'sectname (__unwind_info|__eh_frame|text_env)|segname __TEXT|cmd LC_CODE_SIGNATURE' "$loadcmds" || true
+          rm -f "$loadcmds"
+          echo "===== $name: SIGNATURE DETAILS (UNSIGNED VALIDATION EXPECTED) ====="
+          if codesign -dv --verbose=4 "$binary" 2>&1; then
+            echo "Signature metadata present"
+          else
+            echo "No valid signature metadata reported (may be expected for unsigned build)"
+          fi
+          if codesign --verify --verbose=2 "$binary" 2>&1; then
+            echo "Code signature verification succeeded"
+          else
+            echo "Code signature verification unavailable or failed (not a release signing gate)"
+          fi
+        done
+        echo "===== MACH-O DIAGNOSTICS COMPLETE; NO FILES OR LINK FLAGS MODIFIED ====="
+    - name: Gate native LMDB Mach-O executable sections
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== MACOS LMDB SECTION REGRESSION GATE ====="
+        archive="build/mac-arm64/external/db_drivers/liblmdb/liblmdb.a"
+        test -s "$archive"
+        if otool -l "$archive" | grep -Eq 'sectname[[:space:]]+text_env([[:space:]]|$)'; then
+          echo "ERROR: LMDB still emits legacy text_env section"
+          exit 1
+        fi
+        for name in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+          binary="build/mac-arm64/bin/$name"
+          test -x "$binary"
+          sections="$(mktemp)"
+          otool -l "$binary" > "$sections"
+          if grep -Eq 'sectname[[:space:]]+text_env([[:space:]]|$)' "$sections"; then
+            echo "ERROR: unexpected text_env section in $name"
+            rm -f "$sections"
+            exit 1
+          fi
+          if ! grep -Eq 'sectname[[:space:]]+__unwind_info([[:space:]]|$)' "$sections"; then
+            echo "ERROR: missing unwind information in $name"
+            rm -f "$sections"
+            exit 1
+          fi
+          rm -f "$sections"
+          echo "PASS: $name has no legacy section and retains unwind metadata"
+        done
+        echo "===== MACOS LMDB SECTION REGRESSION GATE PASSED ====="
+    - name: Trace Mach-O text_env sections in static archives
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "===== READ-ONLY STATIC ARCHIVE SECTION ORIGIN AUDIT ====="
+        archive_list="$(mktemp)"
+        section_log="$(mktemp)"
+        trap 'rm -f "$archive_list" "$section_log"' EXIT
+        find build/mac-arm64 contrib/depends/aarch64-apple-darwin11/lib \
+          -type f -name '*.a' -print > "$archive_list"
+        echo "Archive count: $(wc -l < "$archive_list")"
+        matches=0
+        inspected=0
+        failed=0
+        while IFS= read -r archive; do
+          inspected=$((inspected + 1))
+          if ! otool -l "$archive" > "$section_log" 2>/dev/null; then
+            failed=$((failed + 1))
+            echo "UNREADABLE ARCHIVE: $archive"
+            continue
+          fi
+          if grep -Eq 'sectname[[:space:]]+text_env([[:space:]]|$)' "$section_log"; then
+            matches=$((matches + 1))
+            echo "===== MATCHING ARCHIVE: $archive ====="
+            awk '
+              /\\.o\\):$/ || /\\.o:$/ || /\\.obj\\):$/ { member=$0 }
+              /sectname[[:space:]]+text_env([[:space:]]|$)/ {
+                print "MEMBER: " member
+                print "SECTION: " $0
+              }
+            ' "$section_log"
+          fi
+        done < "$archive_list"
+        echo "Archives inspected: $inspected"
+        echo "Archives with text_env: $matches"
+        echo "Archives unreadable by otool: $failed"
+        echo "===== ARCHIVE SECTION AUDIT COMPLETE (DIAGNOSTIC ONLY) ====="
+    - name: Package unsigned CryLo macOS arm64 application and PKG
+      shell: bash
+      env:
+        CRYLO_RELEASE_BIN: ${{ github.workspace }}/build/mac-arm64/bin
+        CRYLO_NETWORK: testnet
+        CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      run: |
+        set -euo pipefail
+        node --version
+        npm --version
+        npm run --prefix electron build-mac-arm64
+    - name: Verify unsigned Mac installer package only
+      shell: bash
+      run: |
+        set -euo pipefail
+        app="electron/dist/mac-arm64/CryLo Wallet.app"
+        pkg="electron/dist/CryLo-1.1.1-mac-arm64-unsigned.pkg"
+        test -d "$app/Contents/Resources/bin/mac"
+        for name in CryLo-daemon CryLo-wallet-rpc; do
+          bundled="$app/Contents/Resources/bin/mac/$name"
+          original="build/mac-arm64/bin/$name"
+          test -x "$bundled"
+          test "$(lipo -archs "$bundled")" = arm64
+          cmp "$original" "$bundled"
+          file "$bundled"
+          otool -L "$bundled"
+        done
+        test -f "$app/Contents/Resources/bin/mac/BINARY-MANIFEST.txt"
+        test -f "$pkg"
+        test -x "$app/Contents/MacOS/CryLo Wallet"
+        test "$(lipo -archs "$app/Contents/MacOS/CryLo Wallet")" = arm64
+        electron_framework="$app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework"
+        test -s "$electron_framework"
+        test "$(lipo -archs "$electron_framework")" = arm64
+        echo "===== PACKAGED OPERATOR PRODUCTION DEPENDENCIES ====="
+        operator_modules="$app/Contents/Resources/operator-runtime/node_modules"
+        test -d "$operator_modules"
+        for disallowed in glob rimraf inflight boolean; do
+          if find "$operator_modules" -type d -name "$disallowed" -print -quit | grep -q .; then
+            echo "ERROR: deprecated production module in installer: $disallowed"
+            exit 1
+          fi
+        done
+        echo "===== PACKAGE SIGNATURE INSPECTION (UNSIGNED EXPECTED) ====="
+        signature="$(pkgutil --check-signature "$pkg" 2>&1 || true)"
+        echo "$signature"
+        if printf '%s\n' "$signature" | grep -Eqi 'Status: signed|Developer ID Installer'; then
+          echo "ERROR: CI artifact was unexpectedly signed"
+          exit 1
+        fi
+        if find electron/dist -maxdepth 1 -type f -name '*.dmg' -print -quit | grep -q .; then
+          echo "ERROR: DMG is forbidden for macOS releases"
+          exit 1
+        fi
+        shasum -a 256 "$pkg"
+        pkgutil --payload-files "$pkg" | grep -F 'CryLo Wallet.app'
+        pkgutil --payload-files "$pkg" | grep -F 'CryLo Daemon.app'
+        pkgutil --expand "$pkg" "$RUNNER_TEMP/crylo-pkg-audit"
+        scripts_dir="$(find "$RUNNER_TEMP/crylo-pkg-audit" -name Scripts -type d -print -quit)"
+        test -n "$scripts_dir"
+        test -f "$scripts_dir/postinstall"
+        sh -n "$scripts_dir/postinstall"
+        test -z "$(find "$RUNNER_TEMP/crylo-pkg-audit" -name 'preinstall' -print)"
+        echo "===== MAC PKG-ONLY INSTALLER GATE COMPLETE ====="
+    - name: Record actual native and installer hashes
+      shell: bash
+      run: |
+        set -euo pipefail
+        out="$RUNNER_TEMP/crylo-final-parity"
+        test "$(git rev-parse HEAD)" = '25ff0f466647761d30fcab532b89f729f3e68df2'
+        shasum -a 256 build/mac-arm64/bin/CryLo-daemon build/mac-arm64/bin/CryLo-wallet build/mac-arm64/bin/CryLo-wallet-rpc > "$out/NATIVE-SHA256SUMS.txt"
+        shasum -a 256 electron/dist/*.pkg > "$out/PKG-SHA256SUMS.txt"
+        git diff --exit-code HEAD -- src external cmake contrib/depends CMakeLists.txt tests translations electron/package.json electron/package-lock.json node-operator/runtime/package-lock.json
+    - name: Retain exact-baseline native binaries, PKG and provenance
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: crylo-final-testnet24-mac-arm64-UNSIGNED
+        path: |-
+          build/mac-arm64/bin/CryLo-daemon
+          build/mac-arm64/bin/CryLo-wallet
+          build/mac-arm64/bin/CryLo-wallet-rpc
+          electron/dist/*.pkg
+          ${{ runner.temp }}/crylo-final-parity/*
+        if-no-files-found: error
+        retention-days: 30
+        compression-level: 0
