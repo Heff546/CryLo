@@ -1,0 +1,283 @@
+name: CryLo security-parity Windows x64 full unsigned native Electron build
+
+on:
+  push:
+    branches: [release/five-platform-security-parity]
+    paths:
+      - .github/workflows/security-parity-windows-rebuild.yml
+      - .gitattributes
+      - contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch
+      - contrib/depends/patches/openssl/openssl-3.5.9-mingw-warning-compat.patch
+      - contrib/depends/patches/openssl/openssl-3.5.9-mingw-unused-compat.patch
+      - scripts/release/crylo-release.js
+      - cmake/CheckTrezor.cmake
+      - src/daemonizer/windows_service.cpp
+      - src/common/utf8.h
+      - src/wallet/wallet2.h
+      - src/wallet/wallet2.cpp
+      - src/cryptonote_core/blockchain.cpp
+      - src/p2p/net_node.inl
+      - tests/unit_tests/wallet_storage.cpp
+      - tests/unit_tests/epee_boosted_tcp_server.cpp
+      - tests/unit_tests/crypto.cpp
+      - tests/unit_tests/node_server.cpp
+      - tests/unit_tests/memwipe.cpp
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 210
+    steps:
+      - name: Checkout exact source and submodules
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+          submodules: recursive
+          ref: 'e0326c141900e1c7a830df3108d9be3a8c019a40'
+      - name: Verify immutable common security-parity source and Windows ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'e0326c141900e1c7a830df3108d9be3a8c019a40'
+          test -z "$(git status --porcelain --untracked-files=all)"
+          grep -Fx '$(package)_version=20260817.0' contrib/depends/packages/abseil.mk
+          grep -Fx '$(package)_version=20260817.0' contrib/depends/packages/native_abseil.mk
+          grep -Fx '$(package)_sha256_hash=f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d' contrib/depends/packages/abseil.mk
+          grep -Fx '$(package)_sha256_hash=f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d' contrib/depends/packages/native_abseil.mk
+          node scripts/tests/install-win-linux-pi-static.js
+          node --test scripts/tests/signed-update-contract.test.js
+          echo 'PASS: same shared source and Abseil security baseline'
+      - name: Verify exact trusted OpenSSL patch bytes on Windows checkout
+        shell: cmd
+        run: |
+          node -e "const fs=require('fs'),c=require('crypto');const p='contrib/depends/patches/openssl/openssl-3.5.9-build-cleanup.patch';const b=fs.readFileSync(p);const d=c.createHash('sha256').update(b).digest('hex');if(d!=='5e04f3cd27a246512a573ed865b0ddd1390ebe7d667b3b74dbadb44ab6488088')throw Error('Windows OpenSSL patch bytes have changed: '+d);"
+          if errorlevel 1 exit /b 1
+          echo PASS: trusted original LF OpenSSL patch on Windows checkout
+          node -e "const fs=require('fs'),c=require('crypto');const p='contrib/depends/patches/openssl/openssl-3.5.9-mingw-warning-compat.patch';const d=c.createHash('sha256').update(fs.readFileSync(p)).digest('hex');if(d!=='fc55415905380d6cb7ccb81c6b3c722142e7668b67f77d024f29d531f34f4700')throw Error('Windows OpenSSL MinGW patch bytes have changed: '+d);"
+          if errorlevel 1 exit /b 1
+          echo PASS: trusted LF MinGW OpenSSL patch on Windows checkout
+      - name: Initialize MSYS2
+        shell: cmd
+        run: |
+          if not exist C:\msys64\usr\bin\bash.exe exit /b 1
+          C:\msys64\usr\bin\bash.exe -lc "true"
+          C:\msys64\usr\bin\bash.exe -lc "pacman --version"
+          if errorlevel 1 exit /b 1
+      - name: Finish MSYS2 core upgrade across fresh Windows CMD processes
+        shell: cmd
+        run: |
+          rem A first MSYS2 core update can replace pacman and terminate its own
+          rem shell with exit 1. Never suppress failure of the second fresh run.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          rem After the first core phase, a second archive-tool upgrade may also
+          rem exit 1 even though its packages were installed successfully.
+          rem Only the fresh third audit is allowed to determine final success.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          if errorlevel 1 exit /b 1
+          rem pacman -Qu may exit 1 when no packages are pending; the third
+          rem pacman -Syu command above is the definitive no-drift gate.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Q pacman filesystem bsdtar"
+          if errorlevel 1 exit /b 1
+          echo PASS: MSYS2 core and full upgrade completed in fresh shells
+      - name: Acquire exactly pinned and signed Windows build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/crylo-reviewed-win-deps.sh"
+          cat > "$script" <<'SH'
+          set -euo pipefail
+          export MSYSTEM=MINGW64
+          export PATH=/mingw64/bin:/usr/bin
+          pacman -S --needed --noconfirm \
+            mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-pkgconf make python python-pip perl \
+            patch diffutils tar wget curl \
+            mingw-w64-x86_64-boost mingw-w64-x86_64-protobuf \
+            mingw-w64-x86_64-abseil-cpp mingw-w64-x86_64-zeromq \
+            mingw-w64-x86_64-libsodium mingw-w64-x86_64-zstd \
+            mingw-w64-x86_64-zlib mingw-w64-x86_64-icu \
+            mingw-w64-x86_64-libiconv mingw-w64-x86_64-readline \
+            mingw-w64-x86_64-ncurses mingw-w64-x86_64-miniupnpc \
+            mingw-w64-x86_64-ldns
+          mkdir -p /tmp/crylo-msys2-pinned
+          cd /tmp/crylo-msys2-pinned
+          cat > packages.txt <<'PINS'
+          mingw-w64-x86_64-abseil-cpp-20260817.0-1-any.pkg.tar.zst 2fb525de7a87f25b4b5cfd2d0c8f2a40c24f7bebfc18aca4dd693e92e624c481
+          mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst 89fb61549a437d65076a092a367fcb264fc7045ee9ebef48cd81f5a76a5588f8
+          mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst 124edc26b009678a4c5e759481a364abf63ed7f2f49a53092e8bd0a47c0c0740
+          mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst 4d737e09dd1137bb318e2d563962ddcbe511de02155e5835affc1f09d174c6a3
+          PINS
+          while read -r file hash; do
+            url="https://repo.msys2.org/mingw/mingw64/$file"
+            curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+              --silent --show-error --output "$file" "$url"
+            curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+              --silent --show-error --output "$file.sig" "$url.sig"
+            printf '%s  %s\n' "$hash" "$file" | sha256sum -c -
+            gpgv --keyring /etc/pacman.d/gnupg/pubring.gpg "$file.sig" "$file"
+            pacman -Qp "$file"
+          done < packages.txt
+          pacman -U --noconfirm \
+            mingw-w64-x86_64-abseil-cpp-20260817.0-1-any.pkg.tar.zst \
+            mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst \
+            mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst \
+            mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst
+          cat > versions.txt <<'VERSIONS'
+          mingw-w64-x86_64-hidapi 0.15.0
+          mingw-w64-x86_64-libusb 1.0.30
+          mingw-w64-x86_64-unbound 1.26.1
+          mingw-w64-x86_64-boost 1.92.0
+          mingw-w64-x86_64-protobuf 36.2
+          mingw-w64-x86_64-abseil-cpp 20260817.0
+          mingw-w64-x86_64-zeromq 4.3.5
+          mingw-w64-x86_64-libsodium 1.0.22
+          mingw-w64-x86_64-libiconv 1.19
+          mingw-w64-x86_64-icu 78.3
+          VERSIONS
+          while read -r pkg expected; do
+            actual="$(pacman -Q "$pkg" | awk '{print $2}' | sed -E 's/-[0-9]+$//')"
+            test "$actual" = "$expected" || { echo "ERROR: pinned $pkg: expected $expected found $actual"; exit 1; }
+            echo "VERIFIED: $pkg $actual"
+          done < versions.txt
+          for tool in x86_64-w64-mingw32-gcc cmake make pkg-config python3 protoc patch curl perl tar; do
+            command -v "$tool"
+          done
+          echo 'PASS: pinned MSYS2 Windows build dependencies'
+          SH
+          tr -d '\r' < "$script" > "$script.unix"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
+      - name: Fail-fast diagnostic of native Protobuf DLL resolution before OpenSSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/crylo-protoc-runtime-gate.sh"
+          cat > "$script" <<'SH'
+          set -uo pipefail
+          export MSYSTEM=MINGW64
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          echo '===== CRYLO MSYS2 CMAKE-SHELL PROTOC RUNTIME GATE ====='
+          printf 'MSYSTEM=%s\nPATH=%s\n' "$MSYSTEM" "$PATH"
+          echo "protoc=$(command -v protoc)"
+          echo '===== Native protoc launch ====='
+          protoc --version
+          rc=$?
+          echo "protoc exit status=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo '===== protoc imported Windows DLL names ====='
+            /mingw64/bin/objdump.exe -p /mingw64/bin/protoc.exe | grep 'DLL Name:' || true
+            echo '===== MSYS2 cygcheck runtime dependency resolution ====='
+            if [ -x /usr/bin/cygcheck.exe ]; then
+              /usr/bin/cygcheck.exe /mingw64/bin/protoc.exe || true
+            else
+              echo 'cygcheck.exe unavailable'
+            fi
+            echo '===== Selected environment variables ====='
+            env | grep -Ei '^(MSYSTEM|MINGW_PREFIX|MSYS2_PATH_TYPE|PATH|LD_LIBRARY_PATH|PROTOBUF|CMAKE)=' || true
+            echo 'FAIL: pinned protoc cannot execute from the exact Windows CMake shell'
+            exit 1
+          fi
+          for required in libabsl_hash-2608.0.0.dll libabsl_log_initialize-2608.0.0.dll libabsl_strings-2608.0.0.dll; do
+            test -f "/mingw64/bin/$required" || {
+              echo "FAIL: matching Abseil runtime DLL missing: $required"
+              exit 1
+            }
+          done
+          pacman -Qkk mingw-w64-x86_64-protobuf mingw-w64-x86_64-abseil-cpp
+          echo 'PASS: pinned protoc executes from Windows CMake shell'
+          SH
+          tr -d '\r' < "$script" > "$script.unix"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")'"
+      - name: Verify normal-user CMD release prerequisites
+        shell: cmd
+        run: |
+          set "CRYLO_JOBS=1"
+          call crylo.cmd --check
+          if errorlevel 1 exit /b 1
+      - name: Build Windows native binaries and matching Electron without signing
+        shell: cmd
+        run: |
+          set "CRYLO_JOBS=1"
+          set "CSC_IDENTITY_AUTO_DISCOVERY=false"
+          rem Native protoc requires the pinned MinGW DLL runtime in PATH.
+          set "PATH=C:\msys64\mingw64\bin;C:\msys64\usr\bin;%PATH%"
+          C:\msys64\mingw64\bin\protoc.exe --version
+          if errorlevel 1 exit /b 1
+          call crylo.cmd release
+          if errorlevel 1 exit /b 1
+          if not exist build\win-x64\bin\CryLo-daemon.exe exit /b 1
+          if not exist build\win-x64\bin\CryLo-wallet.exe exit /b 1
+          if not exist build\win-x64\bin\CryLo-wallet-rpc.exe exit /b 1
+          if not exist build\electron-runtime\win\WINDOWS-BUILD-RUNTIME-MANIFEST.json exit /b 1
+          echo PASS: Windows native and Electron unsigned release candidate
+      - name: Compile and run real wallet storage roundtrip tests on Windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/crylo-windows-wallet-storage-tests.sh"
+          cat > "$script" <<'SH'
+          set -euo pipefail
+          export MSYSTEM=MINGW64
+          export PATH="/mingw64/bin:/usr/bin"
+          root="${1:?Windows source checkout path argument was not supplied}"
+          cd "$root/build/win-x64"
+          test -f CMakeCache.txt
+          grep -Fxq 'BUILD_TESTS:BOOL=OFF' CMakeCache.txt
+          # Reuse the already-compiled native libraries and pinned OpenSSL;
+          # enable only the unit_tests target, without repackaging Electron.
+          cmake -D BUILD_TESTS=ON -D MONERO_WALLET_CRYPTO_BENCH=cn .
+          grep -Fxq 'BUILD_TESTS:BOOL=ON' CMakeCache.txt
+          cmake --build . --parallel 1 --target unit_tests
+          executable="$(find . -type f -name unit_tests.exe -print -quit)"
+          test -n "$executable" || { echo 'ERROR: wallet unit test executable absent'; exit 1; }
+          test_listing="$("$executable" --gtest_list_tests)"
+          grep -Fq 'account_tags_survive_store_and_reload' <<< "$test_listing"
+          # Historical Monero fixture tests require wallet_00fd416a.keys,
+          # which is not part of the CryLo repository. Do not fabricate that
+          # key file or silently report legacy migration compatibility.
+          test ! -f "$root/tests/data/wallet_00fd416a.keys" || {
+            echo 'ERROR: historical wallet fixture appeared; reassess test selection'; exit 1;
+          }
+          echo 'NOTICE: 3 historical Monero wallet tests remain unvalidated (missing original .keys fixture).'
+          "$executable" --data-dir "$root/tests/data" --gtest_filter='wallet_storage.store_to_mem2file:wallet_storage.change_password_in_memory:wallet_storage.change_password_mem2file:wallet_storage.account_tags_survive_store_and_reload:wallet_storage.crylo_uri_roundtrip:wallet_storage.generated_*'
+          echo 'PASS: current CryLo wallet save/reopen, password and account-tag storage tests'
+          SH
+          tr -d '\r' < "$script" > "$script.unix"
+          C:/msys64/usr/bin/bash.exe -lc "bash '$(cygpath -u "$script.unix")' '$(cygpath -u "$GITHUB_WORKSPACE")'"
+      - name: Audit complete Windows standalone runtime closure
+        shell: cmd
+        run: |
+          node -e "const fs=require('fs'),path=require('path'),c=require('crypto');const dir='build/electron-runtime/win';const v=JSON.parse(fs.readFileSync(path.join(dir,'WINDOWS-BUILD-RUNTIME-MANIFEST.json'),'utf8'));if(!Array.isArray(v.runtime)||v.runtime.length===0)throw Error('No Windows DLL closure');for(const x of v.runtime){const p=path.join(dir,x.file);const b=fs.readFileSync(p);const h=c.createHash('sha256').update(b).digest('hex');if(b.length!==x.size||h!==x.sha256)throw Error('Runtime DLL mismatch '+x.file);}console.log('PASS: exact '+v.runtime.length+' Windows DLLs retained for signable standalone bundle');"
+          if errorlevel 1 exit /b 1
+      - name: Record artifact hashes and source revision
+        shell: cmd
+        run: |
+          mkdir "%RUNNER_TEMP%\crylo-windows-unsigned-audit"
+          git rev-parse HEAD > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\SOURCE-COMMIT.txt"
+          certutil -hashfile build\win-x64\bin\CryLo-daemon.exe SHA256 > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\DAEMON-SHA256.txt"
+          if errorlevel 1 exit /b 1
+          certutil -hashfile build\win-x64\bin\CryLo-wallet.exe SHA256 > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\WALLET-SHA256.txt"
+          if errorlevel 1 exit /b 1
+          certutil -hashfile build\win-x64\bin\CryLo-wallet-rpc.exe SHA256 > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\RPC-SHA256.txt"
+          if errorlevel 1 exit /b 1
+          echo CI validation only - not Pi1 signed > "%RUNNER_TEMP%\crylo-windows-unsigned-audit\UNSIGNED.txt"
+      - name: Retain unsigned Windows candidate only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-security-parity-windows-x64-UNSIGNED
+          path: |
+            build/win-x64/bin/CryLo-daemon.exe
+            build/win-x64/bin/CryLo-wallet.exe
+            build/win-x64/bin/CryLo-wallet-rpc.exe
+            build/electron-runtime/win/BINARY-MANIFEST.txt
+            build/electron-runtime/win/WINDOWS-BUILD-RUNTIME-MANIFEST.json
+            build/electron-runtime/win/*.dll
+            electron/dist/*.exe
+            ${{ runner.temp }}/crylo-windows-unsigned-audit/*
+          if-no-files-found: error
+          retention-days: 30
