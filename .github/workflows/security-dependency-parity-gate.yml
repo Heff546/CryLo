@@ -1,0 +1,78 @@
+name: CryLo aligned security dependency pins — release guard
+
+# No build, signing, tag creation or publication. Fails closed if common
+# native-security dependency versions drift from the Windows baseline.
+on:
+  push:
+    branches:
+      - release/five-platform-security-parity
+    paths:
+      - contrib/depends/packages/abseil.mk
+      - contrib/depends/packages/native_abseil.mk
+      - .github/workflows/security-dependency-parity-gate.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  security-pins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout candidate with no stored credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+          fetch-depth: 0
+      - name: Validate exact Windows-equivalent native dependency versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          windows = Path(".github/workflows/windows-pinned-unsigned-native-release.yml").read_text()
+          mapping = {
+            "mingw-w64-x86_64-abseil-cpp": "abseil",
+            "mingw-w64-x86_64-hidapi": "hidapi",
+            "mingw-w64-x86_64-libusb": "libusb",
+            "mingw-w64-x86_64-unbound": "unbound",
+            "mingw-w64-x86_64-boost": "boost",
+            "mingw-w64-x86_64-protobuf": "protobuf",
+            "mingw-w64-x86_64-zeromq": "zeromq",
+            "mingw-w64-x86_64-libsodium": "sodium",
+            "mingw-w64-x86_64-libiconv": "libiconv",
+          }
+          begin = windows.index("cat > versions.txt <<'VERSIONS'")
+          end = windows.index("\n          VERSIONS", begin)
+          version_lines = windows[begin:end].splitlines()[1:]
+          win_versions = dict(line.strip().split() for line in version_lines)
+          for win_name, recipe in mapping.items():
+            expected = win_versions[win_name]
+            content = Path(f"contrib/depends/packages/{recipe}.mk").read_text()
+            actual = next(line.split("=", 1)[1] for line in content.splitlines()
+                          if line.startswith("$(package)_version="))
+            assert actual == expected, f"{recipe} drift: Windows={expected} shared={actual}"
+            print(f"PASS: {recipe} = {expected}")
+          host = Path("contrib/depends/packages/native_abseil.mk").read_text()
+          target = Path("contrib/depends/packages/abseil.mk").read_text()
+          for text in (host, target):
+            assert "$(package)_version=20260817.0" in text
+            assert "$(package)_sha256_hash=f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d" in text
+          assert "libabsl_hash-2608.0.0.dll" in windows
+          print("PASS: target/host Abseil both pinned to 20260817.0 with common SHA-256")
+          PY
+      - name: Verify Abseil upstream archive SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/abseil-cpp-20260817.0.tar.gz"
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+            --silent --show-error \
+            https://github.com/abseil/abseil-cpp/releases/download/20260817.0/abseil-cpp-20260817.0.tar.gz \
+            --output "$archive"
+          printf '%s  %s\n' f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d "$archive" | sha256sum -c -
+          tar -tf "$archive" > "$RUNNER_TEMP/abseil-archive-members.txt"
+          test -s "$RUNNER_TEMP/abseil-archive-members.txt"
+          echo 'PASS: upstream archive verified; no native rebuild, sign, or publish'
