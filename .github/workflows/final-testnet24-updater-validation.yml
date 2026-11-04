@@ -1,0 +1,81 @@
+name: CryLo Testnet.24 five-platform final updater contracts (no-build)
+
+# Validates the immutable shared release source. CI never signs or publishes.
+on:
+  push:
+    branches:
+      - release/final-testnet24-alignment
+    paths:
+      - .github/workflows/final-testnet24-updater-validation.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  update-validation:
+    name: Baseline updater and data-safety contracts — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, runner: windows-2022, family: win }
+          - { name: linux-x64, runner: ubuntu-24.04, family: linux }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, family: linux }
+          - { name: macos-intel, runner: macos-15-intel, family: mac }
+          - { name: macos-arm64, runner: macos-15, family: mac }
+    steps:
+      - name: Checkout exact Windows Testnet.24 release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 25ff0f466647761d30fcab532b89f729f3e68df2
+          persist-credentials: false
+          set-safe-directory: false
+          submodules: false
+      - name: Pin Node runtime for release test tools
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
+      - name: Verify common updater, artifact security and data preservation contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 25ff0f466647761d30fcab532b89f729f3e68df2
+          test "$(node --version)" = v24.21.0
+          node --check scripts/crylo.js
+          node --check scripts/release/create-release-manifest.js
+          node --check scripts/release/sign-release-manifest.js
+          node --check scripts/release/verify-release-manifest.js
+          node --check scripts/release/crylo-release.js
+          node --check scripts/release/macos-installed-release-state.js
+          node --check scripts/release/macos-installed-update.js
+          node --check electron/security/macos-update-client.js
+          node --test scripts/tests/signed-update-contract.test.js
+          node scripts/tests/install-win-linux-pi-static.js
+          node --test electron/test/release-packaging-security.test.js
+          echo 'PASS: shared source and signed-update contract checks'
+      - name: Verify native Unix CLI syntax and CryLo address audit
+        if: matrix.family != 'win'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n ./crylo
+          sh -n scripts/release/macos-installed-command.sh
+          python3 scripts/tests/crylo-functional-address-audit.py
+          echo 'PASS: CryLo native shell, address and identity contract'
+      - name: Verify installed macOS single-command updater
+        if: matrix.family == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/tests/macos-installed-command.test.js
+          echo 'PASS: macOS single-command updater'
+      - name: Verify CMD-only Windows normal-user launcher
+        if: matrix.family == 'win'
+        shell: cmd
+        run: |
+          call crylo.cmd help
+          if errorlevel 1 exit /b 1
+          echo PASS: Windows normal users need no PowerShell
