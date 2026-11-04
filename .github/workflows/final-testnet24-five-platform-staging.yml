@@ -1,0 +1,244 @@
+name: CryLo Testnet.24 final five-platform no-build staging
+
+# CI-only unsigned evidence and packages. Never tag, sign, update or publish.
+on:
+  push:
+    branches:
+      - release/final-testnet24-alignment
+    paths:
+      - .github/workflows/final-testnet24-five-platform-staging.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  assemble:
+    name: Verify and stage exactly five existing binaries (no compilation)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Checkout immutable Windows Testnet.24 source for trust checks
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 25ff0f466647761d30fcab532b89f729f3e68df2
+          persist-credentials: false
+          set-safe-directory: false
+          submodules: false
+
+      - name: Check immutable baseline and standard signed-update contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 25ff0f466647761d30fcab532b89f729f3e68df2
+          test -z "$(git status --porcelain --untracked-files=all)"
+          node --check scripts/crylo.js
+          node --check scripts/release/verify-release-manifest.js
+          node scripts/tests/install-win-linux-pi-static.js
+          node --test scripts/tests/signed-update-contract.test.js
+          test "$(grep '^$(package)_version=' contrib/depends/packages/abseil.mk)" = '$(package)_version=20260526.0'
+
+      - name: Download only pinned successful release artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/crylo-five-input" "$RUNNER_TEMP/crylo-five-output"
+          echo "CRYLO_INPUT=$RUNNER_TEMP/crylo-five-input" >> "$GITHUB_ENV"
+          echo "CRYLO_OUTPUT=$RUNNER_TEMP/crylo-five-output" >> "$GITHUB_ENV"
+          for record in \
+            'linux-x64|41563853640|d48909d33f5f9f73287d642b52c101b06476182c|13199187786|crylo-testnet24-baseline-linux-x64-UNSIGNED|c49bf9470ec34cca88384a5989fa495de1fae4756183a729ea58da8ecef0958b' \
+            'linux-arm64|41563853640|d48909d33f5f9f73287d642b52c101b06476182c|13199714025|crylo-testnet24-baseline-linux-arm64-UNSIGNED|67cc53663801e8ec78ea32a58a34acf58076efa34fb7fcdcd95aa7f30377015d' \
+            'mac-x64|41751666042|95d48aba737591deb2baed0dc09fd72130c502ee|13289003019|crylo-final-testnet24-mac-x64-UNSIGNED|b7d79edfe37c65d7d3d612cb0b18cb53e8cc8036534f39c3ad378d7c7ef85957' \
+            'mac-arm64|41751666042|95d48aba737591deb2baed0dc09fd72130c502ee|13287702262|crylo-final-testnet24-mac-arm64-UNSIGNED|e0e1ddb67c666913bc51d4976b749f44cd1d8fe3c17cf0f666b77f14db1bdc04'; do
+            IFS='|' read -r target run commit artifact name digest <<< "$record"
+            test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.conclusion')" = success
+            test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.head_sha')" = "$commit"
+            test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$artifact" --jq '.name')" = "$name"
+            test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$artifact" --jq '.expired')" = false
+            test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$artifact" --jq '.digest')" = "sha256:$digest"
+            gh run download "$run" --repo Heff546/CryLo --name "$name" --dir "$RUNNER_TEMP/crylo-five-input/$target"
+            test -n "$(find "$RUNNER_TEMP/crylo-five-input/$target" -type f -print -quit)"
+            echo "PASS: pinned $target, CI artifact $artifact"
+          done
+          mkdir -p "$RUNNER_TEMP/crylo-five-input/win-x64"
+          gh release download v1.1.1-testnet.24 --repo Heff546/CryLo \
+            --dir "$RUNNER_TEMP/crylo-five-input/win-x64" \
+            --pattern 'CryLo-Release-1.1.1-win-x64.zip' \
+            --pattern 'crylo-release-manifest.json' \
+            --pattern 'crylo-release-manifest.json.sig' \
+            --pattern 'SHA256SUMS'
+          test "$(gh api repos/Heff546/CryLo/releases/tags/v1.1.1-testnet.24 --jq '.draft')" = false
+          printf '%s  %s\n' c448150c62b02a974bb28bb62f292234e2a10827b3a452c831791cf4926df40c \
+            "$RUNNER_TEMP/crylo-five-input/win-x64/CryLo-Release-1.1.1-win-x64.zip" | sha256sum -c -
+
+      - name: Re-verify original Pi1 signed Windows Testnet.24 artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          input="$CRYLO_INPUT/win-x64"
+          node scripts/release/verify-release-manifest.js \
+            --manifest "$input/crylo-release-manifest.json" \
+            --signature "$input/crylo-release-manifest.json.sig" \
+            --network testnet --platform win --architecture x64 --minimum-sequence 24
+          (cd "$input" && sha256sum -c SHA256SUMS)
+          echo 'PASS: original Windows ZIP and Ed25519 release manifest remain unchanged'
+
+      - name: Validate native architecture, embedded checksums and assemble existing files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import struct
+          import subprocess
+          import tarfile
+
+          SOURCE = "25ff0f466647761d30fcab532b89f729f3e68df2"
+          VERSION = "1.1.1"
+          root = Path(os.environ["CRYLO_INPUT"])
+          output = Path(os.environ["CRYLO_OUTPUT"])
+          assert output.is_dir() and not list(output.iterdir()), "Output must start empty"
+          targets = [("win", "x64"), ("linux", "x64"), ("linux", "arm64"),
+                     ("mac", "x64"), ("mac", "arm64")]
+          expected_tree = subprocess.check_output(["git", "ls-tree", "-r", SOURCE])
+
+          def files(directory):
+              assert directory.is_dir(), f"Missing input: {directory}"
+              items = list(directory.rglob("*"))
+              assert items and all(not p.is_symlink() for p in items), "Symlink or empty artifact"
+              assert all(p.is_file() or p.is_dir() for p in items), "Special file in artifact"
+              return [p for p in items if p.is_file()]
+
+          def one(items, name):
+              matches = [p for p in items if p.name == name]
+              assert len(matches) == 1, f"Expected one {name}, got {len(matches)}"
+              return matches[0]
+
+          def sha(path):
+              h = hashlib.sha256()
+              with path.open("rb") as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          def receipts(items, name):
+              lines = one(items, name).read_text().splitlines()
+              result = {}
+              for line in lines:
+                  digest, filename = line.strip().split(None, 1)
+                  filename = Path(filename.lstrip("*")).name
+                  assert len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
+                  assert filename not in result, f"Duplicate receipt for {filename}"
+                  result[filename] = digest
+              return result
+
+          def verify(file, receipts):
+              assert receipts.get(file.name) == sha(file), f"Checksum mismatch: {file.name}"
+
+          def check_elf(file, machine):
+              with file.open("rb") as f:
+                  b = f.read(64)
+              assert len(b) >= 20 and b[:4] == bytes([127, 69, 76, 70])
+              assert b[4:6] == bytes([2, 1]) and struct.unpack_from("<H", b, 18)[0] == machine, file
+
+          def check_macho(file, cpu):
+              with file.open("rb") as f:
+                  b = f.read(32)
+              assert len(b) == 32 and struct.unpack_from("<I", b, 0)[0] == 0xfeedfacf, file
+              assert struct.unpack_from("<I", b, 4)[0] == cpu, file
+
+          candidates = []
+          win = one(files(root / "win-x64"), "CryLo-Release-1.1.1-win-x64.zip")
+          assert sha(win) == "c448150c62b02a974bb28bb62f292234e2a10827b3a452c831791cf4926df40c"
+          shutil.copyfile(win, output / win.name)
+          candidates.append(("win", "x64", win.name))
+          for platform, arch in targets[1:]:
+              members = files(root / f"{platform}-{arch}")
+              assert one(members, "SOURCE-COMMIT.txt").read_text().strip() == SOURCE
+              native_hashes = receipts(members, "NATIVE-SHA256SUMS.txt")
+              natives = []
+              for name in ("CryLo-daemon", "CryLo-wallet", "CryLo-wallet-rpc"):
+                  file = one(members, name)
+                  verify(file, native_hashes)
+                  if platform == "linux":
+                      check_elf(file, 0x3e if arch == "x64" else 0xb7)
+                  else:
+                      check_macho(file, 0x01000007 if arch == "x64" else 0x0100000c)
+                  natives.append(file)
+              if platform == "linux":
+                  app_name = ("CryLo Wallet-1.1.1.AppImage" if arch == "x64"
+                              else "CryLo Wallet-1.1.1-arm64.AppImage")
+                  app = one(members, app_name)
+                  verify(app, receipts(members, "ELECTRON-SHA256SUMS.txt"))
+                  check_elf(app, 0x3e if arch == "x64" else 0xb7)
+                  tarname = f"CryLo-Release-{VERSION}-linux-{arch}.tar"
+                  archive = output / tarname
+                  entries = [(p, p.name) for p in natives]
+                  entries.append((app, f"CryLo-Wallet-{VERSION}-{arch}.AppImage"))
+                  with tarfile.open(archive, "w", format=tarfile.USTAR_FORMAT) as tar:
+                      for file, name in sorted(entries, key=lambda x: x[1]):
+                          info = tar.gettarinfo(str(file), arcname=name)
+                          info.uid = info.gid = 0
+                          info.uname = info.gname = ""
+                          info.mtime = 0
+                          info.mode = 0o755
+                          with file.open("rb") as source:
+                              tar.addfile(info, source)
+                  candidates.append((platform, arch, tarname))
+              else:
+                  assert one(members, "ALL-TRACKED-FILES.txt").read_bytes() == expected_tree
+                  pkg_name = f"CryLo-{VERSION}-mac-{arch}-unsigned.pkg"
+                  pkg = one(members, pkg_name)
+                  verify(pkg, receipts(members, "PKG-SHA256SUMS.txt"))
+                  shutil.copyfile(pkg, output / pkg.name)
+                  candidates.append((platform, arch, pkg.name))
+              print(f"PASS: {platform}/{arch} native headers, signed-off CI checksums, exact source")
+
+          assert len(candidates) == 5 and len({c[2] for c in candidates}) == 5
+          report = {
+              "classification": "UNSIGNED_CI_STAGING_ONLY",
+              "sourceCommit": SOURCE,
+              "releaseVersion": VERSION,
+              "network": "testnet",
+              "pi1SigningRequired": True,
+              "officialManifestCreated": False,
+              "published": False,
+              "abseilDifference": {
+                  "windows": "MSYS2 20260817.0 / 2608 runtime",
+                  "linuxAndMac": "source-pinned 20260526.0 / static",
+                  "treatment": "Preserve platform-specific verified libraries; do not swap ABI"
+              },
+              "manifestBranchPolicy": "gitBranch nonempty if present; optional when detached",
+              "candidates": [
+                  {"platform": p, "architecture": a, "file": n,
+                   "sha256": sha(output / n), "size": (output / n).stat().st_size}
+                  for p, a, n in candidates
+              ]
+          }
+          (output / "UNSIGNED-STAGING-ONLY.json").write_text(json.dumps(report, indent=2) + "\n")
+          (output / "SHA256SUMS-CI-ONLY.txt").write_text(
+              "".join(f"{c['sha256']}  {c['file']}\n" for c in report["candidates"]))
+          (output / "NO-RELEASE-PUBLICATION.txt").write_text(
+              "CI staging only; Pi1 creates and signs new official five-target manifest.\n")
+          print("PASS: five complete staged candidates; no signing or publication")
+          PY
+          (cd "$CRYLO_OUTPUT" && sha256sum -c SHA256SUMS-CI-ONLY.txt)
+          test "$(find "$CRYLO_OUTPUT" -maxdepth 1 -type f -name '*.pkg' | wc -l)" -eq 2
+          test "$(find "$CRYLO_OUTPUT" -maxdepth 1 -type f -name '*.tar' | wc -l)" -eq 2
+          test "$(find "$CRYLO_OUTPUT" -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 1
+
+      - name: Retain complete unsigned five-target handoff for Pi1 validation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-final-five-platform-testnet24-UNSIGNED-DO-NOT-PUBLISH
+          path: ${{ env.CRYLO_OUTPUT }}/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
