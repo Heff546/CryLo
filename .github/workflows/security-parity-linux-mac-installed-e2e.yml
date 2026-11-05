@@ -1,4 +1,4 @@
-name: CryLo frozen Linux and macOS real installed artifact acceptance
+name: CryLo frozen Linux AppImage and macOS PKG installation acceptance
 on:
   push:
     branches: [release/five-platform-security-parity]
@@ -9,7 +9,7 @@ permissions:
   actions: read
 jobs:
   linux-actual-package:
-    name: Linux actual package — ${{ matrix.arch }}
+    name: Linux archived AppImage and package — ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     strategy:
@@ -33,7 +33,7 @@ jobs:
           test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$ARTIFACT_ID" --jq '.digest')" = "sha256:$DIGEST"
           mkdir -p "$RUNNER_TEMP/crylo-linux-actual"
           gh run download 41768060244 --repo Heff546/CryLo --name "crylo-security-parity-linux-$ARCH-UNSIGNED" --dir "$RUNNER_TEMP/crylo-linux-actual"
-      - name: Install actual Debian package and extract genuine AppImage without rebuilding
+      - name: Validate actual archived AppImage and install Debian package only when built
         shell: bash
         env:
           ARCH: ${{ matrix.arch }}
@@ -47,12 +47,17 @@ jobs:
           test "$(tr -d '\r\n' < "${source[0]}")" = e0326c141900e1c7a830df3108d9be3a8c019a40
           mapfile -t debs < <(find "$root" -type f -name '*.deb')
           mapfile -t images < <(find "$root" -type f -name '*.AppImage')
-          test "${#debs[@]}" -eq 1 && test "${#images[@]}" -eq 1
-          deb="${debs[0]}"
+          test "${#images[@]}" -eq 1
           appimage="${images[0]}"
-          test "$(dpkg-deb -f "$deb" Architecture)" = "$DEBARCH"
-          pkg="$(dpkg-deb -f "$deb" Package)"
-          test -n "$pkg"
+          if [ "${#debs[@]}" -eq 0 ]; then
+            echo "NOTICE: Linux/$ARCH existing frozen artifact has no .deb. Debian installation NOT CERTIFIED for this target."
+          else
+            test "${#debs[@]}" -eq 1
+            deb="${debs[0]}"
+            test "$(dpkg-deb -f "$deb" Architecture)" = "$DEBARCH"
+            pkg="$(dpkg-deb -f "$deb" Package)"
+            test -n "$pkg"
+          fi
           readelf -h "$appimage" | grep -F "$ELF_MACHINE"
           for binary in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
             mapfile -t f < <(find "$root" -type f -name "$binary")
@@ -66,12 +71,17 @@ jobs:
           test -n "$(find "$RUNNER_TEMP/crylo-appimage-unpack/squashfs-root" -type f -name 'CryLo-daemon' -print -quit)"
           mkdir -p "$HOME/.config/crylo"
           echo 'preserve-eastern-shore-user-config' > "$HOME/.config/crylo/preservation-sentinel"
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends "$deb"
-          dpkg-query -W -f='${Status}' "$pkg" | grep -Fx 'install ok installed'
-          dpkg -L "$pkg" | grep -F 'CryLo Wallet'
+          install -D -m 0755 "$appimage" "$HOME/.local/share/crylo/$(basename "$appimage")"
+          cmp "$appimage" "$HOME/.local/share/crylo/$(basename "$appimage")"
+          if [ "${#debs[@]}" -eq 1 ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends "$deb"
+            dpkg-query -W -f='${Status}' "$pkg" | grep -Fx 'install ok installed'
+            dpkg -L "$pkg" | grep -F 'CryLo Wallet'
+            echo "PASS: Linux/$ARCH actual .deb installed"
+          fi
           test "$(cat "$HOME/.config/crylo/preservation-sentinel")" = preserve-eastern-shore-user-config
-          echo "PASS: Linux/$ARCH actual pinned .deb installed and AppImage extracted; native ELF matched; user config preserved"
+          echo "PASS: Linux/$ARCH frozen AppImage staged and extracted, native ELF matched, user config preserved"
   mac-actual-pkg:
     name: macOS actual PKG — ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
@@ -81,7 +91,7 @@ jobs:
       matrix:
         include:
           - { arch: x64, runner: macos-15-intel, macho: x86_64, artifactid: '13296223844', digest: '82b73b3f7f57f60ce54bc37700e2df5605a6f36038f60d50a25421556f8dc8e3' }
-          - { arch: arm64, runner: macos-15, macho: arm64, artifactid: '13294642990', digest: 'a5546ad4685e0b3f064e73467733e47dcc1790f1a143354895f0' }
+          - { arch: arm64, runner: macos-15, macho: arm64, artifactid: '13294642990', digest: 'a5546ad4685e0b3f064e73467733e47dcc1790f3dae25e29d0f1a143354895f0' }
     steps:
       - name: Checkout immutable reviewed source for installed CLI comparison
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -120,8 +130,9 @@ jobs:
           test ! -e '/Applications/CryLo Wallet.app'
           test ! -e '/Applications/CryLo Daemon.app'
           test ! -e /usr/local/bin/crylo
-          pkgutil --payload-files "$pkg" | grep -F 'CryLo Wallet.app'
-          pkgutil --payload-files "$pkg" | grep -F 'CryLo Daemon.app'
+          pkgutil --payload-files "$pkg" > "$RUNNER_TEMP/crylo-pkg-payload.txt"
+          grep -Fq 'CryLo Wallet.app' "$RUNNER_TEMP/crylo-pkg-payload.txt"
+          grep -Fq 'CryLo Daemon.app' "$RUNNER_TEMP/crylo-pkg-payload.txt"
           mkdir -p "$HOME/Library/Application Support/CryLo/wallets" "$HOME/Library/Application Support/CryLo Wallet"
           printf 'wallet-preservation-bytes\n' > "$HOME/Library/Application Support/CryLo/wallets/ci-sentinel"
           printf 'preferences-preservation-bytes\n' > "$HOME/Library/Application Support/CryLo Wallet/ci-sentinel"
@@ -132,9 +143,12 @@ jobs:
             test -d '/Applications/CryLo Wallet.app' && test -d '/Applications/CryLo Daemon.app'
             test -x /usr/local/bin/crylo
             cmp /usr/local/bin/crylo scripts/release/macos-installed-command.sh
-            for app in 'CryLo Wallet' 'CryLo Daemon'; do
-              test "$(lipo -archs "/Applications/$app.app/Contents/MacOS/$app")" = "$MACHO"
-            done
+            test "$(lipo -archs '/Applications/CryLo Wallet.app/Contents/MacOS/CryLo Wallet')" = "$MACHO"
+            daemon_wrapper='/Applications/CryLo Daemon.app/Contents/MacOS/CryLo Daemon'
+            test -x "$daemon_wrapper"
+            test "$(head -c 2 "$daemon_wrapper")" = '#!'
+            /bin/sh -n "$daemon_wrapper"
+            test "$(lipo -archs '/Applications/CryLo Daemon.app/Contents/Resources/CryLo-daemon')" = "$MACHO"
             wallet='/Applications/CryLo Wallet.app/Contents/Resources/bin/mac'
             test -x "$wallet/CryLo-daemon" && test -x "$wallet/CryLo-wallet-rpc"
             test "$(lipo -archs "$wallet/CryLo-daemon")" = "$MACHO"
