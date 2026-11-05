@@ -90,7 +90,7 @@ jobs:
           def archcheck(p,platform,arch):
               b=p.read_bytes()[:32]
               if platform=="linux":
-                  assert b[:6]==b"\\x7fELF\\x02\\x01" and struct.unpack_from("<H",b,18)[0]==(62 if arch=="x64" else 183),p
+                  assert b[:6]==b"\x7fELF\x02\x01" and struct.unpack_from("<H",b,18)[0]==(62 if arch=="x64" else 183),p
               if platform=="mac":
                   assert struct.unpack_from("<II",b,0)==(0xfeedfacf,0x01000007 if arch=="x64" else 0x0100000c),p
               if platform=="win":
