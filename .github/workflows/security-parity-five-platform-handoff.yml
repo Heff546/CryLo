@@ -69,10 +69,10 @@ jobs:
               return h.hexdigest()
           def members(d):
               assert d.is_dir()
-              all=list(d.rglob("*"))
-              assert all and all(not p.is_symlink() for p in all)
-              assert all(p.is_dir() or p.is_file() for p in all)
-              return [p for p in all if p.is_file()]
+              entries=list(d.rglob("*"))
+              assert entries and all(not p.is_symlink() for p in entries)
+              assert all(p.is_dir() or p.is_file() for p in entries)
+              return [p for p in entries if p.is_file()]
           def one(fs,name):
               found=[p for p in fs if p.name==name]
               assert len(found)==1,(name,len(found))
