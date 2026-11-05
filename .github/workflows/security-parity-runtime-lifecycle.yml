@@ -1,0 +1,102 @@
+name: CryLo installed-user runtime lifecycle five-platform validation
+on:
+  push:
+    branches: [release/five-platform-security-parity]
+    paths: [.github/workflows/security-parity-runtime-lifecycle.yml]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  linux-runtime-lifecycle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: e0326c141900e1c7a830df3108d9be3a8c019a40
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Provision managed Node and npm in isolated clean user
+        env:
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/crylo-clean-user"
+          mkdir -p "$HOME/.config/crylo"
+          printf 'preserve-private-config\n' > "$HOME/.config/crylo/sentinel"
+          sh ./crylo help
+          d="$HOME/.local/share/crylo/runtime/node-v24.21.0-linux-$ARCH"
+          test -x "$d/bin/node" && test -x "$d/bin/npm"
+          test "$("$d/bin/node" --version)" = v24.21.0
+          test "$("$d/bin/node" -p process.arch)" = "$ARCH"
+          test "$(PATH="$d/bin:$PATH" "$d/bin/npm" --version)" = 12.1.0
+          test "$(cat "$HOME/.config/crylo/sentinel")" = preserve-private-config
+          echo "PASS: isolated clean-user Linux/$ARCH bootstrap"
+      - name: Simulate corrupt runtime and verify repair preserves user configuration
+        env:
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/crylo-clean-user"
+          d="$HOME/.local/share/crylo/runtime/node-v24.21.0-linux-$ARCH"
+          mv "$d/bin/npm" "$d/bin/npm.saved"
+          sh ./crylo help
+          test "$(PATH="$d/bin:$PATH" "$d/bin/npm" --version)" = 12.1.0
+          test ! -e "$d.pre-crylo-bootstrap"
+          test "$(cat "$HOME/.config/crylo/sentinel")" = preserve-private-config
+          echo "PASS: Linux/$ARCH managed-runtime repair and user-data preservation"
+  mac-runtime-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+          - runner: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: e0326c141900e1c7a830df3108d9be3a8c019a40
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Check native architecture and installed updater acceptance tests
+        env:
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e 'if(process.platform!=="darwin"||process.arch!==process.env.ARCH)process.exit(1)'
+          /bin/sh -n crylo
+          /bin/sh -n scripts/release/macos-installed-command.sh
+          node --test scripts/tests/macos-installed-command.test.js scripts/tests/macos-package-trust.test.js scripts/tests/macos-update-staging.test.js
+          echo "PASS: macOS/$ARCH installed CLI and authenticated updater contracts"
+  windows-installer-contract:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: e0326c141900e1c7a830df3108d9be3a8c019a40
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Verify CMD-only bootstrap and installer preservation contract
+        shell: cmd
+        run: |
+          node scripts/tests/install-win-linux-pi-static.js
+          if errorlevel 1 exit /b 1
+          node --test scripts/tests/signed-update-contract.test.js
+          if errorlevel 1 exit /b 1
+          echo PASS: Windows CMD bootstrap and installer contract
