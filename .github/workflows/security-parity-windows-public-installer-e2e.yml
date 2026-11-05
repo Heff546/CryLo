@@ -55,7 +55,20 @@ jobs:
           function Run-CmdInstaller([string]$exe,[string]$args,[string]$stage){
             $cmd='start /wait "" "'+$exe+'" '+$args
             $p=Start-Process -FilePath $env:ComSpec -ArgumentList @('/D','/C',$cmd) -PassThru
-            if(!$p.WaitForExit(420000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw "$stage timeout"}
+            if(!$p.WaitForExit(420000)){
+              Write-Host "DIAGNOSTIC: $stage exceeded 420 seconds"
+              $bootstrap=Join-Path $local 'installer-bootstrap.log'
+              if(Test-Path $bootstrap){
+                Get-Content $bootstrap | Where-Object { $_ -match '^(STAGE|FAIL_STAGE|FAIL_RC|RESULT|RUNTIME_HELPER_RC|HELPER_HASH|NODE_ARCHIVE_HASH|NODE_EXE_HASH|NODE_EXTRACTION|HELPER_CERTUTIL_RC)=' } | ForEach-Object { Write-Host "BOOTSTRAP $_" }
+              } else { Write-Host 'BOOTSTRAP log absent' }
+              foreach($label in @('installer','checkout','node','git','wallet','config')){
+                $where=switch($label){'installer'{$install};'checkout'{$checkout};'node'{$node};'git'{$git};'wallet'{$wallet};'config'{$config}}
+                Write-Host ("FILE {0}: exists={1}" -f $label,(Test-Path $where))
+              }
+              Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(cmd|git|node|CryLo|7z|tar|conhost|nsis)' } | ForEach-Object { Write-Host ("PROCESS {0} pid={1} parent={2}" -f $_.Name,$_.ProcessId,$_.ParentProcessId) }
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              throw "$stage timeout (sanitized installer-stage diagnostics above)"
+            }
             $p.Refresh()
             if($p.ExitCode -ne 0){throw "$stage CMD exit $($p.ExitCode)"}
             if($stage -ne 'uninstall'){
