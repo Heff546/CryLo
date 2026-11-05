@@ -1,0 +1,110 @@
+name: CryLo security-parity public Windows installer real no-token E2E
+on:
+  push:
+    branches: [release/five-platform-security-parity]
+    paths: [.github/workflows/security-parity-windows-public-installer-e2e.yml]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+jobs:
+  windows-public-installer:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Fetch immutable current Windows candidate, CI credentials only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=41768060283
+          id=13296576348
+          name=crylo-security-parity-windows-x64-UNSIGNED
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.head_sha')" = 249bb061ff3ed953e065725799bf751d96d78f5c
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.digest')" = sha256:658f14bd823cc003afcbf5aa3a3dc9a9c283ea3d68f208389c5ee61b9576e097
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$id" --jq '.workflow_run.id')" = "$run"
+          mkdir -p "$RUNNER_TEMP/crylo-current-windows"
+          gh run download "$run" --repo Heff546/CryLo --name "$name" --dir "$RUNNER_TEMP/crylo-current-windows"
+      - name: Fresh install, reinstall, uninstall without GitHub credentials
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:GH_TOKEN -or $env:GITHUB_TOKEN){throw 'End-user test received GitHub credentials'}
+          $artifact=Join-Path $env:RUNNER_TEMP 'crylo-current-windows'
+          $source=@(Get-ChildItem $artifact -Recurse -File -Filter SOURCE-COMMIT.txt)
+          if($source.Count -ne 1 -or (Get-Content $source[0].FullName -Raw).Trim() -ne 'e0326c141900e1c7a830df3108d9be3a8c019a40'){throw 'Wrong product source'}
+          $setups=@(Get-ChildItem $artifact -Recurse -File -Filter '*.exe'|Where-Object{$_.Name -match 'Setup'})
+          if($setups.Count -ne 1){throw "Expected one NSIS setup, found $($setups.Count)"}
+          $setup=$setups[0].FullName
+          $install=Join-Path $env:RUNNER_TEMP 'CryLoPublicInstallQA'
+          $checkout=Join-Path $env:USERPROFILE 'CryLo'
+          $local=Join-Path $env:LOCALAPPDATA 'CryLo'
+          $wallet=Join-Path $local 'wallets\preservation-sentinel'
+          $config=Join-Path $env:APPDATA 'CryLo\CryLo.conf'
+          $node=Join-Path $local 'runtime\node-v24.21.0-win-x64\node.exe'
+          $git=Join-Path $local 'runtime\mingit-2.56.0.windows.1-x64\cmd\git.exe'
+          $report=Join-Path $env:RUNNER_TEMP 'crylo-security-parity-public-installer-e2e.json'
+          $result=[ordered]@{sourceCommit='e0326c141900e1c7a830df3108d9be3a8c019a40';candidateRun=41768060283;noEndUserGitHubToken=$true;freshInstall=$false;reinstall=$false;uninstall=$false;walletPreserved=$false;configPreserved=$false;published=$false}
+          function Assert-Preserved {
+            if(!(Test-Path $wallet) -or !(Test-Path $config)){throw 'Wallet/config missing'}
+            if((Get-FileHash $wallet -Algorithm SHA256).Hash -ne $walletHash){throw 'Wallet bytes changed'}
+            if((Get-FileHash $config -Algorithm SHA256).Hash -ne $configHash){throw 'Config bytes changed'}
+          }
+          function Run-CmdInstaller([string]$exe,[string]$args,[string]$stage){
+            $cmd='start /wait "" "'+$exe+'" '+$args
+            $p=Start-Process -FilePath $env:ComSpec -ArgumentList @('/D','/C',$cmd) -PassThru
+            if(!$p.WaitForExit(420000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw "$stage timeout"}
+            $p.Refresh()
+            if($p.ExitCode -ne 0){throw "$stage CMD exit $($p.ExitCode)"}
+            if($stage -ne 'uninstall'){
+              $log=Join-Path $local 'installer-bootstrap.log'
+              if(!(Test-Path $log) -or !(Select-String -Path $log -SimpleMatch 'RESULT=READY' -Quiet)){throw "$stage bootstrap incomplete"}
+            }
+          }
+          try {
+            foreach($p in @($install,$checkout,$wallet,$config)){if(Test-Path $p){throw "Dirty disposable runner: $p"}}
+            New-Item -ItemType Directory -Force -Path (Split-Path $wallet),(Split-Path $config)|Out-Null
+            [IO.File]::WriteAllText($wallet,'preserve-wallet-contents')
+            [IO.File]::WriteAllText($config,'preserve-user-configuration')
+            $walletHash=(Get-FileHash $wallet -Algorithm SHA256).Hash
+            $configHash=(Get-FileHash $config -Algorithm SHA256).Hash
+            $env:GIT_TERMINAL_PROMPT='0'
+            $env:GCM_INTERACTIVE='never'
+            $env:GIT_CONFIG_COUNT='1'
+            $env:GIT_CONFIG_KEY_0='credential.helper'
+            $env:GIT_CONFIG_VALUE_0=''
+            & git -c 'credential.helper=' ls-remote https://github.com/Heff546/CryLo.git HEAD | Out-Null
+            if($LASTEXITCODE -ne 0){throw 'Public CryLo repository not anonymously readable'}
+            Run-CmdInstaller $setup ('/S /D='+$install) 'fresh install'
+            Assert-Preserved
+            foreach($p in @((Join-Path $install 'CryLo Wallet.exe'),(Join-Path $install 'resources\bin\win\CryLo-daemon.exe'),(Join-Path $install 'resources\bin\win\CryLo-wallet-rpc.exe'),$node,$git,(Join-Path $checkout 'crylo.cmd'))){
+              if(!(Test-Path $p -PathType Leaf)){throw "Installed dependency or application missing: $p"}
+            }
+            if((& $node --version) -ne 'v24.21.0'){throw 'Wrong Node version'}
+            $head=(& $git -C $checkout rev-parse HEAD).Trim()
+            if($head -ne 'e0326c141900e1c7a830df3108d9be3a8c019a40'){throw "Unexpected installed source $head"}
+            $result.freshInstall=$true
+            Run-CmdInstaller $setup ('/S /D='+$install) 'reinstall'
+            Assert-Preserved
+            $result.reinstall=$true
+            $uninstallers=@(Get-ChildItem $install -File -Filter '*Uninstall*.exe')
+            if($uninstallers.Count -ne 1){throw 'Uninstaller missing or duplicated'}
+            Run-CmdInstaller $uninstallers[0].FullName '/S' 'uninstall'
+            Assert-Preserved
+            $result.uninstall=$true
+            $result.walletPreserved=$true
+            $result.configPreserved=$true
+            Write-Host 'PASS: exact current unsigned Windows NSIS, no-token fresh install/reinstall/uninstall, managed dependencies, preserved wallet/config'
+          } finally {
+            Remove-Item Env:GIT_CONFIG_COUNT,Env:GIT_CONFIG_KEY_0,Env:GIT_CONFIG_VALUE_0 -ErrorAction SilentlyContinue
+            $result|ConvertTo-Json -Depth 4|Set-Content -Path $report -Encoding utf8
+          }
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-security-parity-windows-public-install-e2e-report
+          path: ${{ runner.temp }}/crylo-security-parity-public-installer-e2e.json
+          if-no-files-found: ignore
+          retention-days: 30
