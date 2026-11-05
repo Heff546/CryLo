@@ -1,0 +1,146 @@
+name: CryLo frozen Linux and macOS real installed artifact acceptance
+on:
+  push:
+    branches: [release/five-platform-security-parity]
+    paths: [.github/workflows/security-parity-linux-mac-installed-e2e.yml]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+jobs:
+  linux-actual-package:
+    name: Linux actual package — ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: ubuntu-24.04, debarch: amd64, elf: 'Advanced Micro Devices X86-64', artifactid: '13294743897', digest: '7679786ac743f24cd9e2031e3249b8776bbe9d0d29b2af0db79d74f7cafe33d3' }
+          - { arch: arm64, runner: ubuntu-24.04-arm, debarch: arm64, elf: 'AArch64', artifactid: '13294529488', digest: '9fa8f2e29c872f4212a4021083bee3c43ff92b36b47c5b2d671d382e5847ce97' }
+    steps:
+      - name: Fetch immutable Linux build from successful original CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+          ARTIFACT_ID: ${{ matrix.artifactid }}
+          DIGEST: ${{ matrix.digest }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/Heff546/CryLo/actions/runs/41768060244 --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$ARTIFACT_ID" --jq '.workflow_run.id')" = '41768060244'
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$ARTIFACT_ID" --jq '.digest')" = "sha256:$DIGEST"
+          mkdir -p "$RUNNER_TEMP/crylo-linux-actual"
+          gh run download 41768060244 --repo Heff546/CryLo --name "crylo-security-parity-linux-$ARCH-UNSIGNED" --dir "$RUNNER_TEMP/crylo-linux-actual"
+      - name: Install actual Debian package and extract genuine AppImage without rebuilding
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          DEBARCH: ${{ matrix.debarch }}
+          ELF_MACHINE: ${{ matrix.elf }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/crylo-linux-actual"
+          mapfile -t source < <(find "$root" -type f -name SOURCE-COMMIT.txt)
+          test "${#source[@]}" -eq 1
+          test "$(tr -d '\r\n' < "${source[0]}")" = e0326c141900e1c7a830df3108d9be3a8c019a40
+          mapfile -t debs < <(find "$root" -type f -name '*.deb')
+          mapfile -t images < <(find "$root" -type f -name '*.AppImage')
+          test "${#debs[@]}" -eq 1 && test "${#images[@]}" -eq 1
+          deb="${debs[0]}"
+          appimage="${images[0]}"
+          test "$(dpkg-deb -f "$deb" Architecture)" = "$DEBARCH"
+          pkg="$(dpkg-deb -f "$deb" Package)"
+          test -n "$pkg"
+          readelf -h "$appimage" | grep -F "$ELF_MACHINE"
+          for binary in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+            mapfile -t f < <(find "$root" -type f -name "$binary")
+            test "${#f[@]}" -eq 1
+            readelf -h "${f[0]}" | grep -F "$ELF_MACHINE"
+            "${f[0]}" --version
+          done
+          mkdir -p "$RUNNER_TEMP/crylo-appimage-unpack"
+          (cd "$RUNNER_TEMP/crylo-appimage-unpack" && chmod +x "$appimage" && "$appimage" --appimage-extract >/dev/null)
+          test -d "$RUNNER_TEMP/crylo-appimage-unpack/squashfs-root"
+          test -n "$(find "$RUNNER_TEMP/crylo-appimage-unpack/squashfs-root" -type f -name 'CryLo-daemon' -print -quit)"
+          mkdir -p "$HOME/.config/crylo"
+          echo 'preserve-eastern-shore-user-config' > "$HOME/.config/crylo/preservation-sentinel"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends "$deb"
+          dpkg-query -W -f='${Status}' "$pkg" | grep -Fx 'install ok installed'
+          dpkg -L "$pkg" | grep -F 'CryLo Wallet'
+          test "$(cat "$HOME/.config/crylo/preservation-sentinel")" = preserve-eastern-shore-user-config
+          echo "PASS: Linux/$ARCH actual pinned .deb installed and AppImage extracted; native ELF matched; user config preserved"
+  mac-actual-pkg:
+    name: macOS actual PKG — ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: macos-15-intel, macho: x86_64, artifactid: '13296223844', digest: '82b73b3f7f57f60ce54bc37700e2df5605a6f36038f60d50a25421556f8dc8e3' }
+          - { arch: arm64, runner: macos-15, macho: arm64, artifactid: '13294642990', digest: 'a5546ad4685e0b3f064e73467733e47dcc1790f1a143354895f0' }
+    steps:
+      - name: Checkout immutable reviewed source for installed CLI comparison
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: e0326c141900e1c7a830df3108d9be3a8c019a40
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Download pinned unsigned Mac package, CI token only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+          ARTIFACT_ID: ${{ matrix.artifactid }}
+          DIGEST: ${{ matrix.digest }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/Heff546/CryLo/actions/runs/41768060313 --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$ARTIFACT_ID" --jq '.workflow_run.id')" = '41768060313'
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$ARTIFACT_ID" --jq '.digest')" = "sha256:$DIGEST"
+          mkdir -p "$RUNNER_TEMP/crylo-mac-actual"
+          gh run download 41768060313 --repo Heff546/CryLo --name "crylo-security-parity-mac-$ARCH-UNSIGNED" --dir "$RUNNER_TEMP/crylo-mac-actual"
+      - name: Fresh install and reinstall exact original macOS PKG preserving wallet
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          MACHO: ${{ matrix.macho }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/crylo-mac-actual"
+          sourcefile="$(find "$root" -type f -name SOURCE-COMMIT.txt -print -quit)"
+          test -n "$sourcefile"
+          test "$(tr -d '\r\n' < "$sourcefile")" = e0326c141900e1c7a830df3108d9be3a8c019a40
+          pkg="$(find "$root" -type f -name "CryLo-1.1.1-mac-$ARCH-unsigned.pkg" -print -quit)"
+          test -s "$pkg"
+          test "$(uname -m)" = "$MACHO"
+          test ! -e '/Applications/CryLo Wallet.app'
+          test ! -e '/Applications/CryLo Daemon.app'
+          test ! -e /usr/local/bin/crylo
+          pkgutil --payload-files "$pkg" | grep -F 'CryLo Wallet.app'
+          pkgutil --payload-files "$pkg" | grep -F 'CryLo Daemon.app'
+          mkdir -p "$HOME/Library/Application Support/CryLo/wallets" "$HOME/Library/Application Support/CryLo Wallet"
+          printf 'wallet-preservation-bytes\n' > "$HOME/Library/Application Support/CryLo/wallets/ci-sentinel"
+          printf 'preferences-preservation-bytes\n' > "$HOME/Library/Application Support/CryLo Wallet/ci-sentinel"
+          h1="$(shasum -a 256 "$HOME/Library/Application Support/CryLo/wallets/ci-sentinel" | awk '{print $1}')"
+          h2="$(shasum -a 256 "$HOME/Library/Application Support/CryLo Wallet/ci-sentinel" | awk '{print $1}')"
+          for iteration in fresh reinstall; do
+            sudo /usr/sbin/installer -pkg "$pkg" -target /
+            test -d '/Applications/CryLo Wallet.app' && test -d '/Applications/CryLo Daemon.app'
+            test -x /usr/local/bin/crylo
+            cmp /usr/local/bin/crylo scripts/release/macos-installed-command.sh
+            for app in 'CryLo Wallet' 'CryLo Daemon'; do
+              test "$(lipo -archs "/Applications/$app.app/Contents/MacOS/$app")" = "$MACHO"
+            done
+            wallet='/Applications/CryLo Wallet.app/Contents/Resources/bin/mac'
+            test -x "$wallet/CryLo-daemon" && test -x "$wallet/CryLo-wallet-rpc"
+            test "$(lipo -archs "$wallet/CryLo-daemon")" = "$MACHO"
+            test "$(lipo -archs "$wallet/CryLo-wallet-rpc")" = "$MACHO"
+            test "$(shasum -a 256 "$HOME/Library/Application Support/CryLo/wallets/ci-sentinel" | awk '{print $1}')" = "$h1"
+            test "$(shasum -a 256 "$HOME/Library/Application Support/CryLo Wallet/ci-sentinel" | awk '{print $1}')" = "$h2"
+            echo "PASS: Mac/$ARCH $iteration actual unsigned PKG, apps, CLI, native arch, user data"
+          done
+          echo "PASS: Mac/$ARCH installed twice; no DMG, no signing or publication, wallet preserved"
