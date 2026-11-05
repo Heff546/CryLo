@@ -1,0 +1,164 @@
+name: CryLo five-platform security-parity unsigned release handoff
+on:
+  push:
+    branches: [release/five-platform-security-parity]
+    paths: [.github/workflows/security-parity-five-platform-handoff.yml]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-and-assemble:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: e0326c141900e1c7a830df3108d9be3a8c019a40
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Check immutable shared source and update contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = e0326c141900e1c7a830df3108d9be3a8c019a40
+          test -z "$(git status --porcelain --untracked-files=all)"
+          node --test scripts/tests/signed-update-contract.test.js
+          node scripts/tests/install-win-linux-pi-static.js
+          test "$(grep '^$(package)_version=' contrib/depends/packages/abseil.mk)" = '$(package)_version=20260817.0'
+      - name: Download five exact completed CI artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/crylo-input" "$RUNNER_TEMP/crylo-output"
+          echo "CRYLO_INPUT=$RUNNER_TEMP/crylo-input" >> "$GITHUB_ENV"
+          echo "CRYLO_OUTPUT=$RUNNER_TEMP/crylo-output" >> "$GITHUB_ENV"
+          for record in \
+            'win-x64|41768060283|13296576348|crylo-security-parity-windows-x64-UNSIGNED|658f14bd823cc003afcbf5aa3a3dc9a9c283ea3d68f208389c5ee61b9576e097' \
+            'linux-x64|41768060244|13294743897|crylo-security-parity-linux-x64-UNSIGNED|7679786ac743f24cd9e2031e3249b8776bbe9d0d29b2af0db79d74f7cafe33d3' \
+            'linux-arm64|41768060244|13294529488|crylo-security-parity-linux-arm64-UNSIGNED|9fa8f2e29c872f4212a4021083bee3c43ff92b36b47c5b2d671d382e5847ce97' \
+            'mac-x64|41768060313|13296223844|crylo-security-parity-mac-x64-UNSIGNED|82b73b3f7f57f60ce54bc37700e2df5605a6f36038f60d50a25421556f8dc8e3' \
+            'mac-arm64|41768060313|13294642990|crylo-security-parity-mac-arm64-UNSIGNED|a5546ad4685e0b3f064e73467733e47dcc1790f3dae25e29d0f1a143354895f0'; do
+            IFS='|' read -r target run artifact name digest <<< "$record"
+            test "$(gh api "repos/Heff546/CryLo/actions/runs/$run" --jq '.conclusion')" = success
+            test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$artifact" --jq '.name')" = "$name"
+            test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$artifact" --jq '.expired')" = false
+            test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$artifact" --jq '.digest')" = "sha256:$digest"
+            gh run download "$run" --repo Heff546/CryLo --name "$name" --dir "$RUNNER_TEMP/crylo-input/$target"
+            test -n "$(find "$RUNNER_TEMP/crylo-input/$target" -type f -print -quit)"
+            echo "PASS: $target artifact $artifact verified"
+          done
+      - name: Verify provenance, receipts and architecture; package unsigned candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,struct,subprocess,tarfile,zipfile
+          from pathlib import Path
+          source="e0326c141900e1c7a830df3108d9be3a8c019a40"
+          root=Path(os.environ["CRYLO_INPUT"])
+          out=Path(os.environ["CRYLO_OUTPUT"])
+          targets=[("win","x64"),("linux","x64"),("linux","arm64"),("mac","x64"),("mac","arm64")]
+          tree=subprocess.check_output(["git","ls-tree","-r",source])
+          def digest(p):
+              h=hashlib.sha256()
+              with p.open("rb") as f:
+                  for b in iter(lambda:f.read(1024*1024),b""):h.update(b)
+              return h.hexdigest()
+          def members(d):
+              assert d.is_dir()
+              all=list(d.rglob("*"))
+              assert all and all(not p.is_symlink() for p in all)
+              assert all(p.is_dir() or p.is_file() for p in all)
+              return [p for p in all if p.is_file()]
+          def one(fs,name):
+              found=[p for p in fs if p.name==name]
+              assert len(found)==1,(name,len(found))
+              return found[0]
+          def receipts(fs,name):
+              data={}
+              for line in one(fs,name).read_text().splitlines():
+                  h,p=line.split(None,1)
+                  n=Path(p.lstrip("*")).name
+                  assert len(h)==64 and n not in data
+                  data[n]=h
+              return data
+          def check(file,receipt):
+              assert receipt.get(file.name)==digest(file),file
+          def archcheck(p,platform,arch):
+              b=p.read_bytes()[:32]
+              if platform=="linux":
+                  assert b[:6]==b"\\x7fELF\\x02\\x01" and struct.unpack_from("<H",b,18)[0]==(62 if arch=="x64" else 183),p
+              if platform=="mac":
+                  assert struct.unpack_from("<II",b,0)==(0xfeedfacf,0x01000007 if arch=="x64" else 0x0100000c),p
+              if platform=="win":
+                  assert b[:2]==b"MZ",p
+          candidates=[]
+          for platform,architecture in targets:
+              target=f"{platform}-{architecture}"
+              fs=members(root/target)
+              assert one(fs,"SOURCE-COMMIT.txt").read_text().strip()==source,target
+              native_names=["CryLo-daemon","CryLo-wallet","CryLo-wallet-rpc"]
+              if platform=="win":
+                  native_names=[x+".exe" for x in native_names]
+                  for n,receiptname in zip(native_names,["DAEMON-SHA256.txt","WALLET-SHA256.txt","RPC-SHA256.txt"]):
+                      p=one(fs,n)
+                      receipt=one(fs,receiptname).read_text().splitlines()
+                      assert digest(p) in [x.strip().lower() for x in receipt],n
+                      archcheck(p,platform,architecture)
+                  manifest=one(fs,"WINDOWS-BUILD-RUNTIME-MANIFEST.json")
+                  dlls=[p for p in fs if p.suffix.lower()==".dll"]
+                  data=json.loads(manifest.read_text())
+                  assert len(dlls)==len(data["runtime"]) and len(dlls)>0
+                  for item in data["runtime"]:
+                      p=one(fs,item["file"])
+                      assert p.stat().st_size==item["size"] and digest(p)==item["sha256"]
+                  installers=[p for p in fs if p.suffix.lower()==".exe" and p.name not in native_names]
+                  assert installers,"Missing Electron installer"
+                  chosen=[one(fs,n) for n in native_names]+dlls+installers+[manifest,one(fs,"BINARY-MANIFEST.txt")]
+                  archive=out/"CryLo-Release-1.1.1-win-x64-UNSIGNED.zip"
+                  with zipfile.ZipFile(archive,"w",compression=zipfile.ZIP_DEFLATED) as z:
+                      for p in sorted(chosen,key=lambda x:x.name):
+                          assert len([q for q in chosen if q.name==p.name])==1
+                          z.write(p,p.name)
+              else:
+                  r=receipts(fs,"NATIVE-SHA256SUMS.txt")
+                  natives=[one(fs,n) for n in native_names]
+                  for p in natives:check(p,r);archcheck(p,platform,architecture)
+                  if platform=="linux":
+                      apps=[p for p in fs if p.suffix==".AppImage"]
+                      assert len(apps)==1
+                      app=apps[0]
+                      check(app,receipts(fs,"ELECTRON-SHA256SUMS.txt"))
+                      archcheck(app,platform,architecture)
+                      archive=out/f"CryLo-Release-1.1.1-linux-{architecture}-UNSIGNED.tar"
+                      with tarfile.open(archive,"w",format=tarfile.USTAR_FORMAT) as tar:
+                          for p in sorted(natives+[app],key=lambda x:x.name):
+                              info=tar.gettarinfo(str(p),arcname=p.name)
+                              info.uid=info.gid=0;info.uname=info.gname="";info.mtime=0
+                              with p.open("rb") as f:tar.addfile(info,f)
+                  else:
+                      assert one(fs,"ALL-TRACKED-FILES.txt").read_bytes()==tree
+                      pkg=one(fs,f"CryLo-1.1.1-mac-{architecture}-unsigned.pkg")
+                      check(pkg,receipts(fs,"PKG-SHA256SUMS.txt"))
+                      archive=out/pkg.name
+                      archive.write_bytes(pkg.read_bytes())
+              candidates.append({"platform":platform,"architecture":architecture,"file":archive.name,"sha256":digest(archive),"size":archive.stat().st_size})
+              print("PASS",target,"source, native and installer checks")
+          assert len(candidates)==5 and len({c["file"] for c in candidates})==5
+          report={"classification":"UNSIGNED_CI_STAGING_ONLY","sourceCommit":source,"network":"testnet","pi1SigningRequired":True,"published":False,"officialManifestCreated":False,"candidates":candidates}
+          (out/"UNSIGNED-HANDOFF.json").write_text(json.dumps(report,indent=2)+"\n")
+          (out/"SHA256SUMS-CI-ONLY.txt").write_text("".join(c["sha256"]+"  "+c["file"]+"\n" for c in candidates))
+          (out/"NO-PUBLICATION.txt").write_text("Unsigned CI evidence only. Pi1 signing and installation tests remain required.\n")
+          PY
+          (cd "$CRYLO_OUTPUT" && sha256sum -c SHA256SUMS-CI-ONLY.txt)
+      - name: Retain unsigned five-platform handoff; never publish
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-security-parity-five-platform-UNSIGNED-PI1-HANDOFF
+          path: ${{ env.CRYLO_OUTPUT }}/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
