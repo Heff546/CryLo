@@ -52,12 +52,14 @@ jobs:
             if((Get-FileHash $wallet -Algorithm SHA256).Hash -ne $walletHash){throw 'Wallet bytes changed'}
             if((Get-FileHash $config -Algorithm SHA256).Hash -ne $configHash){throw 'Config bytes changed'}
           }
-          function Run-CmdInstaller([string]$exe,[string]$args,[string]$stage){
-            # NSIS silent mode must be the final process argument; /D=path must be last.
+          function Run-CmdInstaller([string]$exe,[string]$arguments,[string]$stage){
+            # NSIS /S enables silent mode, and /D=path must be the last argument.
             # Use direct process launch to distinguish NSIS startup from cmd.exe start parsing.
-            $p=Start-Process -FilePath $exe -ArgumentList $args -PassThru
-            if(!$p.WaitForExit(420000)){
-              Write-Host "DIAGNOSTIC: $stage exceeded 420 seconds (direct NSIS launch)"
+            if($stage -ne 'uninstall' -and !$arguments.StartsWith('/S /D=')){throw "$stage missing required NSIS silent and destination arguments"}
+            Write-Host ("NSIS launch: stage={0}; silent={1}; destinationProvided={2}" -f $stage,$arguments.StartsWith('/S'),$arguments.Contains('/D='))
+            $p=Start-Process -FilePath $exe -ArgumentList $arguments -PassThru
+            if(!$p.WaitForExit(240000)){
+              Write-Host "DIAGNOSTIC: $stage exceeded 240 seconds (direct NSIS launch)"
               $bootstrap=Join-Path $local 'installer-bootstrap.log'
               if(Test-Path $bootstrap){
                 Get-Content $bootstrap | Where-Object { $_ -match '^(STAGE|FAIL_STAGE|FAIL_RC|RESULT|RUNTIME_HELPER_RC|HELPER_HASH|NODE_ARCHIVE_HASH|NODE_EXE_HASH|NODE_EXTRACTION|HELPER_CERTUTIL_RC)=' } | ForEach-Object { Write-Host "BOOTSTRAP $_" }
