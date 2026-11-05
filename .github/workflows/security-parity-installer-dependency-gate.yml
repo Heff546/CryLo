@@ -1,0 +1,52 @@
+name: CryLo end-user installer dependency contract gate
+on:
+  push:
+    branches: [release/five-platform-security-parity]
+    paths: [.github/workflows/security-parity-installer-dependency-gate.yml]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  installer-dependency-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: e0326c141900e1c7a830df3108d9be3a8c019a40
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Check exact source and installer contracts without rebuilding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = e0326c141900e1c7a830df3108d9be3a8c019a40
+          node scripts/tests/install-win-linux-pi-static.js
+          node --test scripts/tests/signed-update-contract.test.js electron/test/release-packaging-security.test.js
+          python3 - <<'PY'
+          from pathlib import Path
+          launcher=Path("crylo").read_text()
+          win=Path("crylo.cmd").read_text()
+          cli=Path("scripts/crylo.js").read_text()
+          nsis=Path("electron/build/installer.nsh").read_text()
+          helper=Path("electron/build/windows-installer-runtime.js").read_text()
+          package=Path("electron/package.json").read_text()
+          mac=Path("scripts/release/macos-installed-update.js").read_text()
+          assert "NODE_VERSION=24.21.0" in launcher and "NPM_VERSION=12.1.0" in launcher
+          assert "verify_macos_crylo_node" in launcher and "verify_crylo_node_runtime" in launcher
+          assert 'CRYLO_NODE_VERSION=24.21.0' in win and 'CRYLO_GIT_BUILD=2.56.0.windows.1' in win
+          assert "windows-runtime-bootstrap.js" in win and "MinGit-2.56.0-64-bit.zip" in nsis
+          assert "node-v24.21.0-win-x64.zip" in nsis
+          assert "installGitRuntime" in helper and "verifyGitRuntime" in helper
+          assert "ensureLinuxRuntimeDependencies();" in cli
+          for pkg in ["ca-certificates","curl","git","tar"]:
+              assert "'"+pkg+"'" in cli
+          assert "Installing the current authenticated prebuilt CryLo" in cli
+          assert "ensureLinuxBuildDependencies();" not in cli[cli.index("function install() {"):cli.index("function start() {")]
+          assert "completeInstalledMacRelease" in mac and "receiptSnapshot" in mac
+          assert "macos-update" in package
+          print("PASS: pinned managed runtime, native dependency and updater source contracts")
+          PY
+      - name: Declare limitations of static gate
+        run: |
+          echo "PASS: source and packaging contract tests"
+          echo "NOTICE: This is not a clean-machine Windows/Linux/macOS install, missing-dependency repair, or update rollback acceptance test."
