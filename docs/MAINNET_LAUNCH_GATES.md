@@ -16,31 +16,41 @@ reserve keys, or switching user wallets.
 3. Keep staking, node rewards, validators, Orbit, NFTs, buyback, and daily gas
    epoch distribution disabled in the initial Nexus configuration.
 
-## Gate A — immutable L1 consensus (BLOCKED)
+## Gate A — immutable L1 consensus (PARTIAL SOURCE CHANGE; STILL BLOCKED)
 
-Current `src/cryptonote_config.h` defines **75 bp Dev, 25 bp Liquidity,
-50 bp Gas**. The documented mainnet policy in
-`CryLo-Nexus/docs/MAINNET_CHECKLIST.md` instead requires **75 bp Dev,
-0 bp Liquidity, 75 bp Gas**, with the same total protocol allocation of 150 bp
-(1.50%). Confirm the economic policy and then implement it consistently
-for mainnet, including:
+The documented policy in `CryLo-Nexus/docs/MAINNET_CHECKLIST.md` requires
+**75 bp Development / 0 bp Liquidity / 75 bp CryLo Gas Treasury**.
+A mainnet-only source change now implements the 150 bp allocation:
 
-- `src/cryptonote_config.h` mainnet/testnet-specific rates.
-- `src/cryptonote_core/cryptonote_tx_utils.cpp` coinbase construction,
-  output ordering and recipient derivations.
-- `src/cryptonote_core/blockchain.cpp` consensus output counts,
-  required amounts and verifiable recipient keys. Current HF19+ validation
-  requires five outputs: instant miner, vested miner, Dev, Liquidity, Gas.
-  With the approved mainnet split it should have four outputs: instant,
-  vested, Dev, Gas. Existing testnet history must remain valid.
-- `src/cryptonote_core/blockchain.cpp` template `max_outs`, and any
-  protocol tests that assume the five-output legacy arrangement.
+- `src/cryptonote_config.h` defines a separate 75 bp mainnet Gas rate,
+  while testnet/stagenet retain their original 75/25/50 bp split.
+- `src/cryptonote_core/cryptonote_tx_utils.cpp` constructs 4 mainnet
+  HF19+ outputs: miner instant, miner vested, Development, Gas Treasury.
+  TESTNET/STAGENET continue to construct 5.
+- `src/cryptonote_core/blockchain.cpp` mirrors the separate allocation,
+  output count, amounts and output indices and chooses matching `max_outs`.
+- `tests/launch/mainnet-coinbase-source.test.js` provides read-only,
+  integer reward conservation and source-structure regressions.
 
-**Critical destination verification:** the current block verifier derives
-and verifies the **Development** payout key, but only checks the Gas output
-amount. Before mainnet, prove in consensus that the Gas Treasury recipient
-cannot be redirected by a miner. Do not treat amount verification as proof of
-recipient correctness. Do not invent treasury keys or weaken L1 privacy.
+**This is not an implementation-complete consensus change:** it has only
+passed source tests; no native C++ compile, testnet history replay,
+adversarial destination test or multi-node chain proof has passed yet.
+
+**Critical destination verification — OPEN:** the block verifier derives
+and verifies the **Development** payout key, but still checks only the Gas
+Treasury output *amount*. An arbitrary miner can put its own output key in
+the Treasury position and claim a valid-sized allocation. Reject mainnet
+release until a consensus-checkable recipient proof is implemented and
+adversarially tested. Simply verifying a public address string is
+insufficient for CryptoNote one-time output keys.
+
+A straightforward view-secret-based derivation would disclose the treasury
+view secret in every public node binary, allowing third parties to trace
+other payments to that wallet. Prefer a privacy-reviewed public proof of
+correct derivation, or explicitly review the tracing implications of a
+dedicated transparent treasury wallet. Do not reuse other private wallet
+keys, request a seed phrase, insert an unverified key, or put spend keys in
+the codebase.
 
 **Mandatory native regression tests:** genesis; mainnet height 1 → 2
 hardfork transition (v17 → v21); coinbase payout amounts and exact recipient;
