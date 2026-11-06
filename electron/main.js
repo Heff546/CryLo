@@ -135,7 +135,8 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
     {
       headers: {
         Accept: 'application/json'
-      }
+      },
+      redirect: 'error'
     }
   );
 
@@ -625,6 +626,7 @@ async function performBoundNexusWalletRegistration(wallet) {
   const challengeResponse = await fetch(
     nexusApiUrl('/nexus/onboarding-challenge'),
     {
+      redirect: 'error',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -650,6 +652,7 @@ async function performBoundNexusWalletRegistration(wallet) {
   const registerResponse = await fetch(
     nexusApiUrl('/nexus/register-bound-wallet'),
     {
+      redirect: 'error',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1325,6 +1328,7 @@ secureIpcHandle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloA
 secureIpcHandle('bridge-request', async (_, payload) => {
   try {
     const res = await fetch(nexusApiUrl('/bridge/request'), {
+      redirect: 'error',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1362,6 +1366,7 @@ secureIpcHandle('bridge-status', async (_, paymentId) => {
       };
     }
     const res = await fetch(nexusApiUrl('/bridge/status'), {
+      redirect: 'error',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1387,7 +1392,7 @@ secureIpcHandle('bridge-status', async (_, paymentId) => {
 
 secureIpcHandle('bridge-release-status', async (_, nexusTxHash) => {
   try {
-    const res = await fetch(nexusApiUrl(`/bridge/release-status/${encodeURIComponent(nexusTxHash)}`));
+    const res = await fetch(nexusApiUrl(`/bridge/release-status/${encodeURIComponent(nexusTxHash)}`), { redirect: 'error' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
