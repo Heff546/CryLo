@@ -110,7 +110,8 @@ test('treasury destination must remain an explicit mainnet blocker until verifie
 
 test('official mainnet release builder fails closed on source preflight', () => {
   const builder = read('scripts/release/crylo-release.js');
-  assert.match(builder, /if \(releaseNetwork === 'mainnet'\)/);
+  assert.match(builder, /if \(releaseNetwork === 'mainnet' && officialReleaseTag\)/);
+  assert.match(builder, /UNSIGNED MAINNET VALIDATION BUILD ONLY/);
   assert.match(builder, /mainnet-launch-preflight\.js/);
   assert.match(builder, /gate\.status !== 0/);
   assert.match(builder, /Mainnet release blocked by consensus, recipient or updater preflight/);
