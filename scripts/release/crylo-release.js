@@ -2270,10 +2270,11 @@ if (officialReleaseTag) {
 
 const target = detectTarget();
 
-// Fail before any native build, packaging or official signing attempt when
-// the immutable mainnet consensus and authenticated updater are not ready.
+// An unsigned native mainnet candidate is allowed for compiling and
+// adversarial testing. Official signable bundles are *never* allowed
+// before the mainnet consensus and authenticated updater gates pass.
 // TESTNET continues to use its existing, signed release path unchanged.
-if (releaseNetwork === 'mainnet') {
+if (releaseNetwork === 'mainnet' && officialReleaseTag) {
   const gate = spawnSync(
     process.execPath,
     [path.join(root, 'scripts', 'release', 'mainnet-launch-preflight.js')],
@@ -2284,6 +2285,8 @@ if (releaseNetwork === 'mainnet') {
   if (gate.error || gate.status !== 0) {
     fail('Mainnet release blocked by consensus, recipient or updater preflight.');
   }
+} else if (releaseNetwork === 'mainnet') {
+  console.warn('UNSIGNED MAINNET VALIDATION BUILD ONLY: official release gates not cleared.');
 } else if (releaseNetwork !== 'testnet') {
   fail('Unsupported CryLo release network.');
 }
