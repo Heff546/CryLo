@@ -120,6 +120,10 @@ purchase remains possible, as does signed onboarding / starter gas.
 
 ## Launch decision
 
+Run the source-only preflight with `node scripts/release/mainnet-launch-preflight.js`.
+It currently exits nonzero on unresolved consensus/updater gates and must not
+be mistaken for proof of runtime correctness if it passes.
+
 **Do not launch L1 mainnet now.** A mainnet launch is authorized only after
 all L1 gates A/B/C pass independently of Nexus. Nexus can be enabled later
 after gate D; the CryLo L1 chain must keep producing blocks when Nexus is
