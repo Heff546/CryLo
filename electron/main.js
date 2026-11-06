@@ -443,6 +443,16 @@ function daemonRpc(method, params = {}) {
   return rpcCall(DAEMON_RPC_PORT, method, params);
 }
 
+async function assertDaemonNetwork() {
+  const info = await daemonRpc('get_info');
+  if (typeof info?.testnet !== 'boolean' ||
+      info.testnet !== (CRYLO_NETWORK_MODE === 'testnet')) {
+    throw new Error(
+      `Daemon network does not match CryLo Wallet ${CRYLO_NETWORK_MODE} mode.`
+    );
+  }
+}
+
 function walletRpc(method, params = {}, timeoutMs = 10000) {
   return rpcCall(WALLET_RPC_PORT, method, params, timeoutMs);
 }
@@ -542,15 +552,8 @@ async function startBackend() {
     sendStatus('starting', 'Waiting for daemon RPC...');
     await waitForRpc(DAEMON_RPC_PORT, 180000);
 
-    // The app attaches to an existing daemon. Do not start a mainnet
-    // wallet or miner against a testnet daemon (or vice versa).
-    const daemonInfo = await daemonRpc('get_info');
-    if (typeof daemonInfo?.testnet !== 'boolean' ||
-        daemonInfo.testnet !== (CRYLO_NETWORK_MODE === 'testnet')) {
-      throw new Error(
-        `Daemon network does not match CryLo Wallet ${CRYLO_NETWORK_MODE} mode.`
-      );
-    }
+    // Never attach a mainnet wallet to an existing testnet daemon.
+    await assertDaemonNetwork();
 
     sendStatus('starting', 'Daemon ready. Starting wallet RPC...');
     walletProc = spawnWalletRpc();
@@ -972,6 +975,8 @@ secureIpcHandle('miner-get-info', async () => {
 
 async function stopDaemonMining() {
   try {
+    // This wallet must not stop another network's mining on shutdown.
+    await assertDaemonNetwork();
     await daemonHttp('/stop_mining', {});
     console.log('CryLo daemon mining stopped.');
   } catch (error) {
@@ -1013,6 +1018,7 @@ async function shutdownBackendsSafely() {
 
 secureIpcHandle('miner-start', async (_, opts) => {
   try {
+    await assertDaemonNetwork();
     const result = await daemonHttp('/start_mining', {
       miner_address: opts.walletAddress,
       threads_count: opts.threads || 2,
