@@ -2270,6 +2270,24 @@ if (officialReleaseTag) {
 
 const target = detectTarget();
 
+// Fail before any native build, packaging or official signing attempt when
+// the immutable mainnet consensus and authenticated updater are not ready.
+// TESTNET continues to use its existing, signed release path unchanged.
+if (releaseNetwork === 'mainnet') {
+  const gate = spawnSync(
+    process.execPath,
+    [path.join(root, 'scripts', 'release', 'mainnet-launch-preflight.js')],
+    { cwd: root, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }
+  );
+  if (gate.stdout) process.stdout.write(gate.stdout);
+  if (gate.stderr) process.stderr.write(gate.stderr);
+  if (gate.error || gate.status !== 0) {
+    fail('Mainnet release blocked by consensus, recipient or updater preflight.');
+  }
+} else if (releaseNetwork !== 'testnet') {
+  fail('Unsupported CryLo release network.');
+}
+
 const defaultJobs =
   target.platform === 'linux' && target.arch === 'arm64'
     ? 1
