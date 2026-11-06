@@ -191,6 +191,9 @@
 
 #define CryLo_LIQUIDITY_FUND_FEE_BPS           25
 #define CryLo_GAS_TREASURY_FEE_BPS              50
+// Mainnet policy: 0.75% Dev, 0% Liquidity, 0.75% CryLo Gas Treasury.
+// Keep existing TESTNET/STAGENET (0.75%/0.25%/0.50%) intact.
+#define CryLo_GAS_TREASURY_FEE_BPS_MAINNET      75
 #define CryLo_LIQUIDITY_FUND_VIEWKEY             "31102d30fdc1a05945af699efd3236520f153b6aef701e543ea51247980bfb23"
 #define CryLo_LIQUIDITY_FUND_SPENDKEY            "3d5aacc7c137b83e3fa8e63af0e1233816aebb2cbeea3f999564b9a8af26bcdf"
 
