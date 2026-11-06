@@ -50,7 +50,9 @@ other payments to that wallet. Prefer a privacy-reviewed public proof of
 correct derivation, or explicitly review the tracing implications of a
 dedicated transparent treasury wallet. Do not reuse other private wallet
 keys, request a seed phrase, insert an unverified key, or put spend keys in
-the codebase.
+the codebase. See
+[`docs/security/GAS_TREASURY_COINBASE_PROOF.md`](security/GAS_TREASURY_COINBASE_PROOF.md)
+for a *non-implemented* privacy-preserving proof design and adversarial gates.
 
 **Mandatory native regression tests:** genesis; mainnet height 1 → 2
 hardfork transition (v17 → v21); coinbase payout amounts and exact recipient;
