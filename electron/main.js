@@ -16,6 +16,10 @@ const {
   trustedIpcSender,
   safeExternalHttpsUrl
 } = require('./security/renderer-policy');
+const {
+  saveBridgeStatusCapability,
+  getBridgeStatusCapability
+} = require('./security/bridge-status-store');
 
 // All renderer-to-main IPC handlers, including wallet RPC, bridge, staking,
 // miner and local file actions, are gated to the top-level local wallet page.
@@ -40,9 +44,16 @@ function openVerifiedExternalLink(value) {
 // ─── Constants ───────────────────────────────────────────────────────────────
 const DAEMON_RPC_PORT   = 22641;
 const WALLET_RPC_PORT   = 22643;
-const WALLET_DIR_NAME   = 'wallets';
+const CRYLO_NETWORK_MODE = process.env.CRYLO_NETWORK || 'testnet';
+if (!['testnet', 'mainnet'].includes(CRYLO_NETWORK_MODE)) {
+  throw new Error('CRYLO_NETWORK must be mainnet or testnet.');
+}
+// Keep existing testnet wallets untouched; never open them against mainnet.
+const WALLET_DIR_NAME   = CRYLO_NETWORK_MODE === 'mainnet'
+  ? 'wallets-mainnet' : 'wallets';
 const LOG_DIR_NAME      = 'logs';
-const DATA_DIR_NAME     = 'CryLo-testnet';
+const DATA_DIR_NAME     = CRYLO_NETWORK_MODE === 'mainnet'
+  ? 'CryLo-mainnet' : 'CryLo-testnet';
 
 // CryLo and wCryLo use 11 decimal places. Nexus native CRYLO uses 18.
 const CRYLO_DECIMALS = 11;
@@ -61,9 +72,25 @@ function formatNexusGasUnits(amount) {
   return ethers.formatUnits(amount, NEXUS_GAS_DECIMALS);
 }
 
-const BRIDGE_API_URL =
-  process.env.CRYLONEXUS_API_URL ||
-  'http://34.19.201.107/crylonexus-api';
+// No public-IP HTTP fallback: bridge requests contain private L1 metadata.
+// Production must provision the official, authenticated HTTPS API origin.
+const BRIDGE_API_URL = process.env.CRYLONEXUS_API_URL || '';
+
+function nexusApiUrl(pathname) {
+  if (!BRIDGE_API_URL) {
+    throw new Error('CryLoNexus API is not configured. Set the verified HTTPS Foundation API URL.');
+  }
+
+  const endpoint = new URL(BRIDGE_API_URL);
+  const localHost = ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
+  if ((endpoint.protocol !== 'https:' &&
+       !(endpoint.protocol === 'http:' && localHost)) ||
+      endpoint.username || endpoint.password ||
+      endpoint.search || endpoint.hash) {
+    throw new Error('CryLoNexus API must use HTTPS (or loopback HTTP for local testing).');
+  }
+  return endpoint.href.replace(/\/+$/, '') + pathname;
+}
 
 const NEXUS_RUNTIME_CACHE_MS = 60_000;
 
@@ -104,7 +131,7 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
   }
 
   const response = await fetch(
-    `${BRIDGE_API_URL}/nexus/bridge-config`,
+    nexusApiUrl('/nexus/bridge-config'),
     {
       headers: {
         Accept: 'application/json'
@@ -466,7 +493,7 @@ function spawnWalletRpc() {
   }
   const logger = makeLogger('wallet-rpc');
   const args = [
-    '--testnet',
+    ...(CRYLO_NETWORK_MODE === 'testnet' ? ['--testnet'] : []),
     `--rpc-bind-port=${WALLET_RPC_PORT}`,
     `--daemon-address=127.0.0.1:${DAEMON_RPC_PORT}`,
     `--wallet-dir=${getWalletDir()}`,
@@ -514,6 +541,16 @@ async function startBackend() {
 
     sendStatus('starting', 'Waiting for daemon RPC...');
     await waitForRpc(DAEMON_RPC_PORT, 180000);
+
+    // The app attaches to an existing daemon. Do not start a mainnet
+    // wallet or miner against a testnet daemon (or vice versa).
+    const daemonInfo = await daemonRpc('get_info');
+    if (typeof daemonInfo?.testnet !== 'boolean' ||
+        daemonInfo.testnet !== (CRYLO_NETWORK_MODE === 'testnet')) {
+      throw new Error(
+        `Daemon network does not match CryLo Wallet ${CRYLO_NETWORK_MODE} mode.`
+      );
+    }
 
     sendStatus('starting', 'Daemon ready. Starting wallet RPC...');
     walletProc = spawnWalletRpc();
@@ -582,7 +619,7 @@ async function performBoundNexusWalletRegistration(wallet) {
   }
 
   const challengeResponse = await fetch(
-    `${BRIDGE_API_URL}/nexus/onboarding-challenge`,
+    nexusApiUrl('/nexus/onboarding-challenge'),
     {
       method: 'POST',
       headers: {
@@ -607,7 +644,7 @@ async function performBoundNexusWalletRegistration(wallet) {
     await wallet.signMessage(challenge.message);
 
   const registerResponse = await fetch(
-    `${BRIDGE_API_URL}/nexus/register-bound-wallet`,
+    nexusApiUrl('/nexus/register-bound-wallet'),
     {
       method: 'POST',
       headers: {
@@ -1280,7 +1317,7 @@ secureIpcHandle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloA
 
 secureIpcHandle('bridge-request', async (_, payload) => {
   try {
-    const res = await fetch(`${BRIDGE_API_URL}/bridge/request`, {
+    const res = await fetch(nexusApiUrl('/bridge/request'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1294,7 +1331,15 @@ secureIpcHandle('bridge-request', async (_, payload) => {
       return { ok: false, error: data.error || text || `HTTP ${res.status}` };
     }
 
-    return { ok: true, ...data };
+    // Persist the one-time bearer secret in the main process BEFORE
+    // the renderer can send any CryLo. Never expose it to renderer JS.
+    saveBridgeStatusCapability(
+      getUserDataPath(),
+      data.paymentId,
+      data.statusToken
+    );
+    const { statusToken: _privateStatusToken, ...safeData } = data;
+    return { ok: true, ...safeData };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -1302,17 +1347,31 @@ secureIpcHandle('bridge-request', async (_, payload) => {
 
 secureIpcHandle('bridge-status', async (_, paymentId) => {
   try {
-    const res = await fetch(`${BRIDGE_API_URL}/bridge/status/${encodeURIComponent(paymentId)}`);
+    const token = getBridgeStatusCapability(getUserDataPath(), paymentId);
+    if (!token) {
+      return {
+        ok: false,
+        error: 'Legacy bridge request has no status capability; manual reconciliation is required.'
+      };
+    }
+    const res = await fetch(nexusApiUrl('/bridge/status'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Bridge-Status-Token': token
+      },
+      body: JSON.stringify({ paymentId })
+    });
 
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
 
     if (!res.ok) {
-      return { ok: false, error: data.error || text || `HTTP ${res.status}` };
+      return { ok: false, error: data.error || `HTTP ${res.status}` };
     }
 
-    return { ok: true, ...data };
+    return { ok: true, status: data.status };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -1321,7 +1380,7 @@ secureIpcHandle('bridge-status', async (_, paymentId) => {
 
 secureIpcHandle('bridge-release-status', async (_, nexusTxHash) => {
   try {
-    const res = await fetch(`${BRIDGE_API_URL}/bridge/release-status/${encodeURIComponent(nexusTxHash)}`);
+    const res = await fetch(nexusApiUrl(`/bridge/release-status/${encodeURIComponent(nexusTxHash)}`));
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
