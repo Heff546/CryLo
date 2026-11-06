@@ -165,6 +165,17 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
     );
   }
 
+  const l1Network = String(data.cryloL1Network || '').trim();
+  // Testnet remains backward compatible with its existing testnet-only
+  // foundation. Mainnet MUST be explicitly reported as mainnet, or its
+  // bridge and gas controls fail closed without affecting L1 mining.
+  if (CRYLO_NETWORK_MODE === 'mainnet' && l1Network !== 'mainnet') {
+    throw new Error('Nexus Foundation does not confirm CryLo L1 mainnet. Bridging is disabled.');
+  }
+  if (l1Network && l1Network !== CRYLO_NETWORK_MODE) {
+    throw new Error('Nexus Foundation is configured for a different CryLo L1 network.');
+  }
+
   const rpc = String(data.rpc || '').trim();
   const chainId = Number(data.chainId);
   const sourceContracts = data.contracts || {};
