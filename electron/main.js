@@ -446,7 +446,8 @@ function daemonRpc(method, params = {}) {
 async function assertDaemonNetwork() {
   const info = await daemonRpc('get_info');
   if (typeof info?.testnet !== 'boolean' ||
-      info.testnet !== (CRYLO_NETWORK_MODE === 'testnet')) {
+      info.testnet !== (CRYLO_NETWORK_MODE === 'testnet') ||
+      info.nettype !== CRYLO_NETWORK_MODE) {
     throw new Error(
       `Daemon network does not match CryLo Wallet ${CRYLO_NETWORK_MODE} mode.`
     );
