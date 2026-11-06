@@ -32,6 +32,11 @@ const dev = numberMacro('CryLo_DEV_FUND_FEE_BPS');
 const legacyLiquidity = numberMacro('CryLo_LIQUIDITY_FUND_FEE_BPS');
 const legacyGas = numberMacro('CryLo_GAS_TREASURY_FEE_BPS');
 
+console.log('Observed shared consensus defaults (basis points): Dev=' + dev +
+  ', Liquidity=' + legacyLiquidity + ', Gas=' + legacyGas);
+console.log('Required MAINNET policy: Dev=75, Liquidity=0, Gas=75');
+console.log('');
+
 check(
   'Development consensus allocation is 0.75%',
   dev === 75,
@@ -70,7 +75,7 @@ check(
   !/mode:\s*'testnet'/.test(launcher) &&
   launcher.includes('crylo-mainnet-release-ed25519-public.pem') &&
   launcher.includes('mainnet') &&
-  !/\\\$\{manifest\.version\}-testnet/.test(launcher),
+  !/\$\{manifest\.version\}-testnet/.test(launcher),
   'Keep signed testnet releases unchanged; implement independent authenticated mainnet tag/key/rollback policy'
 );
 check(
