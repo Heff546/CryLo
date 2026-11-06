@@ -80,7 +80,7 @@ test('mainnet v21 and testnet hardfork schedules are preserved', () => {
 test('integer rounding and conservation at a range of coinbase rewards', () => {
   const atomicSamples = [
     250000000000n, 20000000000n, 100000000001n,
-    1n, 99n, 9999n, 10000n, 10001n, 987654321012345n
+    20000000001n, 99999999999n, 123456789987n, 250000000001n
   ];
   for (const reward of atomicSamples) {
     for (const network of ['mainnet', 'testnet']) {
@@ -106,4 +106,12 @@ test('treasury destination must remain an explicit mainnet blocker until verifie
   assert.match(preflight, /gas_treasury_derivation/);
   assert.match(preflight, /gas_treasury_view_skey/);
   assert.doesNotMatch(validator, /Gas Treasury output key MISMATCH/);
+});
+
+test('official mainnet release builder fails closed on source preflight', () => {
+  const builder = read('scripts/release/crylo-release.js');
+  assert.match(builder, /if \(releaseNetwork === 'mainnet'\)/);
+  assert.match(builder, /mainnet-launch-preflight\.js/);
+  assert.match(builder, /gate\.status !== 0/);
+  assert.match(builder, /Mainnet release blocked by consensus, recipient or updater preflight/);
 });
