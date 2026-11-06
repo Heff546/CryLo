@@ -78,6 +78,8 @@ test('mainnet wallet data and mining network are isolated from testnet', () => {
   assert.match(main, /CRYLO_NETWORK_MODE === 'mainnet'/);
   assert.match(main, /'wallets-mainnet'/);
   assert.match(main, /'CryLo-mainnet'/);
+  assert.match(main, /l1Network !== 'mainnet'/);
+  assert.match(main, /Nexus Foundation does not confirm CryLo L1 mainnet/);
   assert.match(main, /assertDaemonNetwork\(\)/);
   assert.match(main, /secureIpcHandle\('miner-start'[\s\S]*await assertDaemonNetwork\(\)/);
   assert.match(main, /https:.*loopback|endpoint\.protocol !== 'https:'|endpoint\.protocol === 'https:'/s);
