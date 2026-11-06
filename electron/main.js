@@ -97,14 +97,9 @@ const NEXUS_RUNTIME_CACHE_MS = 60_000;
 let nexusRuntimeCache = null;
 let nexusRuntimeLoadedAt = 0;
 
-const REQUIRED_NEXUS_CONTRACTS = [
-  'wCryLo',
-  'BridgeManager',
-  'BridgeLedger',
-  'BridgeReserveVault',
-  'WalletRegistry',
-  'GasManager',
-  'GasTreasuryVault',
+// Mainnet launches with bridge + gas only. Keep the existing testnet
+// requirements intact until the later Nexus modules have been verified.
+const DEFERRED_NEXUS_CONTRACTS = [
   'RewardManager',
   'RewardVault',
   'Staking',
@@ -113,7 +108,19 @@ const REQUIRED_NEXUS_CONTRACTS = [
   'RevenuePolicy'
 ];
 
+const REQUIRED_NEXUS_CONTRACTS = [
+  'wCryLo',
+  'BridgeManager',
+  'BridgeLedger',
+  'BridgeReserveVault',
+  'WalletRegistry',
+  'GasManager',
+  'GasTreasuryVault',
+  ...(CRYLO_NETWORK_MODE === 'testnet' ? DEFERRED_NEXUS_CONTRACTS : [])
+];
+
 const OPTIONAL_NEXUS_CONTRACTS = [
+  ...(CRYLO_NETWORK_MODE === 'mainnet' ? DEFERRED_NEXUS_CONTRACTS : []),
   'CryLoInteractiveNFT',
   'CryLoBuybackVault',
   'NFTRevenueSplitter'
@@ -162,8 +169,13 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
   const chainId = Number(data.chainId);
   const sourceContracts = data.contracts || {};
 
-  if (!/^https?:\/\//i.test(rpc)) {
-    throw new Error('CryLoNexus Foundation returned an invalid RPC URL.');
+  const parsedRpc = new URL(rpc);
+  const loopbackRpc = ['localhost', '127.0.0.1', '[::1]'].includes(parsedRpc.hostname);
+  if (!/^https?:\/\//i.test(rpc) ||
+      (parsedRpc.protocol !== 'https:' &&
+       !(parsedRpc.protocol === 'http:' && loopbackRpc)) ||
+      parsedRpc.username || parsedRpc.password || parsedRpc.hash) {
+    throw new Error('CryLoNexus RPC must use HTTPS (or loopback HTTP for local tests).');
   }
 
   if (!Number.isSafeInteger(chainId) || chainId <= 0) {
