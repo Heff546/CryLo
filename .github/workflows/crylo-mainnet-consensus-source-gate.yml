@@ -1,0 +1,44 @@
+name: CryLo Mainnet Consensus Source Gate
+
+on:
+  push:
+    branches:
+      - release/crylo-mainnet-wallet-readiness-20261105
+  pull_request:
+    branches:
+      - release/unified-release-v1.1.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mainnet-consensus-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+      - name: Validate mainnet/testnet coinbase source contracts and rounding
+        run: node --test tests/launch/mainnet-coinbase-source.test.js
+      - name: Verify launch preflight blocks unsupported mainnet release
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          node scripts/release/mainnet-launch-preflight.js > mainnet-preflight.log 2>&1
+          code=$?
+          set -e
+          cat mainnet-preflight.log
+          if [ "$code" -eq 0 ]; then
+            echo "ERROR: mainnet preflight unexpectedly passed while Treasury recipient and updater remain incomplete"
+            exit 1
+          fi
+          grep -q "Treasury recipient destination has consensus key verification" mainnet-preflight.log
+          grep -q "Mainnet updater has a dedicated authenticated release channel" mainnet-preflight.log
+          echo "PASS: launch remains explicitly blocked until all gates are addressed"
