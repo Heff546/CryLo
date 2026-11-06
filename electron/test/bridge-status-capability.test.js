@@ -56,7 +56,8 @@ test('symlink and over-permissive capability storage fail closed', (t) => {
   fs.symlinkSync(target, vault);
   assert.throws(() => getBridgeStatusCapability(data, id));
   fs.unlinkSync(vault);
-  fs.writeFileSync(vault, '{}', { mode: 0o644 });
+  fs.writeFileSync(vault, '{}', { mode: 0o600 });
+  fs.chmodSync(vault, 0o644);
   assert.throws(() => getBridgeStatusCapability(data, id));
 });
 
