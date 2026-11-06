@@ -105,7 +105,8 @@ namespace cryptonote
 #endif
     block_reward += fee;
 
-    // CryLo Chain: 0.75% dev fund + 0.25% liquidity fund + 0.50% NEX gas fund
+    // MAINNET: 0.75% development, 0.75% CryLo Gas Treasury; no liquidity.
+    // TESTNET/STAGENET: preserve 0.75% development, 0.25% liquidity, 0.50% gas.
     uint64_t dev_fund_amount = 0;
     uint64_t liquidity_fund_amount = 0;
     uint64_t gas_treasury_amount = 0;
@@ -117,8 +118,11 @@ namespace cryptonote
     if (height > 0)
     {
       dev_fund_amount = block_reward * CryLo_DEV_FUND_FEE_BPS / 10000;
-      liquidity_fund_amount = block_reward * CryLo_LIQUIDITY_FUND_FEE_BPS / 10000;
-      gas_treasury_amount = block_reward * CryLo_GAS_TREASURY_FEE_BPS / 10000;
+      liquidity_fund_amount = (m_nettype == MAINNET ? 0 :
+          block_reward * CryLo_LIQUIDITY_FUND_FEE_BPS / 10000);
+      gas_treasury_amount = block_reward *
+          (m_nettype == MAINNET ? CryLo_GAS_TREASURY_FEE_BPS_MAINNET :
+                                  CryLo_GAS_TREASURY_FEE_BPS) / 10000;
 
       if (dev_fund_amount > 0)
       {
@@ -274,18 +278,18 @@ namespace cryptonote
       summary_amounts += liquidity_fund_amount;
     }
 
-    // CryLo Chain: add NEX gas fund output
+    // CryLo Chain: add CryLo Gas Treasury output
     if (gas_treasury_amount > 0) {
       crypto::key_derivation gas_treasury_derivation = AUTO_VAL_INIT(gas_treasury_derivation);
       crypto::public_key gas_treasury_out_eph_public_key = AUTO_VAL_INIT(gas_treasury_out_eph_public_key);
 
       bool r = crypto::generate_key_derivation(gas_treasury_addr.m_view_public_key, txkey.sec, gas_treasury_derivation);
-      CHECK_AND_ASSERT_MES(r, false, "while creating NEX gas fund out: failed to generate_key_derivation");
+      CHECK_AND_ASSERT_MES(r, false, "while creating CryLo Gas Treasury out: failed to generate_key_derivation");
 
       size_t gas_treasury_out_index = tx.vout.size();
 
       r = crypto::derive_public_key(gas_treasury_derivation, gas_treasury_out_index, gas_treasury_addr.m_spend_public_key, gas_treasury_out_eph_public_key);
-      CHECK_AND_ASSERT_MES(r, false, "while creating NEX gas fund out: failed to derive_public_key");
+      CHECK_AND_ASSERT_MES(r, false, "while creating CryLo Gas Treasury out: failed to derive_public_key");
 
       bool use_view_tags = hard_fork_version >= HF_VERSION_VIEW_TAGS;
       crypto::view_tag gas_treasury_view_tag;
