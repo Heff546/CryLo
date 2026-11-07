@@ -1,9 +1,9 @@
-name: CryLo Mainnet Wallet Readiness Smoke
+name: CryLo Electron Nexus Wallet Readiness Smoke
 
 on:
   push:
     branches:
-      - release/crylo-mainnet-wallet-readiness-20261105
+      - release/electron-nexus-readiness-unified25
   pull_request:
     branches:
       - release/unified-release-v1.1.1
