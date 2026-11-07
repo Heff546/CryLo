@@ -1673,12 +1673,15 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
       // No Treasury view/spend secrets are embedded in public nodes.
       crypto::public_key gas_treasury_spend_pkey;
       crypto::public_key gas_treasury_view_pkey;
-      if (!epee::string_tools::hex_to_pod(
+      const auto *generation = !b.miner_tx.vin.empty() ?
+          boost::get<txin_gen>(&b.miner_tx.vin[0]) : nullptr;
+      if (!generation ||
+          !epee::string_tools::hex_to_pod(
               CryLo_GAS_TREASURY_SPENDKEY, gas_treasury_spend_pkey) ||
           !epee::string_tools::hex_to_pod(
               CryLo_GAS_TREASURY_VIEWKEY, gas_treasury_view_pkey) ||
           !verify_crylo_mainnet_treasury_proof(
-              b.miner_tx, get_current_blockchain_height(),
+              b.miner_tx, generation->height,
               gas_treasury_view_pkey, gas_treasury_spend_pkey, 3))
       {
         MERROR_VER("Gas Treasury output key MISMATCH or invalid proof: rejecting mainnet miner reward");
