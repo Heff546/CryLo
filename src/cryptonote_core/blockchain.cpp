@@ -39,6 +39,7 @@
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "tx_pool.h"
 #include "blockchain.h"
+#include "crylo_gas_treasury_proof.h"
 #include "blockchain_db/blockchain_db.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "cryptonote_basic/events.h"
@@ -1661,6 +1662,28 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     {
       MERROR_VER("Dev fund output key MISMATCH: block does NOT pay the dev fund address. Rejecting.");
       return false;
+    }
+
+    if (m_nettype == MAINNET)
+    {
+      // Consensus must verify the *destination* as well as the amount.
+      // The sender's DLEQ proof binds R=rG and D=r*A for the official
+      // Treasury public view key, and the output key is checked against
+      // the fixed Treasury public spend key using the 8D derivation.
+      // No Treasury view/spend secrets are embedded in public nodes.
+      crypto::public_key gas_treasury_spend_pkey;
+      crypto::public_key gas_treasury_view_pkey;
+      if (!epee::string_tools::hex_to_pod(
+              CryLo_GAS_TREASURY_SPENDKEY, gas_treasury_spend_pkey) ||
+          !epee::string_tools::hex_to_pod(
+              CryLo_GAS_TREASURY_VIEWKEY, gas_treasury_view_pkey) ||
+          !verify_crylo_mainnet_treasury_proof(
+              b.miner_tx, get_current_blockchain_height(),
+              gas_treasury_view_pkey, gas_treasury_spend_pkey, 3))
+      {
+        MERROR_VER("Gas Treasury output key MISMATCH or invalid proof: rejecting mainnet miner reward");
+        return false;
+      }
     }
 
     uint64_t dev_fund_actual = b.miner_tx.vout[2].amount;
