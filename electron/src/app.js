@@ -2999,16 +2999,17 @@ function pollCryLoBridgeStatus() {
 
           deposit.lastStatusError = '';
 
-          if (res.processed) {
+          // The private status API returns only a lifecycle status.
+          // It intentionally omits L1 transaction metadata, Nexus
+          // addresses and the mint transaction hash for privacy.
+          if (res.status === 'minted') {
             deposit.processed = true;
-            deposit.nexusTx =
-              res.processed.nexus_tx_hash ||
-              res.processed.nexusTxHash ||
-              res.processed.txHash ||
-              res.processed.mintTxHash ||
-              'processed';
-
+            deposit.nexusTx = 'minted';
             deposit.submissionState = 'processed';
+            changed = true;
+          } else if (res.status === 'failed') {
+            deposit.lastStatusError =
+              'Bridge requires operator reconciliation; the deposit remains recorded.';
             changed = true;
           }
         } catch (error) {
