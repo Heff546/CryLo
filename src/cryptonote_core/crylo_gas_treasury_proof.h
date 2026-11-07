@@ -4,8 +4,10 @@
 // or spend key is embedded in a publicly distributed validator.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <cstring>
 #include <string>
 #include <vector>
