@@ -11,7 +11,8 @@ const app = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8');
 
 function epochHelpers() {
   const start = main.indexOf('async function getLatestGasEpoch(');
-  const end = main.indexOf('/*\n * Lightweight native-gas balance lookup.', start);
+  const nextSection = main.indexOf('Lightweight native-gas balance lookup.', start);
+  const end = nextSection >= 0 ? main.lastIndexOf('/*', nextSection) : -1;
   assert.ok(start > 0 && end > start, 'Gas epoch helper boundaries must exist');
   const context = {};
   vm.runInNewContext(
