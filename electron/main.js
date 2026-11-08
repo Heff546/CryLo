@@ -267,6 +267,7 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
     blockchainId: data.blockchainId,
     rpc,
     nativeToken: Object.freeze({ ...(data.nativeToken || {}) }),
+    bridgePrivacyVersion: String(data.bridgePrivacyVersion || ''),
     features: Object.freeze({ ...(data.features || {}) }),
     contracts: Object.freeze(contracts),
     provider,
@@ -1293,44 +1294,80 @@ secureIpcHandle('nexus-burn-nft', async (_, tokenId, walletName, cryloAddress) =
 
 secureIpcHandle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloAddress) => {
   try {
-    const runtime = await getNexusRuntimeConfig();
+    const runtime = await getNexusRuntimeConfig(true);
+    if (runtime.bridgePrivacyVersion !== 'private-v3') {
+      throw new Error('Private reverse bridge is not active on this Nexus network. No wCryLo was burned.');
+    }
+
     const provider = runtime.provider;
-
-    const wallet = loadBoundNexusWallet(
-      walletName,
-      cryloAddress
-    ).connect(provider);
-
-    const bridgeArtifact = require('./src/abis/BridgeManager.json');
-
+    const wallet = loadBoundNexusWallet(walletName, cryloAddress).connect(provider);
+    const bridgeAbi = require('./src/abis/BridgeManager.private-v3.json');
     const bridge = new ethers.Contract(
       runtime.contracts.BridgeManager,
-      bridgeArtifact.abi,
+      bridgeAbi.abi,
       wallet
     );
 
     const amount = parseWcryloUnits(amountText);
-    const nonce = await provider.getTransactionCount(wallet.address, 'pending');
+    if (amount <= 0n) throw new Error('Invalid wCryLo amount.');
 
-    const burnId = ethers.keccak256(
-      ethers.solidityPacked(
-        ['address', 'string', 'uint256', 'uint256'],
+    // Neither the native CryLo address nor the salt is ever placed in
+    // EVM calldata or in the public BurnedForCryLo event. A new random
+    // burn ID also avoids leaking a deterministic hash of a private address.
+    const burnId = ethers.hexlify(ethers.randomBytes(32));
+    const salt = ethers.hexlify(ethers.randomBytes(32));
+    const destinationCommitment = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['string', 'uint256', 'address', 'bytes32', 'address', 'uint256', 'bytes32', 'bytes32'],
         [
+          'CryLoPrivateRelease:v1',
+          BigInt(runtime.chainId),
+          runtime.contracts.BridgeManager,
+          burnId,
           wallet.address,
-          cryloAddress,
           amount,
-          BigInt(Date.now())
+          ethers.keccak256(ethers.toUtf8Bytes(cryloAddress)),
+          salt
         ]
       )
     );
 
+    // Sign the commitment with the bound Nexus owner key and register the
+    // *private* destination before burning. If API storage, HTTPS, or
+    // ownership verification fails, the user's tokens remain untouched.
+    const signature = await wallet.signMessage(ethers.getBytes(destinationCommitment));
+    const response = await fetch(nexusApiUrl('/bridge/outbound-intent'), {
+      redirect: 'error',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        burnId,
+        nexusAddress: wallet.address,
+        amountAtomic: amount.toString(),
+        cryloAddress,
+        salt,
+        signature
+      })
+    });
+    let registered;
+    try {
+      registered = await response.json();
+    } catch {
+      throw new Error('Private bridge authorization returned invalid JSON. No wCryLo was burned.');
+    }
+    if (!response.ok || !registered?.ok ||
+        String(registered.burnId).toLowerCase() !== burnId.toLowerCase() ||
+        String(registered.destinationCommitment).toLowerCase() !== destinationCommitment.toLowerCase()) {
+      throw new Error('The Nexus private payout authorization was not verified. No wCryLo was burned.');
+    }
+
+    const nonce = await provider.getTransactionCount(wallet.address, 'pending');
     const tx = await bridge.burnForCryLo(
       burnId,
-      cryloAddress,
+      destinationCommitment,
       amount,
       { nonce }
     );
-
     const receipt = await tx.wait();
 
     return {
@@ -1342,11 +1379,10 @@ secureIpcHandle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloA
   } catch (e) {
     return {
       ok: false,
-      error: e.shortMessage || e.reason || e.message
+      error: e.shortMessage || e.reason || e.message || 'Private reverse-bridge request failed.'
     };
   }
 });
-
 
 secureIpcHandle('bridge-request', async (_, payload) => {
   try {
@@ -5951,7 +5987,7 @@ secureIpcHandle('nexus-transactions', async (_, linkedAddress) => {
     const bridge = contracts.BridgeManager;
     const bridgeIface = new ethers.Interface([
       'event MintedFromCryLo(bytes32 indexed depositId,address indexed to,uint256 amount)',
-      'event BurnedForCryLo(address indexed from,string cryloAddress,uint256 amount,uint256 indexed nonce)'
+      'event BurnedForCryLo(bytes32 indexed burnId,address indexed from,bytes32 destinationCommitment,uint256 amount)'
     ]);
 
     await safeLogs({
@@ -5965,7 +6001,7 @@ secureIpcHandle('nexus-transactions', async (_, linkedAddress) => {
       address: bridge,
       fromBlock,
       toBlock: latest,
-      topics: [bridgeIface.getEvent('BurnedForCryLo').topicHash, zeroTopicUser]
+      topics: [bridgeIface.getEvent('BurnedForCryLo').topicHash, null, zeroTopicUser]
     }, bridgeIface, 'Bridge Burned');
 
     const txs = [];
