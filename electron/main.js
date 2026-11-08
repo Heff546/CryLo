@@ -5440,6 +5440,10 @@ app.on('web-contents-created', (_, contents) => {
 });
 
 async function getLatestGasEpoch(gm, walletAddress) {
+  const runnerProvider = gm.runner?.provider || gm.runner;
+  const block = await runnerProvider.getBlock('latest');
+  if (!block) throw new Error('Unable to verify the Nexus gas epoch claim window');
+  const currentChainTime = BigInt(block.timestamp);
   const count = Number(await gm.epochCount());
 
   if (!Number.isFinite(count) || count <= 0) {
@@ -5464,10 +5468,11 @@ async function getLatestGasEpoch(gm, walletAddress) {
         gm.claimed(epochId, walletAddress)
       ]);
 
+      const deadline = BigInt(epoch.deadline ?? epoch[2] ?? 0n);
       return {
         epochId,
         epoch,
-        eligible: !!eligible,
+        eligible: !!eligible && deadline >= currentChainTime,
         claimed: !!claimed
       };
     } catch (_) {}
@@ -5482,6 +5487,10 @@ async function getLatestGasEpoch(gm, walletAddress) {
 }
 
 async function getClaimableGasEpoch(gm, walletAddress) {
+  const runnerProvider = gm.runner?.provider || gm.runner;
+  const block = await runnerProvider.getBlock('latest');
+  if (!block) throw new Error('Unable to verify the Nexus gas epoch claim deadline');
+  const currentChainTime = BigInt(block.timestamp);
   const count = Number(await gm.epochCount());
 
   if (!Number.isFinite(count) || count <= 0) {
@@ -5494,12 +5503,14 @@ async function getClaimableGasEpoch(gm, walletAddress) {
     epochId--
   ) {
     try {
-      const [eligible, claimed] = await Promise.all([
+      const [epoch, eligible, claimed] = await Promise.all([
+        gm.epochs(epochId),
         gm.eligible(epochId, walletAddress),
         gm.claimed(epochId, walletAddress)
       ]);
+      const deadline = BigInt(epoch.deadline ?? epoch[2] ?? 0n);
 
-      if (eligible && !claimed) {
+      if (eligible && !claimed && deadline >= currentChainTime) {
         return epochId;
       }
     } catch (_) {}
