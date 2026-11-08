@@ -1,0 +1,53 @@
+{
+  "contractName": "BridgeManager",
+  "privacyVersion": "private-v3",
+  "abi": [
+    {
+      "type": "function",
+      "name": "burnForCryLo",
+      "stateMutability": "nonpayable",
+      "inputs": [
+        {
+          "name": "burnId",
+          "type": "bytes32"
+        },
+        {
+          "name": "destinationCommitment",
+          "type": "bytes32"
+        },
+        {
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "outputs": []
+    },
+    {
+      "type": "event",
+      "name": "BurnedForCryLo",
+      "anonymous": false,
+      "inputs": [
+        {
+          "name": "burnId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "from",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "destinationCommitment",
+          "type": "bytes32",
+          "indexed": false
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        }
+      ]
+    }
+  ]
+}
