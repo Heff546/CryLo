@@ -39,3 +39,5 @@ jobs:
         run: node --test electron/test/bridge-status-capability.test.js
       - name: Check salted private reverse-bridge intent and no-public-native-address ABI
         run: node --test electron/test/private-reverse-bridge.test.js
+      - name: Verify daily gas claim deadlines and protected vault display
+        run: node --test electron/test/gas-treasury-policy.test.js
