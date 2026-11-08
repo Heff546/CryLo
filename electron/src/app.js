@@ -5165,9 +5165,13 @@ async function refreshNexusGasStatus() {
     }
 
     if (dailyEl) {
+      // The native treasury vault is NOT a per-wallet daily payout amount.
+      // Display the user's actual epoch allocation separately from the
+      // protected vault balance to avoid implying a full-treasury claim.
       dailyEl.textContent =
-        `Daily Gas: ${fmtDecimalAmount(result.dailyGasAmount, 6)} CRYLO` +
-        ` · Vault: ${fmtDecimalAmount(result.vaultBalance, 4)} CRYLO`;
+        `Daily allocation: ${fmtDecimalAmount(result.dailyGasAmount, 6)} CRYLO` +
+        ` · Claimable: ${result.canClaim ? 'Yes' : 'No'}` +
+        ` · Treasury (not claimable): ${fmtDecimalAmount(result.vaultBalance, 4)} CRYLO`;
     }
     if (activityEl) {
       activityEl.textContent =
