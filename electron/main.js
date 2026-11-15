@@ -1917,9 +1917,12 @@ function saveOperatorConfig({
     );
   }
 
-  if (Number(chainId) !== 5546) {
+  // The caller supplies Foundation's chain ID only after verifying
+  // it against the connected RPC. Never force testnet ID on mainnet.
+  if (!Number.isSafeInteger(Number(chainId)) ||
+      Number(chainId) <= 0) {
     throw new Error(
-      `Invalid CryLoNexus chain ID: ${chainId}`
+      `Invalid verified CryLoNexus chain ID: ${chainId}`
     );
   }
 
@@ -1932,8 +1935,10 @@ function saveOperatorConfig({
   const config = {
     schemaVersion: 1,
     protocolVersion: 1,
-    network: 'CryLoNexus Testnet',
-    chainId: 5546,
+    network: CRYLO_NETWORK_MODE === 'mainnet'
+      ? 'CryLoNexus Mainnet'
+      : 'CryLoNexus Testnet',
+    chainId: Number(chainId),
     operatorAddress: normalizedOperatorAddress,
     tier,
     rpcUrl,
@@ -4419,7 +4424,7 @@ function writePrivateTextAtomic(filePath, value) {
   }
 }
 
-function readOperatorAuthorization(filePath, expectedAddress) {
+function readOperatorAuthorization(filePath, expectedAddress, expectedChainId) {
   const result = readJsonFileSafe(filePath);
 
   if (!result.exists) {
@@ -4479,7 +4484,9 @@ function readOperatorAuthorization(filePath, expectedAddress) {
     authorization.version === 1 &&
     authorization.delegation?.purpose ===
       'operator-heartbeat' &&
-    authorization.delegation?.chainId === 5546 &&
+    Number.isSafeInteger(expectedChainId) &&
+    expectedChainId > 0 &&
+    authorization.delegation?.chainId === expectedChainId &&
     ethers.isAddress(
       authorization.delegation?.sessionAddress
     ) &&
@@ -4702,7 +4709,17 @@ secureIpcHandle(
       }
 
       const runtime =
-        await getNexusRuntimeConfig();
+        await getNexusRuntimeConfig(true);
+
+      if (configResult.data.chainId !== runtime.chainId ||
+          configResult.data.contracts?.nodeStaking?.toLowerCase() !==
+            runtime.contracts.NodeStaking?.toLowerCase() ||
+          configResult.data.contracts?.wrappedCryLo?.toLowerCase() !==
+            runtime.contracts.wCryLo?.toLowerCase() ||
+          configResult.data.contracts?.rewardManager?.toLowerCase() !==
+            runtime.contracts.RewardManager?.toLowerCase()) {
+        throw new Error('Saved Node Service config does not match verified Nexus network');
+      }
 
       const wallet =
         loadBoundNexusWallet(
@@ -4764,7 +4781,7 @@ secureIpcHandle(
         );
       }
 
-      if (network.chainId !== 5546n) {
+      if (network.chainId !== BigInt(runtime.chainId)) {
         throw new Error(
           `Unexpected CryLoNexus chain ID: ${network.chainId}`
         );
@@ -4815,7 +4832,7 @@ secureIpcHandle(
       const delegation = {
         version: 1,
         purpose: 'operator-heartbeat',
-        chainId: 5546,
+        chainId: runtime.chainId,
         operatorAddress:
           ethers.getAddress(wallet.address),
         nodeId,
@@ -4965,7 +4982,8 @@ secureIpcHandle('nexus-operator-dashboard', async (_, linkedAddress) => {
   const authorization =
     readOperatorAuthorization(
       paths.authorization,
-      linkedAddress
+      linkedAddress,
+      Number(configResult.data?.chainId)
     );
 
   const now = Date.now();
@@ -5177,10 +5195,15 @@ secureIpcHandle('nexus-operator-dashboard', async (_, linkedAddress) => {
     const configuredNodeStakingAddress =
       configResult.data?.contracts?.nodeStaking;
 
-    const nodeStakingAddress =
-      ethers.isAddress(configuredNodeStakingAddress)
-        ? ethers.getAddress(configuredNodeStakingAddress)
-        : nexusRuntime.contracts.NodeStaking;
+    if (ethers.isAddress(configuredNodeStakingAddress) &&
+        ethers.getAddress(configuredNodeStakingAddress) !==
+          nexusRuntime.contracts.NodeStaking) {
+      throw new Error('Saved NodeStaking address differs from verified Nexus network');
+    }
+    if (configResult.data && configResult.data.chainId !== nexusRuntime.chainId) {
+      throw new Error('Saved Node Service chain ID differs from verified Nexus network');
+    }
+    const nodeStakingAddress = nexusRuntime.contracts.NodeStaking;
 
     const nodeArtifact =
       require('./src/abis/CryLoNodeStaking.json');

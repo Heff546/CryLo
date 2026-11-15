@@ -4440,8 +4440,12 @@ async function refreshNexusOperatorDashboard() {
 
     setNexusNodeDashboardText(
       'nexus-reward-eligibility',
-      verification.rewardEligible
-        ? 'Eligible'
+      !activationVerified || onChainActivation.active !== true
+        ? registered
+          ? 'On-chain Activation Required'
+          : 'Not Registered'
+        : verification.rewardEligible
+          ? 'Eligible'
         : verification.connected
           ? registered
             ? verification.locallyQualified
@@ -4455,8 +4459,10 @@ async function refreshNexusOperatorDashboard() {
 
     setNexusNodeDashboardText(
       'nexus-reward-verification-message',
-      verification.message ||
-      'Uptime verification status is unavailable.'
+      registered && (!activationVerified || onChainActivation.active !== true)
+        ? 'The node cannot earn rewards until its 72-hour on-chain activation is confirmed. This is separate from service authorization.'
+        : verification.message ||
+          'Uptime verification status is unavailable.'
     );
 
     renderNexusOperatorWorkers(

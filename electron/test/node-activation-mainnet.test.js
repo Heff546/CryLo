@@ -53,3 +53,21 @@ test('user-controlled renewal is exposed with independently verified on-chain ex
   assert.match(app,/Renew On-chain Activation/);
   assert.match(main,/activation\.getNodeActivationAt\(/);
 });
+
+test('node service and signed heartbeat authorization use verified network identity, never a testnet literal',()=>{
+  const main=read('main.js');
+  assert.match(main,/network: CRYLO_NETWORK_MODE === 'mainnet'/);
+  assert.match(main,/chainId: Number\(chainId\)/);
+  assert.match(main,/network\.chainId !== BigInt\(runtime\.chainId\)/);
+  assert.match(main,/chainId: runtime\.chainId,/);
+  assert.match(main,/authorization\.delegation\?\.chainId === expectedChainId/);
+  assert.match(main,/Saved Node Service config does not match verified Nexus network/);
+  assert.match(main,/Saved NodeStaking address differs from verified Nexus network/);
+  assert.doesNotMatch(main,/chainId: 5546/);
+  assert.doesNotMatch(main,/chainId !== 5546n/);
+});
+test('wallet never calls a node locally eligible while on-chain activation is unverified',()=>{
+  const app=read('src/app.js');
+  assert.match(app,/On-chain Activation Required/);
+  assert.match(app,/The node cannot earn rewards until its 72-hour on-chain activation/);
+});
