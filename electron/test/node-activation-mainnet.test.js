@@ -40,7 +40,7 @@ test('on-chain reward activation is distinct from 72-hour session delegation',()
   assert.doesNotMatch(afterValidator,/activateNode\(/);
 });
 test('user-controlled renewal is exposed with independently verified on-chain expiry',()=>{
-  const html=read('src/index.html'),app=read('src/app.js');
+  const html=read('src/index.html'),app=read('src/app.js'),main=read('main.js');
   assert.match(html,/id="nexus-activate-node-btn"/);
   assert.match(html,/onclick="App\.activateNexusNode\(\)"/);
   assert.match(html,/id="nexus-node-activation-expiry"/);
