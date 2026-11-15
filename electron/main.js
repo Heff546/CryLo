@@ -2017,6 +2017,77 @@ function saveOperatorConfig({
   return config;
 }
 
+// The historical bundled CryLoNodeStaking artifact predates the 72-hour
+// on-chain reward-activation methods. Use the exact current NodeStaking
+// signatures without falsifying or rebuilding the signed release artifact.
+// Service session-key authorization is separate from this on-chain state.
+const NODE_REWARD_ACTIVATION_ABI = Object.freeze([
+  'function activateNode()',
+  'function getNodeActivationAt(address,uint64) view returns (uint64,uint64)',
+  'function isNodeRewardActiveAt(address,uint64) view returns (bool)'
+]);
+
+secureIpcHandle('nexus-activate-node', async (_, walletName, cryloAddress) => {
+  try {
+    // Force-read Foundation and RPC identity before a signed transaction.
+    const runtime = await getNexusRuntimeConfig(true);
+    if (!ethers.isAddress(runtime.contracts.NodeStaking)) {
+      throw new Error('NodeStaking is not configured on this Nexus network.');
+    }
+    const provider = runtime.provider;
+    const wallet = loadBoundNexusWallet(walletName, cryloAddress).connect(provider);
+    const node = new ethers.Contract(
+      runtime.contracts.NodeStaking,
+      require('./src/abis/CryLoNodeStaking.json').abi,
+      wallet
+    );
+    const tier = await node.nodeTier(wallet.address);
+    if (tier !== 1n && tier !== 2n) {
+      throw new Error('Register an Operator or Validator before activating it.');
+    }
+    const required = tier === 2n
+      ? await node.validatorStakeRequirement()
+      : await node.operatorStakeRequirement();
+    if (await node.nodeStake(wallet.address) < required) {
+      throw new Error('The node no longer has the required wCryLo stake.');
+    }
+    const activation = new ethers.Contract(
+      runtime.contracts.NodeStaking,
+      NODE_REWARD_ACTIVATION_ABI,
+      wallet
+    );
+    // A missing method, paused node, or rejected activation fails before
+    // broadcast. No registration or staking is performed implicitly.
+    await activation.activateNode.staticCall();
+    const nonce = await provider.getTransactionCount(wallet.address, 'pending');
+    const tx = await activation.activateNode({ nonce });
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      throw new Error('Node activation transaction was not confirmed.');
+    }
+    const block = await provider.getBlock(receipt.blockNumber);
+    if (!block) throw new Error('Confirmed activation block not found.');
+    const [activatedAt, expiresAt] = await activation.getNodeActivationAt(
+      wallet.address, BigInt(block.timestamp)
+    );
+    if (expiresAt <= BigInt(block.timestamp) ||
+        !(await activation.isNodeRewardActiveAt(
+          wallet.address, BigInt(block.timestamp)
+        ))) {
+      throw new Error('On-chain activation could not be verified.');
+    }
+    return {
+      ok: true,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      activatedAt: Number(activatedAt),
+      expiresAt: Number(expiresAt)
+    };
+  } catch (e) {
+    return { ok: false, error: e.shortMessage || e.reason || e.message };
+  }
+});
+
 secureIpcHandle('nexus-register-operator', async (_, walletName, cryloAddress) => {
   try {
     const runtime = await getNexusRuntimeConfig();
@@ -5168,8 +5239,42 @@ secureIpcHandle('nexus-operator-dashboard', async (_, linkedAddress) => {
       contract: nodeStakingAddress,
       chainId: network.chainId.toString(),
       linkedAddress,
+      activation: { supported: false, active: false, activatedAt: 0, expiresAt: 0 },
       error: null
     };
+
+    if (tierText !== '0') {
+      // Check the actual chain timestamp and the bound contract, not a
+      // locally cached 72-hour service authorization or system clock.
+      try {
+        const latestBlock = await provider.getBlock('latest');
+        if (!latestBlock) throw new Error('Latest Nexus block unavailable');
+        const activation = new ethers.Contract(
+          nodeStakingAddress, NODE_REWARD_ACTIVATION_ABI, provider
+        );
+        const [activatedAt, expiresAt] = await activation.getNodeActivationAt(
+          linkedAddress, BigInt(latestBlock.timestamp)
+        );
+        const active = await activation.isNodeRewardActiveAt(
+          linkedAddress, BigInt(latestBlock.timestamp)
+        );
+        response.registration.activation = {
+          supported: true,
+          active: active === true,
+          activatedAt: Number(activatedAt),
+          expiresAt: Number(expiresAt),
+          checkedAt: Number(latestBlock.timestamp)
+        };
+      } catch (activationError) {
+        // Old testnet contracts may not expose this ABI. Never show
+        // "Active" or offer a signing action unless chain proof works.
+        response.registration.activation = {
+          supported: false, active: false, activatedAt: 0, expiresAt: 0,
+          error: activationError.shortMessage ||
+            activationError.reason || activationError.message
+        };
+      }
+    }
   } catch (error) {
     response.registration.error =
       error.shortMessage ||

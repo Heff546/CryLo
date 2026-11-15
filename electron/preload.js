@@ -101,6 +101,10 @@ contextBridge.exposeInMainWorld('crylo', {
   nexusRegisterValidator: (walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-register-validator', walletName, cryloAddress),
 
+  // On-chain 72-hour reward eligibility, independent of session delegation.
+  nexusActivateNode: (walletName, cryloAddress) =>
+    ipcRenderer.invoke('nexus-activate-node', walletName, cryloAddress),
+
   nexusUnregisterNode: (walletName, cryloAddress) => ipcRenderer.invoke('nexus-unregister-node', walletName, cryloAddress),
     nexusClaimNodeRewards: (walletName, cryloAddress) =>
     ipcRenderer.invoke('nexus-claim-node-rewards', walletName, cryloAddress),

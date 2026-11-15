@@ -1,0 +1,55 @@
+'use strict';
+
+// Mainnet-only interface regression. Does not start Electron, open a
+// wallet, sign a transaction, read RPC, or mutate the release artifacts.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const base = path.resolve(__dirname, '..');
+const read = p => fs.readFileSync(path.join(base,p),'utf8');
+
+test('private V3 reverse bridge retains commitment-only burn ABI', () => {
+  const artifact = JSON.parse(read('src/abis/BridgeManager.private-v3.json'));
+  const abi = artifact.abi || artifact;
+  const burn = abi.find(x=>x.type==='function'&&x.name==='burnForCryLo');
+  assert.deepEqual(burn.inputs.map(x=>x.type),['bytes32','bytes32','uint256']);
+  const main = read('main.js');
+  assert.match(main,/bridgePrivacyVersion !== 'private-v3'/);
+  assert.match(main,/nexusApiUrl\('\/bridge\/outbound-intent'\)/);
+  assert.match(main,/bridge\.burnForCryLo\(\s*burnId,\s*destinationCommitment,\s*amount,/);
+});
+test('on-chain reward activation is distinct from 72-hour session delegation',()=>{
+  const main=read('main.js'),preload=read('preload.js');
+  assert.match(main,/secureIpcHandle\('nexus-activate-node'/);
+  assert.match(main,/NODE_REWARD_ACTIVATION_ABI/);
+  assert.match(main,/function activateNode\(\)/);
+  assert.match(main,/function getNodeActivationAt\(address,uint64\)/);
+  assert.match(main,/function isNodeRewardActiveAt\(address,uint64\)/);
+  assert.match(main,/loadBoundNexusWallet\(walletName, cryloAddress\)/);
+  assert.match(main,/activation\.activateNode\.staticCall\(\)/);
+  assert.match(main,/receipt\.status !== 1/);
+  assert.match(main,/expiresAt <= BigInt\(block\.timestamp\)/);
+  assert.match(preload,/nexusActivateNode:[\s\S]*?'nexus-activate-node'/);
+  // No automatic activation when registering or authorizing a node.
+  const afterOperator=main.split("secureIpcHandle('nexus-register-operator'")[1]
+    .split("secureIpcHandle('nexus-register-validator'")[0];
+  const afterValidator=main.split("secureIpcHandle('nexus-register-validator'")[1]
+    .split("secureIpcHandle('nexus-unregister-node'")[0];
+  assert.doesNotMatch(afterOperator,/activateNode\(/);
+  assert.doesNotMatch(afterValidator,/activateNode\(/);
+});
+test('user-controlled renewal is exposed with independently verified on-chain expiry',()=>{
+  const html=read('src/index.html'),app=read('src/app.js');
+  assert.match(html,/id="nexus-activate-node-btn"/);
+  assert.match(html,/onclick="App\.activateNexusNode\(\)"/);
+  assert.match(html,/id="nexus-node-activation-expiry"/);
+  assert.match(html,/separate from the Node Service/);
+  assert.match(app,/async function activateNexusNode\(\)/);
+  assert.match(app,/nexusActivateNode\(/);
+  assert.match(app,/activateNexusNode,\s*claimNexusNodeRewards/);
+  assert.match(app,/onChainActivation\.supported === true/);
+  assert.match(app,/onChainActivation\.active === true/);
+  assert.match(app,/Renew On-chain Activation/);
+  assert.match(main,/activation\.getNodeActivationAt\(/);
+});

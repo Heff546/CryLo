@@ -4081,6 +4081,9 @@ async function refreshNexusOperatorDashboard() {
       'nexus-unregister-node-btn',
       false
     );
+    setNexusNodeDashboardVisible('nexus-activate-node-btn', false);
+    setNexusNodeDashboardText('nexus-node-activation-status', 'No Wallet');
+    setNexusNodeDashboardText('nexus-node-activation-expiry', '—');
 
     renderNexusNodeCenterSnapshot({
       linkedAddress: null,
@@ -4205,6 +4208,32 @@ async function refreshNexusOperatorDashboard() {
       'nexus-unregister-node-btn',
       registered
     );
+
+    const onChainActivation = registration.activation || {};
+    const activationVerified = registered &&
+      onChainActivation.supported === true;
+    setNexusNodeDashboardVisible(
+      'nexus-activate-node-btn', activationVerified
+    );
+    setNexusNodeDashboardText(
+      'nexus-node-activation-status',
+      !registered ? 'Not Registered' :
+        !activationVerified ? 'Unavailable' :
+          onChainActivation.active === true ? 'Active' :
+            Number(onChainActivation.expiresAt) > 0 ? 'Expired' : 'Not Activated'
+    );
+    setNexusNodeDashboardText(
+      'nexus-node-activation-expiry',
+      activationVerified && Number(onChainActivation.expiresAt) > 0
+        ? new Date(Number(onChainActivation.expiresAt) * 1000).toLocaleString()
+        : '—'
+    );
+    const activateButton = document.getElementById('nexus-activate-node-btn');
+    if (activateButton) {
+      activateButton.textContent = onChainActivation.active === true
+        ? 'Renew On-chain Activation (72 Hours)'
+        : 'Activate Node On-chain (72 Hours)';
+    }
 
     const authorization =
       result.authorization || {};
@@ -4713,6 +4742,49 @@ async function authorizeNexusOperator() {
       button.textContent =
         'Authorize Node for 72 Hours';
     }
+  }
+}
+
+let nexusNodeActivationInProgress = false;
+
+// A deliberate wallet-signed on-chain action. Registration and the
+// existing service-session delegation never activate reward eligibility.
+async function activateNexusNode() {
+  if (nexusNodeActivationInProgress) return;
+  const statusEl = document.getElementById('nexus-node-action-status');
+  const button = document.getElementById('nexus-activate-node-btn');
+  nexusNodeActivationInProgress = true;
+  if (button) button.disabled = true;
+  try {
+    if (statusEl) statusEl.textContent = 'Checking native CRYLO for on-chain node activation...';
+    const gas = await ensureNexusGasForAction(
+      'on-chain node activation', NEXUS_GAS_ESTIMATES.nodeAction
+    );
+    if (!gas.ok) {
+      if (statusEl) statusEl.textContent = gas.cancelled
+        ? 'Node activation cancelled.'
+        : `Node activation stopped: ${gas.error}`;
+      return;
+    }
+    if (statusEl) statusEl.textContent =
+      'Confirming the 72-hour reward-activation transaction on Nexus...';
+    const result = await window.crylo.nexusActivateNode(
+      State.walletName, State.address
+    );
+    if (!result?.ok) {
+      throw new Error(result?.error || 'Node activation was not confirmed.');
+    }
+    if (statusEl) statusEl.textContent =
+      `Node reward activation confirmed. Expires: ${new Date(
+        Number(result.expiresAt) * 1000
+      ).toLocaleString()}. Renew before expiry to remain eligible.`;
+    await refreshNexusOperatorDashboard();
+  } catch (error) {
+    if (statusEl) statusEl.textContent =
+      `Node activation failed: ${error?.message || error}`;
+  } finally {
+    nexusNodeActivationInProgress = false;
+    if (button) button.disabled = false;
   }
 }
 
@@ -5504,6 +5576,7 @@ window.App = {
   refreshNexusOperatorDashboard,
   registerNexusOperator,
   registerNexusValidator,
+  activateNexusNode,
   claimNexusNodeRewards,
   unregisterNexusNode,
   startCryLoBridgeIn,
