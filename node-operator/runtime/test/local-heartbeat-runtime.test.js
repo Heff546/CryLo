@@ -188,7 +188,9 @@ test(
         expectedOperatorAddress:
           OPERATOR_ADDRESS,
         expectedNodeId:
-          'operator-node-001'
+          'operator-node-001',
+        expectedChainId:
+          undefined
       }
     );
 

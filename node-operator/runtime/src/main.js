@@ -275,7 +275,9 @@ async function run() {
       await createLocalHeartbeatRuntime({
         operatorAddress:
           config.operatorAddress,
-        nodeId
+        nodeId,
+        expectedChainId:
+          config.chainId
       });
 
     localQualificationTracker =

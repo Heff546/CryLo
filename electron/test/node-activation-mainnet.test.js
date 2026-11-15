@@ -71,3 +71,16 @@ test('wallet never calls a node locally eligible while on-chain activation is un
   assert.match(app,/On-chain Activation Required/);
   assert.match(app,/The node cannot earn rewards until its 72-hour on-chain activation/);
 });
+test('bundled operator runtime rejects mismatched signed delegation chain',()=>{
+  const loader=read('../node-operator/runtime/src/evidence/authorization-loader.js');
+  const runtime=read('../node-operator/runtime/src/main.js');
+  const pipeline=read('../node-operator/runtime/src/evidence/local-heartbeat-runtime.js');
+  const schema=JSON.parse(read('../node-operator/protocol/schemas/operator-config.schema.json'));
+  assert.match(loader,/delegation\.chainId !== expectedChainId/);
+  assert.match(loader,/Expected authorization chain ID/);
+  assert.doesNotMatch(loader,/delegation\.chainId !== 5546/);
+  assert.match(pipeline,/expectedChainId:\s*options\.expectedChainId/);
+  assert.match(runtime,/expectedChainId:\s*config\.chainId/);
+  assert.ok(schema.properties.network.enum.includes('CryLoNexus Mainnet'));
+});
+
