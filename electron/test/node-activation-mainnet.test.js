@@ -83,4 +83,19 @@ test('bundled operator runtime rejects mismatched signed delegation chain',()=>{
   assert.match(runtime,/expectedChainId:\s*config\.chainId/);
   assert.ok(schema.properties.network.enum.includes('CryLoNexus Mainnet'));
 });
+test('bundled Validator reward EIP-712 and remote evidence use verified Nexus chain',()=>{
+  const main=read('../node-operator/runtime/src/main.js');
+  const observation=read('../node-operator/runtime/src/evidence/node-observation-worker.js');
+  const signed=read('../node-operator/runtime/src/evidence/signed-validator-reward-approval.js');
+  const typed=read('../node-operator/runtime/src/evidence/validator-reward-approval-signature-eip712.js');
+  const auth=read('../node-operator/runtime/src/evidence/validator-reward-approval-authorization.js');
+  const delegation=read('../node-operator/runtime/src/evidence/validator-reward-approval-eip712.js');
+  assert.match(main,/expectedChainId:\s*config\.chainId/);
+  assert.match(main,/chainId:\s*config\.chainId,\s*validatorAddress:/);
+  assert.match(observation,/expectedChainId:\s*options\.expectedChainId/);
+  assert.match(signed,/chainId:\s*unsignedInput\.chainId/);
+  assert.match(typed,/chainId:\s*approval\.chainId/);
+  assert.match(auth,/expectedChainId:\s*options\.expectedChainId/);
+  assert.match(delegation,/delegation\.chainId !==\s*expectedChainId/);
+});
 

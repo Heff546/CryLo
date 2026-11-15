@@ -164,6 +164,7 @@ function createNodeObservationWorker(options) {
         authorization,
         localOperatorAddress,
         localNodeId,
+        expectedChainId: options.expectedChainId,
         now: clock
       });
 

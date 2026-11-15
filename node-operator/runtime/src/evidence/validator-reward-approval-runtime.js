@@ -315,6 +315,9 @@ async function createValidatorRewardApprovalRuntime(
       expectedSessionAddress:
         session.sessionAddress,
 
+      expectedChainId:
+        options.chainId,
+
       ...(options.nowMs === undefined
         ? {}
         : {
@@ -396,6 +399,7 @@ async function createValidatorRewardApprovalRuntime(
     const approval =
       buildSignedValidatorRewardApproval({
         decision,
+        chainId: options.chainId,
 
         approvingValidatorAddress:
           validatorAddress,

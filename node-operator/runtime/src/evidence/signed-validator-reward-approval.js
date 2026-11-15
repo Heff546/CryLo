@@ -146,7 +146,8 @@ function buildUnsignedValidatorRewardApproval({
   approvingValidatorNodeId,
   approvingSessionAddress,
   finalizationContract,
-  issuedAt
+  issuedAt,
+  chainId = CRYLONEXUS_CHAIN_ID
 }) {
   requirePlainObject(
     decision,
@@ -234,8 +235,7 @@ function buildUnsignedValidatorRewardApproval({
     protocolVersion:
       APPROVAL_PROTOCOL_VERSION,
 
-    chainId:
-      CRYLONEXUS_CHAIN_ID,
+    chainId,
 
     purpose:
       'validator-reward-approval',
@@ -306,7 +306,8 @@ function buildSignedValidatorRewardApproval({
   approvingSessionAddress,
   finalizationContract,
   issuedAt,
-  privateKey
+  privateKey,
+  chainId = CRYLONEXUS_CHAIN_ID
 }) {
   assertPrivateKey(
     privateKey,
@@ -320,7 +321,8 @@ function buildSignedValidatorRewardApproval({
       approvingValidatorNodeId,
       approvingSessionAddress,
       finalizationContract,
-      issuedAt
+      issuedAt,
+      chainId
     });
 
   const signerAddress =
@@ -442,7 +444,9 @@ function verifySignedValidatorRewardApproval(
           .finalizationContract,
 
       issuedAt:
-        unsignedInput.issuedAt
+        unsignedInput.issuedAt,
+      chainId:
+        unsignedInput.chainId
     });
 
   const typed =

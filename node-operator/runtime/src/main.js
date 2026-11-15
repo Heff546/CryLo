@@ -471,6 +471,8 @@ async function run() {
 
           validatorRewardApprovalRuntime =
             await createValidatorRewardApprovalRuntime({
+              chainId:
+                config.chainId,
               validatorAddress:
                 config.operatorAddress,
 
@@ -823,6 +825,8 @@ async function run() {
           config.operatorAddress,
         localNodeId:
           nodeId,
+        expectedChainId:
+          config.chainId,
         replayState,
 
         async readRemoteNodeStatus(
