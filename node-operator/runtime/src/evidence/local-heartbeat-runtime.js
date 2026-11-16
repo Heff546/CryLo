@@ -208,7 +208,9 @@ async function createLocalHeartbeatRuntime(
       expectedOperatorAddress:
         operatorAddress,
       expectedNodeId:
-        nodeId
+        nodeId,
+      expectedChainId:
+        options.expectedChainId
     });
 
   requirePlainObject(

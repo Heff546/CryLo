@@ -442,13 +442,18 @@
       </div>
 
       <div style="margin-top:10px;font-size:13px;color:var(--text-dim)">
-        Pending Rewards:
+        Claimable Vault Rewards:
         <strong id="nexus-pending-rewards">—</strong>
         <span>wCryLo</span>
       </div>
 
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-secondary" onclick="App.claimNexusRewards()">Claim Rewards</button>
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:var(--text-dim)">
+        Includes materialized node and staking rewards. Activated daily
+        staking payouts may need a separate materialization transaction.
+        Claim Rewards checks historical days in bounded steps.
       </div>
     </div>
 
@@ -1017,9 +1022,26 @@
                   <span>Locked stake</span>
                   <strong id="nexus-node-stake">—</strong>
                 </div>
+                <div class="node-summary-card">
+                  <span>On-chain reward activation</span>
+                  <strong id="nexus-node-activation-status">—</strong>
+                </div>
+                <div class="node-summary-card">
+                  <span>Activation expires</span>
+                  <strong id="nexus-node-activation-expiry">—</strong>
+                </div>
               </div>
 
+              <p class="muted">On-chain 72-hour reward activation is separate from the Node Service's 72-hour session authorization. Both must be maintained.</p>
               <div class="node-center-actions">
+                <button
+                  id="nexus-activate-node-btn"
+                  class="btn btn-primary hidden"
+                  type="button"
+                  onclick="App.activateNexusNode()"
+                >
+                  Activate Node On-chain (72 Hours)
+                </button>
                 <button
                   id="nexus-unregister-node-btn"
                   class="btn btn-danger hidden"

@@ -72,7 +72,8 @@ async function buildAuthorization(
 
   const typedDelegation =
     validatorRewardApprovalDelegationTypedData(
-      delegation
+      delegation,
+      overrides.expectedChainId || 5546
     );
 
   const delegationSignature =
@@ -434,3 +435,23 @@ test(
     );
   }
 );
+
+test('mainnet Validator delegation uses verified EIP-712 chain, rejects testnet replay',async()=>{
+  const {authorization,validator} = await buildAuthorization({
+    expectedChainId:6546,
+    delegation:{chainId:6546}
+  });
+  const expected={
+    authorization,
+    expectedValidatorAddress:validator.address,
+    expectedChainId:6546,
+    nowMs:Date.parse('2026-08-11T06:00:00.000Z')
+  };
+  const verified=verifyValidatorRewardApprovalAuthorization(expected);
+  assert.equal(verified.delegation.chainId,6546);
+  assert.throws(
+    ()=>verifyValidatorRewardApprovalAuthorization({...expected,expectedChainId:5546}),
+    /Unexpected Validator reward approval chain ID/
+  );
+});
+

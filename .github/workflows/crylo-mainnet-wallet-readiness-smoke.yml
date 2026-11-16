@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - release/electron-nexus-readiness-unified25
+      - security/electron-private-reverse-bridge-v3-20261108
   pull_request:
     branches:
       - release/unified-release-v1.1.1
@@ -36,3 +37,7 @@ jobs:
           node --check electron/security/bridge-status-store.js
       - name: Test private bridge capabilities and network separation
         run: node --test electron/test/bridge-status-capability.test.js
+      - name: Check salted private reverse-bridge intent and no-public-native-address ABI
+        run: node --test electron/test/private-reverse-bridge.test.js
+      - name: Verify daily gas claim deadlines and protected vault display
+        run: node --test electron/test/gas-treasury-policy.test.js

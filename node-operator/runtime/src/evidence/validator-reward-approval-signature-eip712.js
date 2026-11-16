@@ -285,6 +285,10 @@ function validatorRewardApprovalTypedData(
       'Validator reward approval issuedAt'
     );
 
+  if (!Number.isSafeInteger(approval.chainId) || approval.chainId <= 0) {
+    throw new TypeError('Validator reward approval chain ID must be a positive safe integer');
+  }
+
   const domain =
     Object.freeze({
       name:
@@ -294,7 +298,7 @@ function validatorRewardApprovalTypedData(
         EIP712_DOMAIN_VERSION,
 
       chainId:
-        CHAIN_ID,
+        approval.chainId,
 
       verifyingContract
     });
