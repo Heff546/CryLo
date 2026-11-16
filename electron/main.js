@@ -20,6 +20,10 @@ const {
   saveBridgeStatusCapability,
   getBridgeStatusCapability
 } = require('./security/bridge-status-store');
+const {
+  claimNormalStakerRewards
+} = require('./security/normal-staker-reward-claim');
+const normalStakerRewardScanCursors = new Map();
 
 // All renderer-to-main IPC handlers, including wallet RPC, bridge, staking,
 // miner and local file actions, are gated to the top-level local wallet page.
@@ -1536,15 +1540,20 @@ secureIpcHandle('nexus-pending-rewards', async (_, linkedAddress) => {
     }
 
     const runtime = await getNexusRuntimeConfig();
-    const stakingArtifact = require('./src/abis/CryLoStaking.json');
-
-    const staking = new ethers.Contract(
-      runtime.contracts.Staking,
-      stakingArtifact.abi,
+    if (!runtime.contracts.RewardVault) {
+      throw new Error('Nexus RewardVault is not deployed.');
+    }
+    const rewardVaultArtifact = require('./src/abis/RewardVault.json');
+    const rewardVault = new ethers.Contract(
+      runtime.contracts.RewardVault,
+      rewardVaultArtifact.abi,
       runtime.provider
     );
 
-    const rewards = await staking.pendingRewards(linkedAddress);
+    // The Vault reports only materialized claimable balances, shared
+    // across node and normal-staker entitlements. Staged daily payouts
+    // are visible to the claimant after materialization, not before.
+    const rewards = await rewardVault.pendingRewards(linkedAddress);
 
     return {
       ok: true,
@@ -1563,22 +1572,47 @@ secureIpcHandle('nexus-claim-rewards', async (_, walletName, cryloAddress) => {
       cryloAddress
     ).connect(runtime.provider);
 
-    const stakingArtifact = require('./src/abis/CryLoStaking.json');
-
-    const staking = new ethers.Contract(
-      runtime.contracts.Staking,
-      stakingArtifact.abi,
+    if (!runtime.contracts.RewardVault) {
+      throw new Error('Nexus RewardVault is not deployed.');
+    }
+    const rewardVaultArtifact = require('./src/abis/RewardVault.json');
+    const rewardVault = new ethers.Contract(
+      runtime.contracts.RewardVault,
+      [
+        ...rewardVaultArtifact.abi,
+        'function preparedDailySettlementActivated(uint64) view returns (bool)',
+        'function stagedStakerWalletSeen(uint64,address) view returns (bool)',
+        'function activatedStakerRewardClaimed(uint64,address) view returns (bool)',
+        'function stagedStakerPayoutByWallet(uint64,address) view returns (uint256)',
+        'function materializeActivatedStakerReward(uint64)'
+      ],
       wallet
     );
+    const rewardManager = runtime.contracts.RewardManager
+      ? new ethers.Contract(
+          runtime.contracts.RewardManager,
+          [
+            'function firstRewardDayStartedAt() view returns (uint64)',
+            'function nextUnaccountedRewardDay() view returns (uint64)'
+          ],
+          runtime.provider
+        )
+      : null;
 
-    const tx = await staking.claimRewards();
-    const receipt = await tx.wait();
-
-    return {
-      ok: true,
-      txHash: tx.hash,
-      blockNumber: receipt.blockNumber
-    };
+    const result = await claimNormalStakerRewards({
+      vault: rewardVault,
+      manager: rewardManager,
+      walletAddress: wallet.address,
+      cursorKey: [
+        runtime.chainId,
+        runtime.contracts.RewardVault,
+        wallet.address
+      ].join(':').toLowerCase(),
+      cursors: normalStakerRewardScanCursors
+    });
+    return result.ok
+      ? { ...result, claimed: formatWcryloUnits(result.claimed) }
+      : result;
   } catch (e) {
     return {
       ok: false,

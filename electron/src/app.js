@@ -3540,7 +3540,11 @@ async function claimNexusRewards() {
 
   statusEl.textContent = 'Checking Nexus gas for staking reward claim...';
 
-  const gasCheck = await ensureNexusGasForAction('claiming staking rewards', NEXUS_GAS_ESTIMATES.claimStakingRewards);
+  // An activated staker entitlement may need materialization before
+  // its Vault claim: reserve UX gas for up to two transactions.
+  const gasCheck = await ensureNexusGasForAction(
+    'claiming staking rewards', NEXUS_GAS_ESTIMATES.claimStakingRewards * 2
+  );
   if (!gasCheck.ok) {
     statusEl.textContent = gasCheck.cancelled ? 'Claim cancelled.' : `Claim failed: ${gasCheck.error}`;
     return;
@@ -3552,20 +3556,30 @@ async function claimNexusRewards() {
     const result = await window.crylo.nexusClaimRewards(State.walletName, State.address);
 
     if (!result.ok) {
-      const errorText = String(result.error || '').toLowerCase();
-
-      if (errorText.includes('no rewards')) {
-        statusEl.textContent = 'No rewards available to claim.';
+      if (result.continueScan) {
+        statusEl.textContent =
+          'Checking older activated reward days. Click Claim Rewards again to continue.';
         return;
       }
-
+      if (result.creditReady) {
+        statusEl.textContent =
+          'Daily rewards are now available in the Vault, but the claim is not complete: ' +
+          (result.error || 'Try again when claiming is available.');
+        await refreshNexusDashboard();
+        return;
+      }
+      if (result.noRewards) {
+        statusEl.textContent = 'No Vault rewards available to claim.';
+        return;
+      }
       statusEl.textContent =
         `Claim failed: ${result.error || 'Unknown error'}`;
       return;
     }
 
-    statusEl.textContent =
-      'Staking rewards claimed successfully.';
+    statusEl.textContent = result.materializedDay
+      ? 'Daily staking rewards were materialized and claimed successfully.'
+      : 'Claimable Vault rewards were claimed successfully.';
 
     await refreshNexusDashboard();
     scheduleNexusDashboardRefresh(5000);

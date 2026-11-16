@@ -442,13 +442,18 @@
       </div>
 
       <div style="margin-top:10px;font-size:13px;color:var(--text-dim)">
-        Pending Rewards:
+        Claimable Vault Rewards:
         <strong id="nexus-pending-rewards">—</strong>
         <span>wCryLo</span>
       </div>
 
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-secondary" onclick="App.claimNexusRewards()">Claim Rewards</button>
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:var(--text-dim)">
+        Includes materialized node and staking rewards. Activated daily
+        staking payouts may need a separate materialization transaction.
+        Claim Rewards checks historical days in bounded steps.
       </div>
     </div>
 
