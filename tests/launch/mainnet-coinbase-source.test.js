@@ -99,13 +99,38 @@ test('integer rounding and conservation at a range of coinbase rewards', () => {
   }
 });
 
-test('treasury destination must remain an explicit mainnet blocker until verified', () => {
-  // Existing validator checks gas amount, not the destination key. A green
-  // source allocation check cannot authorize mainnet publication.
-  assert.match(preflight, /Gas Treasury output key MISMATCH/);
-  assert.match(preflight, /gas_treasury_derivation/);
-  assert.match(preflight, /gas_treasury_view_skey/);
-  assert.doesNotMatch(validator, /Gas Treasury output key MISMATCH/);
+test('mainnet Treasury public recipient proof is connected to miner and consensus validator', () => {
+  // These assertions check source wiring ONLY. They do not cryptographically
+  // validate a DLEQ proof or authorize a native mainnet release.
+  const proof = read('src/cryptonote_core/crylo_gas_treasury_proof.h');
+  const verifier = proof.slice(proof.indexOf('inline bool verify_crylo_mainnet_treasury_proof('));
+  assert.match(generator, /!add_crylo_mainnet_treasury_proof\(/);
+  assert.match(validator, /!verify_crylo_mainnet_treasury_proof\(/);
+  assert.match(validator, /b\.miner_tx, generation->height/);
+  assert.match(validator, /Gas Treasury output key MISMATCH or invalid proof/);
+  assert.match(verifier, /crypto::check_tx_proof\(/);
+  assert.match(verifier, /crylo_treasury_proof_message\(without_proof, height\)/);
+  assert.match(verifier, /tx\.extra\[proof_start\] != TX_EXTRA_TAG_CRYLO_GAS_TREASURY_PROOF/);
+  assert.match(verifier, /if \(count != 1\)/);
+  assert.match(verifier, /crypto::derive_public_key\(/);
+  assert.match(verifier, /expected_output != actual_output/);
+  assert.match(verifier, /get_output_view_tag\(tx\.vout\[treasury_index\]\)/);
+  assert.doesNotMatch(validator, /CryLo_GAS_TREASURY_VIEWKEY_SECRET/);
+  assert.doesNotMatch(proof, /CryLo_GAS_TREASURY_VIEWKEY_SECRET/);
+});
+
+test('launch preflight checks the public proof rather than a public wallet view secret', () => {
+  assert.match(preflight, /treasuryProof\.includes\('inline bool verify_crylo_mainnet_treasury_proof\('\)/);
+  assert.match(preflight, /verifyProof\.includes\('crypto::check_tx_proof\('\)/);
+  assert.match(preflight, /verifyProof\.includes\('expected_output != actual_output'\)/);
+  assert.doesNotMatch(preflight, /blockchain\.includes\('gas_treasury_view_skey'\)/);
+});
+
+test('source-only proof checks never authorize official mainnet release signing', () => {
+  // The 75/0/75 candidate allocation and native DLEQ proof still require
+  // explicit approval and adversarial testing, independent of static checks.
+  assert.match(preflight, /'Mainnet allocation approval and native DLEQ consensus evidence',\s*false,/);
+  assert.match(preflight, /UNAPPROVED CANDIDATE mainnet allocation/);
 });
 
 test('official mainnet release builder fails closed on source preflight', () => {

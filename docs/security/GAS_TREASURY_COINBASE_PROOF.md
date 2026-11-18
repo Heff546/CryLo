@@ -1,21 +1,23 @@
 # CryLo Gas Treasury coinbase recipient proof — security design gate
 
-**Status: DESIGN PROPOSAL ONLY. NOT IMPLEMENTED. NO MAINNET RELEASE AUTHORIZED.**
+**Status: SOURCE CANDIDATE IMPLEMENTED; NATIVE VALIDATION AND CRYPTOGRAPHIC REVIEW OUTSTANDING. NO MAINNET RELEASE AUTHORIZED.**
 
-## Confirmed defect and security objective
+## Historical defect and current candidate
 
-`src/cryptonote_core/cryptonote_tx_utils.cpp` creates a CryptoNote
-one-time output for the fixed Gas Treasury recipient using the miner's
-ephemeral transaction secret. `src/cryptonote_core/blockchain.cpp`
-currently validates the treasury amount and its position but not the
-destination key. A malicious miner can replace the treasury public output
-key with an output it controls, keep the amount unchanged, and pass that
-amount-only check.
+Earlier source checked the Treasury output amount and position but not
+its destination key. That would allow a malicious miner to substitute its
+own output while retaining the expected amount.
 
-The verifier must reject a coinbase unless its treasury output actually
-derives from the approved Treasury **public spend and view keys**, under the
-coinbase's corresponding transaction public key. Never assume an amount
-check proves the recipient.
+The current **unreleased mainnet source candidate** adds
+`src/cryptonote_core/crylo_gas_treasury_proof.h`. The miner constructs a
+height-bound transaction proof, and the MAINNET validator calls
+`verify_crylo_mainnet_treasury_proof` to check a public proof and derive
+the one-time Treasury output key from the configured Treasury **public**
+spend and view keys. It rejects invalid proof or output checks.
+
+This is a source-level finding, **not** evidence that the implementation
+has passed native adversarial tests or independent cryptographic review.
+Never assume a source string check alone proves correct recipient payment.
 
 ## Privacy constraint
 
@@ -30,7 +32,7 @@ reuse the Development view key. Do not attach CryLo L1 payment IDs,
 transaction IDs, integrated addresses, or other bridge linkable inputs
 to any public proof.
 
-## Candidate: verifiable shared-secret derivation without a view secret
+## Candidate source: verifiable shared-secret derivation without a Treasury view secret
 
 This repo already has `crypto::generate_tx_proof` and
 `crypto::check_tx_proof` (version 2), which prove a matching transaction
@@ -59,11 +61,12 @@ use a *Treasury-only* public DLEQ proof:
   Treasury payments are deliberately recognizable; miner reward outputs
   must retain their privacy.
 
-The above is a **protocol sketch**, not a cryptographic implementation
-or a proof of security. It must be checked against the actual v2
-`generate_tx_proof` semantics, canonical scalar and curve-point checks,
-variant serializer rules, block-weight limits, and independent verifier
-implementations before changing consensus.
+The candidate now implements this design in source, but this is **not a
+cryptographic proof of correctness**. The v2 `generate_tx_proof` /
+`check_tx_proof` semantics, height/prefix binding, canonical scalar and
+curve-point checks, extra-field parsing, tx size limits, malformed-input
+behavior, and independent miner/validator agreement require native
+adversarial tests and security review before consensus is approved.
 
 ## Required acceptance tests before release
 
@@ -77,14 +80,16 @@ implementations before changing consensus.
    signatures, multiple or missing proofs all reject.
 6. Pre-hardfork mainnet genesis/height-1 compatibility as specified;
    TESTNET/STAGENET existing miner transaction formats remain unchanged.
-7. 45-day vesting, 75/0/75 bps economics, 5M supply, reward rounding,
+7. 45-day vesting, **owner-approved** mainnet basis-point allocation (75/0/75 is only the current candidate; signed testnet uses 75/25/50), 5M supply, reward rounding,
    CPU mining, reorg, fork-split and synchronized independent nodes.
 8. L1 privacy: no miner key disclosure, no public L1-to-Nexus correlation
    identifiers or change to wallet scanning assumptions.
 9. Five-architecture deterministic native compilation and regression.
 
-**Deployment condition:** until recipient-proof implementation,
-adversarial tests, privacy review, and owner-confirmed public recipient
-keys are complete, `mainnet-launch-preflight.js` must continue to return
-BLOCK and the official signing/updater pipeline must not publish a
-mainnet release.
+**Deployment condition:** the source implementation must not be
+promoted until native adversarial consensus tests, independent
+cryptographic/privacy review, owner-confirmed public Treasury recipient
+keys, and an approved mainnet allocation are complete.
+`mainnet-launch-preflight.js` explicitly holds official release signing
+closed pending those items, separately from the mainnet updater gate.
+Unsigned validation builds may be used for testing only.
