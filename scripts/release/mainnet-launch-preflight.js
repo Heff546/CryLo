@@ -35,7 +35,7 @@ const legacyGas = numberMacro('CryLo_GAS_TREASURY_FEE_BPS');
 
 console.log('Observed shared consensus defaults (basis points): Dev=' + dev +
   ', Liquidity=' + legacyLiquidity + ', Gas=' + legacyGas);
-console.log('Required MAINNET policy: Dev=75, Liquidity=0, Gas=75');
+console.log('UNAPPROVED CANDIDATE mainnet allocation (basis points): Dev=75, Liquidity=0, Gas=75');
 console.log('');
 
 check(
@@ -44,14 +44,14 @@ check(
   'Set and test the intended 75 bp Development payout'
 );
 check(
-  'Mainnet has no liquidity coinbase output',
+  'Candidate mainnet code uses no liquidity coinbase output',
   /mainnet/i.test(miner) &&
   /liquidity_fund_amount\s*=\s*\(?m_nettype\s*==\s*MAINNET\s*\?\s*0(?:ULL)?\s*:/.test(miner) &&
   /liquidity_fund_expected\s*=\s*\(?m_nettype\s*==\s*MAINNET\s*\?\s*0(?:ULL)?\s*:/.test(blockchain),
   'Remove mainnet liquidity allocation in both coinbase creation and validation, preserving testnet rules'
 );
 check(
-  'Mainnet Gas Treasury consensus allocation is 0.75%',
+  'Candidate mainnet code uses 0.75% Gas Treasury allocation',
   (numberMacro('CryLo_GAS_TREASURY_FEE_BPS_MAINNET') === 75 ||
    numberMacro('CryLo_MAINNET_GAS_TREASURY_FEE_BPS') === 75) &&
   miner.includes('CryLo_GAS_TREASURY_FEE_BPS_MAINNET') &&
@@ -90,6 +90,16 @@ check(
   !blockchain.includes('CryLo_GAS_TREASURY_VIEWKEY_SECRET'),
   'Independently review DLEQ proof, run native malformed-proof/recipient/height/replay tests and verify testnet history before mainnet release'
 );
+// Keep official MAINNET signing disabled while the proposed economic
+// allocation and the public DLEQ proof lack independent native verification.
+// This is intentionally an unconditional launch hold, not a CI override.
+// Unsigned native mainnet validation builds remain available for testing.
+check(
+  'Mainnet allocation approval and native DLEQ consensus evidence',
+  false,
+  'Candidate 75/0/75 basis-point split is not approved; native proof, replay and five-platform consensus tests have not cleared. Remove this hold only in a reviewed launch-approval change.'
+);
+
 check(
   'Mainnet updater has a dedicated authenticated release channel',
   !/mode:\s*'testnet'/.test(launcher) &&
