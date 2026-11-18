@@ -18,9 +18,14 @@ reserve keys, or switching user wallets.
 
 ## Gate A — immutable L1 consensus (PARTIAL SOURCE CHANGE; STILL BLOCKED)
 
-The documented policy in `CryLo-Nexus/docs/MAINNET_CHECKLIST.md` requires
-**75 bp Development / 0 bp Liquidity / 75 bp CryLo Gas Treasury**.
-A mainnet-only source change now implements the 150 bp allocation:
+The existing L1 mainnet source candidate implements **75 bp Development /
+0 bp Liquidity / 75 bp CryLo Gas Treasury**. The signed Testnet.25 source uses
+**75 bp Development / 25 bp Liquidity / 50 bp Gas Treasury**. An older Nexus
+checklist describes the candidate mainnet split, but that does **not** establish
+owner approval to change the L1 distribution. The mainnet split must be confirmed
+before merging consensus source or approving a mainnet release.
+
+The *unapproved candidate* currently contains the following changes:
 
 - `src/cryptonote_config.h` defines a separate 75 bp mainnet Gas rate,
   while testnet/stagenet retain their original 75/25/50 bp split.
@@ -32,27 +37,26 @@ A mainnet-only source change now implements the 150 bp allocation:
 - `tests/launch/mainnet-coinbase-source.test.js` provides read-only,
   integer reward conservation and source-structure regressions.
 
-**This is not an implementation-complete consensus change:** it has only
-passed source tests; no native C++ compile, testnet history replay,
-adversarial destination test or multi-node chain proof has passed yet.
+**This is still not a verified consensus implementation.** The source candidate
+now contains `src/cryptonote_core/crylo_gas_treasury_proof.h`: its miner
+constructs a public DLEQ transaction proof and its MAINNET validator calls
+`verify_crylo_mainnet_treasury_proof` to check the proof, intended public
+recipient keys, and one-time output key. The validator rejects an invalid
+proof. This corrects the earlier amount-only *source* design, but does **not**
+establish that the proof implementation is cryptographically secure.
 
-**Critical destination verification — OPEN:** the block verifier derives
-and verifies the **Development** payout key, but still checks only the Gas
-Treasury output *amount*. An arbitrary miner can put its own output key in
-the Treasury position and claim a valid-sized allocation. Reject mainnet
-release until a consensus-checkable recipient proof is implemented and
-adversarially tested. Simply verifying a public address string is
-insufficient for CryptoNote one-time output keys.
+A stale source test incorrectly asserted that the validator must **not**
+contain the Gas Treasury mismatch rejection; the old preflight demanded a
+private-view-key-based verification instead of the new public proof. The isolated
+`fix/mainnet-dleq-source-gate-20261117` branch aligns those source checks with
+the implementation and retains a mandatory launch hold. These revisions have
+not been established as passing native C++ compilation or a complete Node CI
+suite, and do not prove testnet history replay, malformed-proof rejection,
+malicious destination rejection, chain convergence or consensus correctness.
 
-A straightforward view-secret-based derivation would disclose the treasury
-view secret in every public node binary, allowing third parties to trace
-other payments to that wallet. Prefer a privacy-reviewed public proof of
-correct derivation, or explicitly review the tracing implications of a
-dedicated transparent treasury wallet. Do not reuse other private wallet
-keys, request a seed phrase, insert an unverified key, or put spend keys in
-the codebase. See
-[`docs/security/GAS_TREASURY_COINBASE_PROOF.md`](security/GAS_TREASURY_COINBASE_PROOF.md)
-for a *non-implemented* privacy-preserving proof design and adversarial gates.
+Do not embed a Treasury private view or spend key in public daemon binaries.
+See [`docs/security/GAS_TREASURY_COINBASE_PROOF.md`](security/GAS_TREASURY_COINBASE_PROOF.md)
+for the source implementation and outstanding cryptographic acceptance gates.
 
 **Mandatory native regression tests:** genesis; mainnet height 1 → 2
 hardfork transition (v17 → v21); coinbase payout amounts and exact recipient;
@@ -76,9 +80,10 @@ Do not change the already-published Testnet.25 tag to implement this.
 - Maintain independent mainnet and testnet wallet databases with no automatic
   wallet import, migration or private-key rotation.
 
-The Electron candidate supports `CRYLO_NETWORK=mainnet` with distinct native
-wallet directories and verifies the daemon network before mining, but that
-source remains untested and does not deploy or start a mainnet chain.
+The Electron candidate supports `CRYLO_NETWORK=mainnet` with separate wallet
+directories and daemon-network checks. A later Electron branch passed targeted
+three-OS CI smoke checks, but full integrated mainnet native-wallet, bridge,
+installer and updater testing remains outstanding. No chain is started here.
 
 ## Gate C — signed release and one-command updater (BLOCKED)
 
@@ -133,8 +138,11 @@ purchase remains possible, as does signed onboarding / starter gas.
 ## Launch decision
 
 Run the source-only preflight with `node scripts/release/mainnet-launch-preflight.js`.
-It currently exits nonzero on unresolved consensus/updater gates and must not
-be mistaken for proof of runtime correctness if it passes.
+It deliberately exits nonzero because mainnet economic approval and native DLEQ
+proof evidence are missing, independently of the unfinished mainnet updater.
+Static source checks can support code review; they do **not** constitute release
+approval. The explicit hold may only be removed in a reviewed change after
+the consensus policy is approved and native evidence is verified.
 
 **Do not launch L1 mainnet now.** A mainnet launch is authorized only after
 all L1 gates A/B/C pass independently of Nexus. Nexus can be enabled later
