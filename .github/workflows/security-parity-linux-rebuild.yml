@@ -1,0 +1,159 @@
+name: CryLo security-parity Linux x64 ARM64 full release validation
+
+# All five targets rebuild the exact, hash-verified security-parity commit.
+# CI-only unsigned artifacts; no signing keys, installer updates or publishing.
+# Workflow-only changes after the immutable source commit are NOT built here.
+on:
+  push:
+    branches:
+      - release/five-platform-security-parity
+    paths:
+      - .github/workflows/security-parity-linux-rebuild.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-baseline:
+    name: Common security-parity native+Electron — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, runner: ubuntu-24.04, arch: x64, machine: x86_64, jobs: '2', elf: 'Advanced Micro Devices X86-64' }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, arch: arm64, machine: aarch64, jobs: '1', elf: 'AArch64' }
+    steps:
+      - name: Checkout exact common security-parity source commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 'e0326c141900e1c7a830df3108d9be3a8c019a40'
+          persist-credentials: false
+          set-safe-directory: false
+          submodules: recursive
+
+      - name: Verify immutable source, exact runner architecture and shared contracts
+        shell: bash
+        env:
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'e0326c141900e1c7a830df3108d9be3a8c019a40'
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          sh -n crylo
+          node --check scripts/crylo.js
+          node --check scripts/release/crylo-release.js
+          node scripts/tests/install-win-linux-pi-static.js
+          node --test scripts/tests/signed-update-contract.test.js
+          python3 scripts/tests/crylo-functional-address-audit.py > "$RUNNER_TEMP/crylo-address-audit.json"
+          test -s contrib/depends/packages/boost.mk
+          test -s contrib/depends/packages/openssl.mk
+          test -s contrib/depends/packages/hidapi.mk
+          test -s contrib/depends/packages/protobuf.mk
+          test -s contrib/depends/packages/zeromq.mk
+          grep -Fx '$(package)_version=20260817.0' contrib/depends/packages/abseil.mk
+          grep -Fx '$(package)_version=20260817.0' contrib/depends/packages/native_abseil.mk
+          grep -Fx '$(package)_sha256_hash=f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d' contrib/depends/packages/abseil.mk
+          grep -Fx '$(package)_sha256_hash=f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d' contrib/depends/packages/native_abseil.mk
+          echo 'PASS: exact shared security-parity source and Linux contracts'
+
+      - name: Provision only host build utilities; native libraries remain hash-pinned
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config python3 perl make \
+            autoconf automake libtool bison flex gettext \
+            curl wget tar patch unzip file
+          cmake --version | head -1
+          gcc --version | head -1
+          python3 --version
+          df -h .
+          echo 'PASS: disposable runner provisioned, no host native-library substitution'
+
+      - name: Prefetch exact checksum-pinned ncurses from its maintained upstream mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_name='ncurses-6.6-20261010.tgz'
+          source_hash='00a1d10c51c3aa1b4dae9ea4421aec2dd227fa4724e645850ed43fd6fc0a56ec'
+          package_recipe='contrib/depends/packages/ncurses.mk'
+          grep -Fx '$(package)_version=6.6-20261010' "$package_recipe"
+          grep -Fx '$(package)_sha256_hash=00a1d10c51c3aa1b4dae9ea4421aec2dd227fa4724e645850ed43fd6fc0a56ec' "$package_recipe"
+          temporary="$(mktemp "$RUNNER_TEMP/ncurses-source-XXXXXX")"
+          trap 'rm -f "$temporary"' EXIT
+          fetched=0
+          for origin in \
+            https://invisible-mirror.net/archives/ncurses/current \
+            https://www.invisible-island.net/archives/ncurses/current; do
+            if curl --fail --location --silent --show-error --retry 2 \
+              --connect-timeout 20 --max-time 180 \
+              "$origin/$source_name" --output "$temporary"; then
+              printf '%s  %s\n' "$source_hash" "$temporary" | sha256sum -c -
+              fetched=1
+              break
+            fi
+          done
+          test "$fetched" -eq 1
+          mkdir -p contrib/depends/sources
+          install -m 0644 "$temporary" "contrib/depends/sources/$source_name"
+          printf '%s  %s\n' "$source_hash" "contrib/depends/sources/$source_name" | sha256sum -c -
+          echo 'PASS: exact ncurses source SHA256 checked without changing security-parity dependency definitions'
+
+      - name: Build unchanged security-parity native daemon, wallet, wallet RPC and Electron
+        shell: bash
+        env:
+          CRYLO_JOBS: ${{ matrix.jobs }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          sh ./crylo release
+          for file in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+            test -s "build/linux-${{ matrix.arch }}/bin/$file"
+          done
+          test -n "$(find electron/dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          echo 'PASS: native and Electron compiled from security-parity source'
+
+      - name: Verify ELF architecture and record unsigned source provenance
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          ELF_MACHINE: ${{ matrix.elf }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/crylo-linux-testnet24-provenance"
+          mkdir -p "$out"
+          test "$(git rev-parse HEAD)" = 'e0326c141900e1c7a830df3108d9be3a8c019a40'
+          git rev-parse HEAD > "$out/SOURCE-COMMIT.txt"
+          printf '%s\n' "${{ matrix.name }}" > "$out/BUILD-TARGET.txt"
+          for binary in CryLo-daemon CryLo-wallet CryLo-wallet-rpc; do
+            exe="build/linux-$ARCH/bin/$binary"
+            readelf -h "$exe" | grep -F "$ELF_MACHINE"
+            "$exe" --version
+          done
+          find "build/linux-$ARCH/bin" -maxdepth 1 -type f -name 'CryLo-*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > "$out/NATIVE-SHA256SUMS.txt"
+          find electron/dist -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' \) -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum > "$out/ELECTRON-SHA256SUMS.txt"
+          test -s "$out/NATIVE-SHA256SUMS.txt"
+          test -s "$out/ELECTRON-SHA256SUMS.txt"
+          sha256sum electron/package-lock.json > "$out/ELECTRON-LOCK-SHA256.txt"
+          echo 'CI-only unsigned candidate. NOT a signed or published release.' > "$out/NO-RELEASE-PUBLICATION.txt"
+          echo 'PASS: source, CPU architecture and artifact hashes verified'
+
+      - name: Retain only matching unsigned Linux candidates
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-security-parity-${{ matrix.name }}-UNSIGNED
+          path: |
+            build/linux-${{ matrix.arch }}/bin/CryLo-daemon
+            build/linux-${{ matrix.arch }}/bin/CryLo-wallet
+            build/linux-${{ matrix.arch }}/bin/CryLo-wallet-rpc
+            electron/dist/*.AppImage
+            electron/dist/*.deb
+            ${{ runner.temp }}/crylo-linux-testnet24-provenance/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

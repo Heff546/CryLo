@@ -1,0 +1,88 @@
+name: CryLo unified security dependency lock audit (no-build)
+
+# Audits the exact pinned source being compiled by all five CI jobs.
+on:
+  push:
+    branches:
+      - release/five-platform-security-parity
+    paths:
+      - .github/workflows/security-parity-lock-audit.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  shared-dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout common security source without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: e0326c141900e1c7a830df3108d9be3a8c019a40
+          persist-credentials: false
+          set-safe-directory: false
+          submodules: false
+      - name: Audit shared native and Electron dependency alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = e0326c141900e1c7a830df3108d9be3a8c019a40
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+          script=Path('scripts/release/crylo-release.js').read_text()
+          block=script.split('const windowsSharedDependencyVersions = Object.freeze({',1)[1].split('});',1)[0]
+          pins=dict(re.findall(r"'(mingw-w64-x86_64-[\w-]+)': '([^']+)'",block))
+          recipes={
+              'boost':'boost','protobuf':'protobuf','abseil-cpp':'abseil',
+              'hidapi':'hidapi','libusb':'libusb','zeromq':'zeromq',
+              'libsodium':'sodium','unbound':'unbound','libiconv':'libiconv'
+          }
+          assert len(pins)==len(recipes), 'Unaccounted Windows shared dependencies'
+          for win_suffix,recipe in recipes.items():
+              name='mingw-w64-x86_64-'+win_suffix
+              expected=pins[name]
+              source=Path(f'contrib/depends/packages/{recipe}.mk').read_text()
+              m=re.search(r'^\$\(package\)_version=([^\n]+)$',source,re.M)
+              assert m and m.group(1)==expected, f'{recipe} mismatch: {expected} vs {m.group(1) if m else "missing"}'
+              print('PASS:',recipe,expected)
+          abseil=Path('contrib/depends/packages/abseil.mk').read_text()
+          host=Path('contrib/depends/packages/native_abseil.mk').read_text()
+          for source in [abseil,host]:
+              assert '$(package)_version=20260817.0' in source
+              assert '$(package)_sha256_hash=f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d' in source
+          openssl=Path('contrib/depends/packages/openssl.mk').read_text()
+          assert '$(package)_version=3.5.9' in openssl
+          assert '$(package)_sha256_hash=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a' in openssl
+          assert "const windowsOpenSSLVersion = '3.5.9';" in script
+          assert "'603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a';" in script
+          for runtime_version in ["const managedNodeVersion = '24.21.0';","const managedNpmVersion = '12.1.0';"]:
+              assert runtime_version in script
+          electron=json.loads(Path('electron/package.json').read_text())
+          assert electron['version']=='1.1.1'
+          assert electron['devDependencies']['electron']=='44.9.3'
+          assert electron['devDependencies']['electron-builder']=='26.17.0'
+          overrides={'@electron/asar':'4.3.1','minimatch':'11.0.3',
+                     'glob':'14.0.3','rimraf':'6.0.1'}
+          for dep, version in overrides.items():
+              assert electron['overrides'][dep]==version,(dep,version)
+              print('PASS: shared Electron security pin',dep,version)
+          lock=json.loads(Path('electron/package-lock.json').read_text())
+          assert lock['packages']['']['version']=='1.1.1'
+          assert lock['packages']['']['devDependencies']['electron-builder']=='26.17.0'
+          assert lock['packages']['']['devDependencies']['electron']=='44.9.3'
+          # The old ICU 55.2 MinGW depends recipe is not the Windows release
+          # runtime. Active Windows MSYS2 runtime pins ICU 78.3. Linux and macOS
+          # do not link this Windows-only ICU package from depends packages.mk.
+          assert "'mingw-w64-x86_64-icu': '78.3'" in script
+          packages=Path('contrib/depends/packages/packages.mk').read_text().splitlines()
+          for line in packages:
+              if line.startswith(('linux_packages ','linux_packages =','darwin_packages ', 'darwin_packages =')):
+                  assert 'icu4c' not in line, 'Legacy ICU unexpectedly enabled on Unix'
+          print('PASS: Windows-only runtime ICU 78.3 remains separate from Unix native dependency set')
+          print('PASS: exact-source security alignment, no signing or publication')
+          PY
+          node --test scripts/tests/signed-update-contract.test.js electron/test/release-packaging-security.test.js

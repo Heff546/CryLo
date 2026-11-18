@@ -1,0 +1,103 @@
+name: CryLo Windows NSIS startup A-B comparison (no rebuild)
+on:
+  push:
+    branches: [release/five-platform-security-parity]
+    paths: [.github/workflows/security-parity-windows-nsis-ab-startup.yml]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+jobs:
+  startup:
+    runs-on: windows-2022
+    timeout-minutes: 9
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: known-good-oct31
+            run: 41251769644
+            id: 13062020464
+            sha: d306294c7401ef039639af226af51fb1f5c61316
+            digest: sha256:1169a645867026205234027da569315431dda32512fa7d5e2a0f018d471e12c9
+            name: crylo-windows-electron-only-nsis-corrected-audit-candidate
+          - label: five-platform-current
+            run: 41768060283
+            id: 13296576348
+            sha: 249bb061ff3ed953e065725799bf751d96d78f5c
+            digest: sha256:658f14bd823cc003afcbf5aa3a3dc9a9c283ea3d68f208389c5ee61b9576e097
+            name: crylo-security-parity-windows-x64-UNSIGNED
+    steps:
+      - name: Download pinned unsigned installer with provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ matrix.run }}
+          CANDIDATE_ID: ${{ matrix.id }}
+          CANDIDATE_SHA: ${{ matrix.sha }}
+          CANDIDATE_DIGEST: ${{ matrix.digest }}
+          CANDIDATE_NAME: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$CANDIDATE_RUN" --jq '.conclusion')" = success
+          test "$(gh api "repos/Heff546/CryLo/actions/runs/$CANDIDATE_RUN" --jq '.head_sha')" = "$CANDIDATE_SHA"
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$CANDIDATE_ID" --jq '.digest')" = "$CANDIDATE_DIGEST"
+          test "$(gh api "repos/Heff546/CryLo/actions/artifacts/$CANDIDATE_ID" --jq '.workflow_run.id')" = "$CANDIDATE_RUN"
+          mkdir -p "$RUNNER_TEMP/crylo-ab-candidate"
+          gh run download "$CANDIDATE_RUN" --repo Heff546/CryLo --name "$CANDIDATE_NAME" --dir "$RUNNER_TEMP/crylo-ab-candidate"
+      - name: Probe NSIS early bootstrap and GUI state in isolated runner
+        shell: pwsh
+        env:
+          CANDIDATE_LABEL: ${{ matrix.label }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:GH_TOKEN -or $env:GITHUB_TOKEN){throw 'No GitHub credentials permitted in installer process'}
+          $root=Join-Path $env:RUNNER_TEMP 'crylo-ab-candidate'
+          $setups=@(Get-ChildItem $root -Recurse -File -Filter '*.exe'|Where-Object{$_.Name -match 'Setup'})
+          if($setups.Count -ne 1){throw "Expected one setup; found $($setups.Count)"}
+          $setup=$setups[0].FullName
+          $target=Join-Path $env:RUNNER_TEMP 'CryLoABInstall'
+          $bootstrap=Join-Path $env:LOCALAPPDATA 'CryLo\installer-bootstrap.log'
+          $report=Join-Path $env:RUNNER_TEMP ('crylo-nsis-ab-'+$env:CANDIDATE_LABEL+'.json')
+          if(Test-Path $bootstrap){throw 'Runner not clean: bootstrap already exists'}
+          $p=$null
+          try {
+            Write-Host ("CANDIDATE "+$env:CANDIDATE_LABEL)
+            Write-Host ("SETUP_LENGTH "+(Get-Item $setup).Length)
+            Write-Host ("SIGNATURE_STATUS "+(Get-AuthenticodeSignature $setup).Status)
+            Write-Host ("RUNNER_SESSION "+(Get-Process -Id $PID).SessionId)
+            $p=Start-Process -FilePath $setup -ArgumentList @('/S',('/D='+$target)) -PassThru
+            $started=Get-Date
+            $reached=$false
+            for($i=0;$i -lt 24;$i++){
+              Start-Sleep -Seconds 5
+              if(Test-Path $bootstrap){$reached=$true;break}
+              $p.Refresh()
+              if($p.HasExited){break}
+            }
+            $p.Refresh()
+            $processInfo=@(Get-Process | Where-Object { $_.ProcessName -match '(?i)crylo|setup|nsis|consent|cmd|elevat' } |
+              ForEach-Object {
+                $o=[ordered]@{name=$_.ProcessName;sessionId=$_.SessionId;mainWindowTitle=$_.MainWindowTitle;windowHandle=$_.MainWindowHandle;cpuSeconds=$_.CPU}
+                Write-Host ("PROCESS name={0} session={1} window={2} title={3} cpu={4}" -f $o.name,$o.sessionId,$o.windowHandle,$o.mainWindowTitle,$o.cpuSeconds)
+                $o
+              })
+            $stages=@()
+            if(Test-Path $bootstrap){
+              $stages=@(Get-Content $bootstrap | Where-Object{$_ -match '^(STAGE|RESULT|FAIL_STAGE|FAIL_RC|RUNTIME_HELPER_RC|HELPER_HASH)='})
+              $stages|ForEach-Object{Write-Host ("BOOTSTRAP "+$_)}
+            }else{Write-Host 'BOOTSTRAP LOG ABSENT'}
+            $r=[ordered]@{label=$env:CANDIDATE_LABEL;startupReached=$reached;setupLength=(Get-Item $setup).Length;elapsedSeconds=[int]((Get-Date)-$started).TotalSeconds;installerExited=$p.HasExited;installerExitCode=if($p.HasExited){$p.ExitCode}else{$null};installTargetExists=(Test-Path $target);bootstrapMarkers=$stages;processes=$processInfo;sourceRebuilt=$false;releasePublished=$false}
+            $r|ConvertTo-Json -Depth 5|Set-Content -Path $report -Encoding utf8
+            if(!$reached){throw ('NO NSIS BOOTSTRAP: '+$env:CANDIDATE_LABEL)}
+            Write-Host ('PASS: '+$env:CANDIDATE_LABEL+' NSIS reached CryLo bootstrap on unattended runner')
+          } finally {
+            if($p){try{$p.Refresh();if(!$p.HasExited){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}}catch{}}
+          }
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-nsis-ab-${{ matrix.label }}
+          path: ${{ runner.temp }}/crylo-nsis-ab-*.json
+          if-no-files-found: ignore
+          retention-days: 14
