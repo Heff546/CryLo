@@ -13,6 +13,7 @@ function source(file) {
 const config = source('src/cryptonote_config.h');
 const miner = source('src/cryptonote_core/cryptonote_tx_utils.cpp');
 const blockchain = source('src/cryptonote_core/blockchain.cpp');
+const treasuryProof = source('src/cryptonote_core/crylo_gas_treasury_proof.h');
 const launcher = source('scripts/crylo.js');
 const wallet = source('electron/main.js');
 const renderer = source('electron/src/app.js');
@@ -63,12 +64,31 @@ check(
   /m_nettype\s*==\s*MAINNET\s*\?\s*4\s*:\s*5/.test(blockchain.slice(blockchain.indexOf('size_t max_outs'))),
   'Validate instant, vested, Dev and Gas output order (4); preserve testnet (5)'
 );
+// STRUCTURAL ONLY: this is not a native consensus or cryptographic audit.
+// The earlier gate required a treasury view secret in public validator source.
+// The current mainnet candidate instead uses a public, height-bound DLEQ proof.
+const verifyProof = treasuryProof.slice(
+  treasuryProof.indexOf('inline bool verify_crylo_mainnet_treasury_proof(')
+);
 check(
-  'Treasury recipient destination has consensus key verification',
-  blockchain.includes('Gas Treasury output key MISMATCH') &&
-  blockchain.includes('gas_treasury_derivation') &&
-  blockchain.includes('gas_treasury_view_skey'),
-  'Require proof Gas Treasury output pays the intended address; do not accept amount-only validation'
+  'Mainnet Treasury public recipient proof is wired into consensus (source-only)',
+  treasuryProof.includes('inline bool verify_crylo_mainnet_treasury_proof(') &&
+  miner.includes('!add_crylo_mainnet_treasury_proof(') &&
+  blockchain.includes('!verify_crylo_mainnet_treasury_proof(') &&
+  blockchain.includes('generation->height') &&
+  blockchain.includes('CryLo_GAS_TREASURY_VIEWKEY') &&
+  blockchain.includes('CryLo_GAS_TREASURY_SPENDKEY') &&
+  blockchain.includes('Gas Treasury output key MISMATCH or invalid proof') &&
+  verifyProof.includes('crypto::check_tx_proof(') &&
+  verifyProof.includes('crylo_treasury_proof_message(without_proof, height)') &&
+  verifyProof.includes('if (count != 1)') &&
+  verifyProof.includes('tx.extra[proof_start] != TX_EXTRA_TAG_CRYLO_GAS_TREASURY_PROOF') &&
+  verifyProof.includes('crypto::derive_public_key(') &&
+  verifyProof.includes('expected_output != actual_output') &&
+  verifyProof.includes('get_output_view_tag(tx.vout[treasury_index])') &&
+  !treasuryProof.includes('CryLo_GAS_TREASURY_VIEWKEY_SECRET') &&
+  !blockchain.includes('CryLo_GAS_TREASURY_VIEWKEY_SECRET'),
+  'Independently review DLEQ proof, run native malformed-proof/recipient/height/replay tests and verify testnet history before mainnet release'
 );
 check(
   'Mainnet updater has a dedicated authenticated release channel',
