@@ -126,6 +126,13 @@ test('launch preflight checks the public proof rather than a public wallet view 
   assert.doesNotMatch(preflight, /blockchain\.includes\('gas_treasury_view_skey'\)/);
 });
 
+test('source-only proof checks never authorize official mainnet release signing', () => {
+  // The 75/0/75 candidate allocation and native DLEQ proof still require
+  // explicit approval and adversarial testing, independent of static checks.
+  assert.match(preflight, /'Mainnet allocation approval and native DLEQ consensus evidence',\s*false,/);
+  assert.match(preflight, /UNAPPROVED CANDIDATE mainnet allocation/);
+});
+
 test('official mainnet release builder fails closed on source preflight', () => {
   const builder = read('scripts/release/crylo-release.js');
   assert.match(builder, /if \(releaseNetwork === 'mainnet' && officialReleaseTag\)/);
