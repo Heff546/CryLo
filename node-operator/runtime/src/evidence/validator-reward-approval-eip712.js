@@ -170,7 +170,8 @@ function hashText(
 }
 
 function validatorRewardApprovalDelegationTypedData(
-  delegation
+  delegation,
+  expectedChainId = CHAIN_ID
 ) {
   requirePlainObject(
     delegation,
@@ -195,9 +196,13 @@ function validatorRewardApprovalDelegationTypedData(
     );
   }
 
+  if (!Number.isSafeInteger(expectedChainId) || expectedChainId <= 0) {
+    throw new TypeError('Expected Validator reward chain ID must be a positive safe integer');
+  }
+
   if (
     delegation.chainId !==
-    CHAIN_ID
+    expectedChainId
   ) {
     throw new Error(
       `Unexpected Validator reward approval chain ID: ${delegation.chainId}`
@@ -258,7 +263,7 @@ function validatorRewardApprovalDelegationTypedData(
         EIP712_DOMAIN_VERSION,
 
       chainId:
-        CHAIN_ID,
+        expectedChainId,
 
       verifyingContract:
         finalizationContract
@@ -316,11 +321,13 @@ function validatorRewardApprovalDelegationTypedData(
 
 function verifyValidatorRewardApprovalDelegationSignature({
   delegation,
-  signature
+  signature,
+  expectedChainId = CHAIN_ID
 }) {
   const typed =
     validatorRewardApprovalDelegationTypedData(
-      delegation
+      delegation,
+      expectedChainId
     );
 
   const recovered =

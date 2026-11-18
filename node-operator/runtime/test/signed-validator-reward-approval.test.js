@@ -93,7 +93,8 @@ function buildApproval(
         '2026-08-11T05:21:00.000Z',
 
       privateKey:
-        session.privateKey
+        session.privateKey,
+      chainId: overrides.chainId
     });
 
   return {
@@ -344,3 +345,22 @@ test(
     );
   }
 );
+
+test('Validator EIP-712 approval digest follows configured mainnet chain and rejects replay',()=>{
+  const session=Wallet.createRandom();
+  const validator=Wallet.createRandom();
+  const observed=decision();
+  const testnet=buildApproval({session,validator,decision:observed}).approval;
+  const mainnet=buildApproval({
+    session,validator,decision:observed,chainId:6546
+  }).approval;
+  assert.equal(testnet.chainId,5546);
+  assert.equal(mainnet.chainId,6546);
+  assert.notEqual(testnet.approvalHash,mainnet.approvalHash);
+  assert.equal(verifySignedValidatorRewardApproval(mainnet).valid,true);
+  assert.throws(
+    ()=>verifySignedValidatorRewardApproval({...mainnet,chainId:5546}),
+    /hash mismatch/
+  );
+});
+

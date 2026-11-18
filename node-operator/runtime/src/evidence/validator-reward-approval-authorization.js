@@ -89,6 +89,7 @@ function verifyValidatorRewardApprovalAuthorization({
   expectedValidatorNodeId,
   expectedSessionAddress,
   expectedFinalizationContract,
+  expectedChainId = CHAIN_ID,
   nowMs = Date.now()
 }) {
   requirePlainObject(
@@ -124,7 +125,8 @@ function verifyValidatorRewardApprovalAuthorization({
 
   const typed =
     validatorRewardApprovalDelegationTypedData(
-      delegation
+      delegation,
+      expectedChainId
     );
 
   if (
@@ -198,7 +200,8 @@ function verifyValidatorRewardApprovalAuthorization({
     verifyValidatorRewardApprovalDelegationSignature({
       delegation,
       signature:
-        delegationSignature
+        delegationSignature,
+      expectedChainId
     });
 
   if (
@@ -327,6 +330,9 @@ async function loadValidatorRewardApprovalAuthorization(
 
       expectedFinalizationContract:
         options.expectedFinalizationContract,
+
+      expectedChainId:
+        options.expectedChainId,
 
       ...(options.nowMs === undefined
         ? {}

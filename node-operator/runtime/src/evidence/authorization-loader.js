@@ -95,6 +95,13 @@ async function loadAuthorization(options) {
       'Expected node ID'
     );
 
+  // Bound to verified operator.json and its RPC chain identity.
+  // A signed delegation cannot choose the network being trusted.
+  const expectedChainId = options.expectedChainId;
+  if (!Number.isSafeInteger(expectedChainId) || expectedChainId <= 0) {
+    throw new TypeError('Expected authorization chain ID must be a positive safe integer');
+  }
+
   const authorizationPath =
     path.resolve(
       options.authorizationPath === undefined
@@ -173,7 +180,7 @@ async function loadAuthorization(options) {
     );
   }
 
-  if (delegation.chainId !== 5546) {
+  if (delegation.chainId !== expectedChainId) {
     throw new Error(
       `Unexpected authorization chain ID: ${delegation.chainId}`
     );
