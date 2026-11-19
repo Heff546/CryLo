@@ -23,7 +23,7 @@ namespace
 {
 constexpr size_t kHeight = 2;
 constexpr uint8_t kMainnetForkVersion = HF_VERSION_BP_PLUS_FULL_COMMIT;
-constexpr size_t kTreasuryOutput = 3;
+constexpr size_t kTreasuryOutput = 4;
 
 bool build_coinbase(cryptonote::network_type network,
                     cryptonote::transaction& coinbase)
@@ -42,7 +42,7 @@ bool build_coinbase(cryptonote::network_type network,
       miner.get_keys().m_account_address,
       coinbase,
       cryptonote::blobdata(),
-      network == cryptonote::MAINNET ? 4 : 5,
+      5,
       kMainnetForkVersion);
 }
 
@@ -74,9 +74,19 @@ protected:
   {
     ASSERT_TRUE(build_coinbase(cryptonote::MAINNET, tx))
         << "Mainnet coinbase constructor must produce a valid in-memory v21 transaction";
-    ASSERT_EQ(4U, tx.vout.size());
+    ASSERT_EQ(5U, tx.vout.size());
   }
 };
+
+TEST_F(CryLoMainnetTreasuryProof, ApprovedFiveOutputAllocation)
+{
+  const uint64_t total = cryptonote::get_outs_money_amount(tx);
+  ASSERT_EQ(5U, tx.vout.size());
+  ASSERT_EQ(total * 75 / 10000, tx.vout[2].amount);
+  ASSERT_EQ(total * 25 / 10000, tx.vout[3].amount);
+  ASSERT_EQ(total * 50 / 10000, tx.vout[4].amount);
+  ASSERT_TRUE(verify(tx));
+}
 
 TEST_F(CryLoMainnetTreasuryProof, ValidCoinbaseProofAccepted)
 {
