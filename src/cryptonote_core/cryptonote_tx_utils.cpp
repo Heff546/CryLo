@@ -106,8 +106,8 @@ namespace cryptonote
 #endif
     block_reward += fee;
 
-    // MAINNET: 0.75% development, 0.75% CryLo Gas Treasury; no liquidity.
-    // TESTNET/STAGENET: preserve 0.75% development, 0.25% liquidity, 0.50% gas.
+    // All networks: 0.75% Development, 0.25% Liquidity, 0.50% Gas.
+    // Mainnet proof requirements are separate from emission allocation.
     uint64_t dev_fund_amount = 0;
     uint64_t liquidity_fund_amount = 0;
     uint64_t gas_treasury_amount = 0;
@@ -119,11 +119,8 @@ namespace cryptonote
     if (height > 0)
     {
       dev_fund_amount = block_reward * CryLo_DEV_FUND_FEE_BPS / 10000;
-      liquidity_fund_amount = (m_nettype == MAINNET ? 0 :
-          block_reward * CryLo_LIQUIDITY_FUND_FEE_BPS / 10000);
-      gas_treasury_amount = block_reward *
-          (m_nettype == MAINNET ? CryLo_GAS_TREASURY_FEE_BPS_MAINNET :
-                                  CryLo_GAS_TREASURY_FEE_BPS) / 10000;
+      liquidity_fund_amount = block_reward * CryLo_LIQUIDITY_FUND_FEE_BPS / 10000;
+      gas_treasury_amount = block_reward * CryLo_GAS_TREASURY_FEE_BPS / 10000;
 
       if (dev_fund_amount > 0)
       {
@@ -344,7 +341,7 @@ namespace cryptonote
           !add_crylo_mainnet_treasury_proof(
               tx, height, txkey.sec,
               gas_treasury_addr.m_view_public_key,
-              gas_treasury_addr.m_spend_public_key, 3))
+              gas_treasury_addr.m_spend_public_key, 4))
       {
         LOG_ERROR("Mainnet miner coinbase Gas Treasury recipient proof failed");
         return false;
