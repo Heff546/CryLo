@@ -14,6 +14,9 @@ const config = source('src/cryptonote_config.h');
 const miner = source('src/cryptonote_core/cryptonote_tx_utils.cpp');
 const blockchain = source('src/cryptonote_core/blockchain.cpp');
 const treasuryProof = source('src/cryptonote_core/crylo_gas_treasury_proof.h');
+const liquidityProof = source('src/cryptonote_core/crylo_liquidity_proof.h');
+const txExtra = source('src/cryptonote_basic/tx_extra.h');
+const txExtraParser = source('src/cryptonote_basic/cryptonote_format_utils.cpp');
 const launcher = source('scripts/crylo.js');
 const wallet = source('electron/main.js');
 const renderer = source('electron/src/app.js');
@@ -75,7 +78,7 @@ const verifyProof = treasuryProof.slice(
   treasuryProof.indexOf('inline bool verify_crylo_mainnet_treasury_proof(')
 );
 check(
-  'Mainnet Treasury public recipient proof is wired into consensus (source-only)',
+  'Mainnet Gas Treasury public recipient proof is wired into consensus (source-only)',
   treasuryProof.includes('inline bool verify_crylo_mainnet_treasury_proof(') &&
   miner.includes('!add_crylo_mainnet_treasury_proof(') &&
   blockchain.includes('!verify_crylo_mainnet_treasury_proof(') &&
@@ -94,16 +97,43 @@ check(
   !blockchain.includes('CryLo_GAS_TREASURY_VIEWKEY_SECRET'),
   'Independently review DLEQ proof, run native malformed-proof/recipient/height/replay tests and verify testnet history before mainnet release'
 );
-// Official mainnet economics are approved (75/25/50), but the Liquidity
-// output currently lacks independent recipient-key verification. A miner
-// could otherwise redirect that output while preserving its correct amount.
-// The Gas DLEQ proof does not authenticate the Liquidity destination.
-// Keep official MAINNET signing blocked until both recipients are verified,
-// full native consensus/replay and independent-platform tests are complete.
+const liquidityVerify = liquidityProof.slice(
+  liquidityProof.indexOf('inline bool verify_crylo_mainnet_liquidity_proof(')
+);
 check(
-  'Mainnet Liquidity recipient proof and full native consensus evidence',
+  'Mainnet Liquidity public recipient proof is wired into consensus (source-only)',
+  liquidityProof.includes('inline bool verify_crylo_mainnet_liquidity_proof(') &&
+  liquidityProof.includes('crylo_liquidity_proof_message(') &&
+  liquidityProof.includes('LiquidityCoinbase:DLEQ:v1') &&
+  miner.includes('!add_crylo_mainnet_liquidity_proof(') &&
+  blockchain.includes('!verify_crylo_mainnet_liquidity_proof(') &&
+  blockchain.includes('CryLo_LIQUIDITY_FUND_VIEWKEY') &&
+  blockchain.includes('CryLo_LIQUIDITY_FUND_SPENDKEY') &&
+  blockchain.includes('liquidity_view_pkey, liquidity_spend_pkey, 3') &&
+  blockchain.includes('gas_treasury_view_pkey, gas_treasury_spend_pkey, 4') &&
+  txExtra.includes('TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF') &&
+  txExtra.includes('tx_extra_crylo_liquidity_proof') &&
+  txExtraParser.includes('pick<tx_extra_crylo_liquidity_proof>') &&
+  liquidityVerify.includes('liquidity_count != 1 || gas_count != 1') &&
+  liquidityVerify.includes('tx.extra[proof_start] != TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF') &&
+  liquidityVerify.includes('tx.extra[gas_start] != TX_EXTRA_TAG_CRYLO_GAS_TREASURY_PROOF') &&
+  liquidityVerify.includes('crypto::check_tx_proof(') &&
+  liquidityVerify.includes('crylo_liquidity_proof_message(without_proof, height)') &&
+  liquidityVerify.includes('crypto::derive_public_key(') &&
+  liquidityVerify.includes('expected_output != actual_output') &&
+  liquidityVerify.includes('get_output_view_tag(tx.vout[liquidity_index])') &&
+  !liquidityProof.includes('CryLo_LIQUIDITY_FUND_VIEWKEY_SECRET'),
+  'Independently verify Liquidity DLEQ cryptographic soundness and canonical two-proof suffix in actual mainnet block consensus'
+);
+
+// 75/25/50 economics are owner-approved. Static wiring for BOTH recipient
+// proofs is necessary but insufficient for native full-block, historical
+// chain replay, cross-platform consensus and independent cryptographic audit.
+// This unconditional release hold must only be removed via reviewed approval.
+check(
+  'Mainnet dual-recipient native consensus and replay evidence',
   false,
-  'Implement and adversarially test independent Liquidity recipient verification at output 3; full-block consensus, history replay and cross-platform checks remain required. This is a mandatory release hold.'
+  'Execute native dual-proof adversarial and full-block tests, testnet history replay, independent review and five-platform consensus checks before any signed mainnet release'
 );
 
 check(
