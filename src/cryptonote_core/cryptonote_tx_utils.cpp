@@ -39,6 +39,7 @@ using namespace epee;
 #include "cryptonote_config.h"
 #include "blockchain.h"
 #include "crylo_gas_treasury_proof.h"
+#include "crylo_liquidity_proof.h"
 #include "cryptonote_basic/miner.h"
 #include "cryptonote_basic/tx_extra.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
@@ -330,20 +331,24 @@ namespace cryptonote
     }
     tx.vin.push_back(in);
 
-    // Starting at the mainnet v21 fork, miners prove in tx.extra
-    // that the Gas Treasury one-time output is payable to the fixed
-    // Treasury public address, without revealing the Treasury view key.
+    // MAINNET v21+: both foundation recipients use public DLEQ proofs.
+    // Liquidity proof precedes Gas proof; Gas signs the transaction prefix
+    // including the Liquidity proof. No public validator wallet secret.
     // Pre-fork mainnet and all testnet/stagenet coinbases are unchanged.
     if (m_nettype == MAINNET && height > 0 &&
         hard_fork_version >= HF_VERSION_VESTING)
     {
-      if (gas_treasury_amount == 0 ||
+      if (liquidity_fund_amount == 0 || gas_treasury_amount == 0 ||
+          !add_crylo_mainnet_liquidity_proof(
+              tx, height, txkey.sec,
+              liquidity_fund_addr.m_view_public_key,
+              liquidity_fund_addr.m_spend_public_key, 3) ||
           !add_crylo_mainnet_treasury_proof(
               tx, height, txkey.sec,
               gas_treasury_addr.m_view_public_key,
               gas_treasury_addr.m_spend_public_key, 4))
       {
-        LOG_ERROR("Mainnet miner coinbase Gas Treasury recipient proof failed");
+        LOG_ERROR("Mainnet miner coinbase Liquidity/Gas public recipient proof failed");
         return false;
       }
     }
