@@ -95,7 +95,7 @@ test('integer rounding and conservation at a range of coinbase rewards', () => {
   }
 });
 
-test('mainnet Treasury public recipient proof is connected to miner and consensus validator', () => {
+test('mainnet Liquidity and Gas public recipient proofs are connected to miner and validator', () => {
   // These assertions check source wiring ONLY. They do not cryptographically
   // validate a DLEQ proof or authorize a native mainnet release.
   const proof = read('src/cryptonote_core/crylo_gas_treasury_proof.h');
@@ -133,8 +133,8 @@ test('launch preflight checks the public proof rather than a public wallet view 
 });
 
 test('source-only proof checks never authorize official mainnet release signing', () => {
-  // The approved 75/25/50 policy must not bypass missing Liquidity recipient
-  // authentication, independent consensus tests, or the updater block.
+  // Approval and source wiring must not bypass native dual-recipient
+  // consensus, historical chain replay, independent review, or updater gates.
   assert.match(preflight, /'Mainnet dual-recipient native consensus and replay evidence',\s*false,/);
   assert.match(preflight, /APPROVED mainnet allocation: Dev=75, Liquidity=25, Gas=50/);
 });
