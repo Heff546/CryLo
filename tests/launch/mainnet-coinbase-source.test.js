@@ -95,12 +95,15 @@ test('integer rounding and conservation at a range of coinbase rewards', () => {
   }
 });
 
-test('mainnet Treasury public recipient proof is connected to miner and consensus validator', () => {
+test('mainnet Liquidity and Gas public recipient proofs are connected to miner and validator', () => {
   // These assertions check source wiring ONLY. They do not cryptographically
   // validate a DLEQ proof or authorize a native mainnet release.
   const proof = read('src/cryptonote_core/crylo_gas_treasury_proof.h');
+  const liquidity = read('src/cryptonote_core/crylo_liquidity_proof.h');
   const verifier = proof.slice(proof.indexOf('inline bool verify_crylo_mainnet_treasury_proof('));
+  assert.match(generator, /!add_crylo_mainnet_liquidity_proof\(/);
   assert.match(generator, /!add_crylo_mainnet_treasury_proof\(/);
+  assert.match(validator, /!verify_crylo_mainnet_liquidity_proof\(/);
   assert.match(validator, /!verify_crylo_mainnet_treasury_proof\(/);
   assert.match(validator, /b\.miner_tx, generation->height/);
   assert.match(validator, /Gas Treasury output key MISMATCH or invalid proof/);
@@ -113,19 +116,26 @@ test('mainnet Treasury public recipient proof is connected to miner and consensu
   assert.match(verifier, /get_output_view_tag\(tx\.vout\[treasury_index\]\)/);
   assert.doesNotMatch(validator, /CryLo_GAS_TREASURY_VIEWKEY_SECRET/);
   assert.doesNotMatch(proof, /CryLo_GAS_TREASURY_VIEWKEY_SECRET/);
+  assert.match(liquidity, /LiquidityCoinbase:DLEQ:v1/);
+  assert.match(liquidity, /liquidity_count != 1 \|\| gas_count != 1/);
+  assert.match(liquidity, /TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF/);
+  assert.match(liquidity, /crypto::check_tx_proof\(/);
+  assert.match(liquidity, /expected_output != actual_output/);
+  assert.doesNotMatch(liquidity, /CryLo_LIQUIDITY_FUND_VIEWKEY_SECRET/);
 });
 
 test('launch preflight checks the public proof rather than a public wallet view secret', () => {
   assert.match(preflight, /treasuryProof\.includes\('inline bool verify_crylo_mainnet_treasury_proof\('\)/);
+  assert.match(preflight, /liquidityProof\.includes\('inline bool verify_crylo_mainnet_liquidity_proof\('\)/);
   assert.match(preflight, /verifyProof\.includes\('crypto::check_tx_proof\('\)/);
   assert.match(preflight, /verifyProof\.includes\('expected_output != actual_output'\)/);
   assert.doesNotMatch(preflight, /blockchain\.includes\('gas_treasury_view_skey'\)/);
 });
 
 test('source-only proof checks never authorize official mainnet release signing', () => {
-  // The approved 75/25/50 policy must not bypass missing Liquidity recipient
-  // authentication, independent consensus tests, or the updater block.
-  assert.match(preflight, /'Mainnet Liquidity recipient proof and full native consensus evidence',\s*false,/);
+  // Approval and source wiring must not bypass native dual-recipient
+  // consensus, historical chain replay, independent review, or updater gates.
+  assert.match(preflight, /'Mainnet dual-recipient native consensus and replay evidence',\s*false,/);
   assert.match(preflight, /APPROVED mainnet allocation: Dev=75, Liquidity=25, Gas=50/);
 });
 

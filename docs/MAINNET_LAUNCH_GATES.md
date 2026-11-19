@@ -23,32 +23,32 @@ reserve keys, or switching user wallets.
 allocates exactly 1.50% of the block reward. The earlier proposed mainnet
 75/0/75 change is **rejected** and must never enter a signed release.
 
-The isolated implementation branch
-`fix/mainnet-approved-75-25-50-20261118` restores five HF19+ coinbase
-outputs, ordered **miner instant [0], miner vested [1], Dev [2],
-Liquidity [3], Gas Treasury [4]**, with identical fee percentages on
-all networks. Mainnet Treasury's existing public DLEQ proof now
-authenticates output index **4**. The original signed testnet rules are
-unchanged. The mainnet source must be compiled and verified on Pi1
-before being merged into the L1 candidate. Historical testnet replay
-and independent cross-platform builds remain outstanding.
+The isolated economic correction `fix/mainnet-approved-75-25-50-20261118`
+restores five HF19+ coinbase outputs, ordered **miner instant [0],
+miner vested [1], Dev [2], Liquidity [3], Gas Treasury [4]**. The
+follow-on `security/mainnet-dual-recipient-proof-20261118` source candidate
+requires separate public DLEQ recipient proofs for **Liquidity [3] and Gas
+Treasury [4]**, each checked against the configured public receiving keys.
+The proof fields must be canonically ordered **Liquidity first, Gas second**,
+with distinct transcript domains. No Liquidity/Gas wallet private view or
+spend keys are added to daemon source. These changes are **UNRELEASED**.
+Neither isolated branch is authorized for publication or production consensus.
 
-**CRITICAL LIQUIDITY SECURITY BLOCKER:** The existing validator checks
-the amount of output [3] but does NOT verify that its one-time key pays
-the approved Liquidity Fund wallet. A malicious miner could sign a
-valid Gas Treasury proof over a coinbase with a substituted Liquidity
-recipient. Because the Liquidity output is restored for mainnet,
-**independent cryptographic recipient authentication is mandatory**
-before mainnet release. The Gas Treasury proof does not solve this.
-Do not rely on liquidity amount checks or expose a Liquidity private
-view/spend key in publicly distributed daemons.
+**CRITICAL VALIDATION HOLD:** The economic-correction branch by itself
+only amount-checks Liquidity [3]. The separate dual-proof branch now
+implements public recipient verification in source, but **that new
+implementation has NOT yet been compiled, executed, or independently
+audited**. Signing remains blocked until actual native tests confirm
+valid paired proofs, destination substitutions, signature tampering,
+duplicates, canonical suffix layout, full block acceptance/rejection,
+replay, and cross-platform determinism.
 
 Prior validation on Pi1: 13 native Gas Treasury tests, 31 combined
 CryptoNote regressions and 36 emission/hardfork tests passed on the
 *earlier four-output mainnet candidate*. These results support the
-existing proof implementation but **do not validate the revised
-five-output mainnet candidate**. Re-run the native suite and add
-Liquidity-recipient attack tests after implementing its proof.
+existing Gas proof implementation but **do not validate the revised
+five-output dual-proof candidate**. Compile and run its 26 in-memory
+native proof tests plus full-block acceptance/rejection regressions.
 
 Other mandatory gates: independent genesis and network IDs; mainnet
 height 1→2 hardfork transition; complete miner coinbase recipient
@@ -131,8 +131,8 @@ purchase remains possible, as does signed onboarding / starter gas.
 ## Launch decision
 
 Run the source-only preflight with `node scripts/release/mainnet-launch-preflight.js`.
-It deliberately exits nonzero because Liquidity-recipient validation,
-complete native consensus evidence and the mainnet updater are unfinished.
+It deliberately exits nonzero because **dual-recipient native/full-chain
+consensus evidence** and the mainnet authenticated updater are unfinished.
 **The 75/25/50 economic policy is approved**, but that approval is not
 a release authorization. Keep the explicit launch hold until all recipients
 and full chain acceptance/rejection tests pass in a reviewed change.
@@ -142,5 +142,5 @@ all L1 gates A/B/C pass independently of Nexus. Nexus can be enabled later
 after gate D; the CryLo L1 chain must keep producing blocks when Nexus is
 offline.
 
-The review has not performed key actions, chain resets, signed release
-publication, Pi daemon restarts, or cloud VM activation.
+No source review here has performed key actions, chain resets, signed
+release publication, Pi daemon restarts, or cloud VM activation.

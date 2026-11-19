@@ -148,13 +148,17 @@ namespace cryptonote
       const size_t treasury_index)
   {
     if (treasury_index >= tx.vout.size() ||
-        tx.extra.size() < CRYLO_TREASURY_PROOF_FIELD_BYTES ||
+        tx.extra.size() < 2 * CRYLO_TREASURY_PROOF_FIELD_BYTES ||
         tx.extra.size() > MAX_TX_EXTRA_SIZE)
       return false;
 
     const size_t proof_start =
         tx.extra.size() - CRYLO_TREASURY_PROOF_FIELD_BYTES;
-    if (tx.extra[proof_start] != TX_EXTRA_TAG_CRYLO_GAS_TREASURY_PROOF ||
+    const size_t liquidity_start =
+        proof_start - CRYLO_TREASURY_PROOF_FIELD_BYTES;
+    if (tx.extra[liquidity_start] != TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF ||
+        tx.extra[liquidity_start + 1] != CRYLO_TREASURY_PROOF_BYTES ||
+        tx.extra[proof_start] != TX_EXTRA_TAG_CRYLO_GAS_TREASURY_PROOF ||
         tx.extra[proof_start + 1] != CRYLO_TREASURY_PROOF_BYTES)
       return false;
 
@@ -163,7 +167,9 @@ namespace cryptonote
       return false;
 
     size_t count = 0;
+    size_t liquidity_count = 0;
     for (const auto& field : fields)
+    {
       if (const auto *proof =
               boost::get<tx_extra_crylo_gas_treasury_proof>(&field))
       {
@@ -176,7 +182,22 @@ namespace cryptonote
                 }))
           return false;
       }
+      if (const auto *liquidity =
+              boost::get<tx_extra_crylo_liquidity_proof>(&field))
+      {
+        ++liquidity_count;
+        if (liquidity->data.size() != CRYLO_TREASURY_PROOF_BYTES ||
+            !std::equal(liquidity->data.begin(), liquidity->data.end(),
+                tx.extra.begin() + liquidity_start + 2,
+                [](char a, uint8_t b) {
+                  return static_cast<uint8_t>(a) == b;
+                }))
+          return false;
+      }
+    }
     if (count != 1)
+      return false;
+    if (liquidity_count != 1)
       return false;
 
     crypto::public_key shared_point;

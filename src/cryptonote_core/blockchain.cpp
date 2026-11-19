@@ -40,6 +40,7 @@
 #include "tx_pool.h"
 #include "blockchain.h"
 #include "crylo_gas_treasury_proof.h"
+#include "crylo_liquidity_proof.h"
 #include "blockchain_db/blockchain_db.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "cryptonote_basic/events.h"
@@ -1602,9 +1603,8 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     if (b.miner_tx.vout[2].amount != dev_fund_expected) return false;
     if (b.miner_tx.vout[3].amount != liquidity_fund_expected) return false;
     if (b.miner_tx.vout[4].amount != gas_treasury_expected) return false;
-    // SECURITY HOLD: liquidity payout destination is not yet cryptographically
-    // verified. Mainnet launch is forbidden until it is proven to the
-    // configured public liquidity recipient (not merely amount-checked).
+    // Native acceptance and independent review of both recipient proofs
+    // remain mandatory; release preflight is blocked until these tests pass.
     // Verify dev fund output key is derived from the correct dev fund address
     crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(b.miner_tx);
     if (tx_pub_key == crypto::null_pkey)
@@ -1659,25 +1659,33 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
 
     if (m_nettype == MAINNET)
     {
-      // Consensus must verify the *destination* as well as the amount.
-      // The sender's DLEQ proof binds R=rG and D=r*A for the official
-      // Treasury public view key, and the output key is checked against
-      // the fixed Treasury public spend key using the 8D derivation.
-      // No Treasury view/spend secrets are embedded in public nodes.
+      // Both treasury destinations must be proven with domain-separated
+      // public DLEQ proofs, not merely correct output amounts. The
+      // canonical suffix is [Liquidity proof][Gas proof] (98 bytes each).
+      // No Liquidity/Gas recipient wallet private view/spend key is exposed.
+      crypto::public_key liquidity_spend_pkey;
+      crypto::public_key liquidity_view_pkey;
       crypto::public_key gas_treasury_spend_pkey;
       crypto::public_key gas_treasury_view_pkey;
       const auto *generation = !b.miner_tx.vin.empty() ?
           boost::get<txin_gen>(&b.miner_tx.vin[0]) : nullptr;
       if (!generation ||
           !epee::string_tools::hex_to_pod(
+              CryLo_LIQUIDITY_FUND_SPENDKEY, liquidity_spend_pkey) ||
+          !epee::string_tools::hex_to_pod(
+              CryLo_LIQUIDITY_FUND_VIEWKEY, liquidity_view_pkey) ||
+          !epee::string_tools::hex_to_pod(
               CryLo_GAS_TREASURY_SPENDKEY, gas_treasury_spend_pkey) ||
           !epee::string_tools::hex_to_pod(
               CryLo_GAS_TREASURY_VIEWKEY, gas_treasury_view_pkey) ||
+          !verify_crylo_mainnet_liquidity_proof(
+              b.miner_tx, generation->height,
+              liquidity_view_pkey, liquidity_spend_pkey, 3) ||
           !verify_crylo_mainnet_treasury_proof(
               b.miner_tx, generation->height,
               gas_treasury_view_pkey, gas_treasury_spend_pkey, 4))
       {
-        MERROR_VER("Gas Treasury output key MISMATCH or invalid proof: rejecting mainnet miner reward");
+        MERROR_VER("Liquidity/Gas Treasury output key MISMATCH or invalid proof: rejecting mainnet miner reward");
         return false;
       }
     }

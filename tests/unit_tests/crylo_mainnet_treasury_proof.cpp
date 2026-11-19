@@ -7,6 +7,7 @@
 
 #include "gtest/gtest.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "cryptonote_core/crylo_gas_treasury_proof.h"
+#include "cryptonote_core/crylo_liquidity_proof.h"
 
 namespace
 {
@@ -63,6 +65,18 @@ bool verify(cryptonote::transaction const& tx,
          cryptonote::verify_crylo_mainnet_treasury_proof(
              tx, height, view, spend, index);
 }
+
+bool verify_liquidity(cryptonote::transaction const& tx,
+                      uint64_t height = kHeight,
+                      size_t index = 3)
+{
+  crypto::public_key view;
+  crypto::public_key spend;
+  return epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_VIEWKEY, view) &&
+         epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_SPENDKEY, spend) &&
+         cryptonote::verify_crylo_mainnet_liquidity_proof(
+             tx, height, view, spend, index);
+}
 } // namespace
 
 class CryLoMainnetTreasuryProof : public ::testing::Test
@@ -86,11 +100,13 @@ TEST_F(CryLoMainnetTreasuryProof, ApprovedFiveOutputAllocation)
   ASSERT_EQ(total * 25 / 10000, tx.vout[3].amount);
   ASSERT_EQ(total * 50 / 10000, tx.vout[4].amount);
   ASSERT_TRUE(verify(tx));
+  ASSERT_TRUE(verify_liquidity(tx));
 }
 
 TEST_F(CryLoMainnetTreasuryProof, ValidCoinbaseProofAccepted)
 {
   ASSERT_TRUE(verify(tx));
+  ASSERT_TRUE(verify_liquidity(tx));
 }
 
 TEST_F(CryLoMainnetTreasuryProof, DifferentBlockHeightRejected)
@@ -196,6 +212,136 @@ TEST_F(CryLoMainnetTreasuryProof, ProofTruncationRejected)
   ASSERT_FALSE(verify(tx));
 }
 
+TEST_F(CryLoMainnetTreasuryProof, LiquidityIncorrectRecipientRejected)
+{
+  crypto::public_key view, spend;
+  ASSERT_TRUE(epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_VIEWKEY, view));
+  ASSERT_TRUE(epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_SPENDKEY, spend));
+  cryptonote::account_base attacker;
+  attacker.generate();
+  ASSERT_FALSE(cryptonote::verify_crylo_mainnet_liquidity_proof(
+      tx, kHeight, view, attacker.get_keys().m_account_address.m_spend_public_key, 3));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, LiquidityOutputSubstitutionRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  cryptonote::account_base attacker;
+  attacker.generate();
+  auto* destination =
+      boost::get<cryptonote::txout_to_tagged_key>(&tx.vout[3].target);
+  ASSERT_NE(nullptr, destination);
+  destination->key = attacker.get_keys().m_account_address.m_spend_public_key;
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_liquidity(tx));
+  ASSERT_FALSE(verify(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, LiquidityAmountChangeRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  ++tx.vout[3].amount;
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_liquidity(tx));
+  ASSERT_FALSE(verify(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, LiquidityViewTagChangeRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  auto* destination =
+      boost::get<cryptonote::txout_to_tagged_key>(&tx.vout[3].target);
+  ASSERT_NE(nullptr, destination);
+  destination->view_tag.data ^= 1;
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_liquidity(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, LiquidityWrongHeightRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  ASSERT_FALSE(verify_liquidity(tx, kHeight + 1));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, LiquidityWrongOutputIndexRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  ASSERT_FALSE(verify_liquidity(tx, kHeight, 4));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, LiquidityProofSignatureTamperRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  ASSERT_GE(tx.extra.size(), 2 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES);
+  const size_t liquidity_start =
+      tx.extra.size() - 2 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  tx.extra[liquidity_start + cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES - 1] ^= 1;
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_liquidity(tx));
+  ASSERT_FALSE(verify(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, MissingLiquidityProofRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  ASSERT_GE(tx.extra.size(), 2 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES);
+  const auto start =
+      tx.extra.end() - 2 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  tx.extra.erase(start, start + cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES);
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_liquidity(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, DuplicateLiquidityProofRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  ASSERT_GE(tx.extra.size(), 2 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES);
+  const size_t start =
+      tx.extra.size() - 2 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  const std::vector<uint8_t> copy(
+      tx.extra.begin() + start,
+      tx.extra.begin() + start + cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES);
+  tx.extra.insert(tx.extra.begin() + start, copy.begin(), copy.end());
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_liquidity(tx));
+  ASSERT_FALSE(verify(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, ReversedProofOrderRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  ASSERT_TRUE(verify(tx));
+  const size_t start =
+      tx.extra.size() - 2 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  const auto first = tx.extra.begin() + start;
+  std::swap_ranges(first,
+      first + cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES,
+      first + cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES);
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_liquidity(tx));
+  ASSERT_FALSE(verify(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, MalformedLiquidityProofLengthRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  const size_t start =
+      tx.extra.size() - 2 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  tx.extra[start + 1] = 95;
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_liquidity(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, LiquidityProofTruncationRejected)
+{
+  ASSERT_TRUE(verify_liquidity(tx));
+  const size_t end_of_liquidity =
+      tx.extra.size() - cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  tx.extra.erase(tx.extra.begin() + end_of_liquidity - 1);
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_liquidity(tx));
+}
+
 TEST(CryLoTestnetTreasuryProof, ExistingTestnetTransactionHasNoMainnetProof)
 {
   cryptonote::transaction tx;
@@ -205,6 +351,10 @@ TEST(CryLoTestnetTreasuryProof, ExistingTestnetTransactionHasNoMainnetProof)
   std::vector<cryptonote::tx_extra_field> fields;
   ASSERT_TRUE(cryptonote::parse_tx_extra(tx.extra, fields));
   for (const auto& field : fields)
+  {
     ASSERT_EQ(nullptr,
               boost::get<cryptonote::tx_extra_crylo_gas_treasury_proof>(&field));
+    ASSERT_EQ(nullptr,
+              boost::get<cryptonote::tx_extra_crylo_liquidity_proof>(&field));
+  }
 }

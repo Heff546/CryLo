@@ -1,6 +1,6 @@
 # CryLo Gas Treasury coinbase recipient proof — security design gate
 
-**Status: GAS DLEQ PROOF NATIVE-TESTED ON EARLIER FOUR-OUTPUT CANDIDATE; REVISED FIVE-OUTPUT CANDIDATE AND LIQUIDITY RECIPIENT STILL UNVERIFIED. NO MAINNET RELEASE AUTHORIZED.**
+**Status: ISOLATED DUAL-RECIPIENT DLEQ SOURCE CANDIDATE IMPLEMENTED; NATIVE BUILD, CRYPTOGRAPHIC REVIEW AND FULL-BLOCK TESTS OUTSTANDING. NO MAINNET RELEASE AUTHORIZED.**
 
 ## Historical defect and current candidate
 
@@ -28,15 +28,27 @@ Never assume a source string check alone proves correct recipient payment.
 Development, 0.25% Liquidity and 0.50% Gas Treasury**, with exactly
 five outputs after vesting activation.
 
-The Gas public DLEQ proof protects output [4]. It also commits to the
-coinbase prefix, but that **does not** prove the identity of output [3]
-(Liquidity). A malicious miner with its own transaction secret can
-generate a valid Gas proof over a coinbase whose Liquidity output pays
-an attacker. Independent Liquidity recipient verification is mandatory
-before mainnet release. A separate public DLEQ or an equivalently
-auditable recipient proof may be used only after canonical transaction-extra
-format, proof ordering, replay protection, output index and version are
-specified and tested; never embed a private Liquidity view/spend key.
+The Gas public DLEQ proof alone does not prove the identity of output
+[3] (Liquidity). A malicious miner can generate a valid Gas proof over
+a coinbase whose Liquidity output pays an attacker.
+
+The isolated `security/mainnet-dual-recipient-proof-20261118` branch
+implements a *separate* public Liquidity proof in
+`src/cryptonote_core/crylo_liquidity_proof.h`, with unique tx.extra
+tag 0x06 and distinct "LiquidityCoinbase" message domain. The proof
+is appended first; the existing Gas proof (tag 0x05) comes immediately
+after it. The Liquidity proof commits to the original no-proof prefix;
+the Gas proof commits to the prefix **including** Liquidity's proof.
+Validators require both proof fields in a strict [Liquidity][Gas]
+suffix and separately derive/check the one-time recipient keys and
+view tags at indices [3] and [4]. No Liquidity private view/spend
+key is embedded in consensus source.
+
+**This is uncompiled, untested source, not proven secure.** The 26
+native test cases and full-block consensus must still pass; independent
+review must examine canonical encoding, malformed/subgroup points,
+proof cross-domain replay, alternative extra-field parsing, network
+identity and actual wallet recipient keys before mainnet authorization.
 
 ## Privacy constraint
 
@@ -105,10 +117,11 @@ adversarial tests and security review before consensus is approved.
    identifiers or change to wallet scanning assumptions.
 9. Five-architecture deterministic native compilation and regression.
 
-**Deployment condition:** the source implementation must not be
+**Deployment condition:** the dual-proof source implementation must not be
 promoted until native adversarial consensus tests, independent
 cryptographic/privacy review, owner-confirmed public Liquidity and Gas
-Treasury recipient keys, and independently verified Liquidity proof are complete.
+Treasury recipient keys, and independently verified **both** recipient
+proofs are complete.
 `mainnet-launch-preflight.js` explicitly holds official release signing
 closed pending those security items, separately from the mainnet updater gate.
 The economic allocation itself is approved and is no longer a blocker.
