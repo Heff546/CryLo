@@ -27,14 +27,14 @@ CryLo is currently in public testnet development ahead of mainnet release.
 | Miner unlock | 50% immediate |
 | Miner vesting | 50% over 45 days |
 | Development allocation | 0.75% |
-| Liquidity allocation | 0% mainnet; 0.25% testnet |
-| CryLo Gas Treasury allocation | 0.75% mainnet; 0.50% testnet |
+| Liquidity allocation | 0.25% on all networks |
+| CryLo Gas Treasury allocation | 0.50% on all networks |
 | Total protocol allocation | 1.50% |
 | P2P port | 22640 |
 | RPC port | 22641 |
 | ZMQ port | 22642 |
 
-The mainnet-only allocation changes are on a launch-candidate branch and are **not deployed**. The signed Testnet.25 release retains its original consensus rules and wallet data. Mainnet remains blocked pending Gas Treasury recipient verification, native chain tests, and mainnet release signing.
+The owner-approved mainnet distribution preserves the signed testnet's **0.75% Development / 0.25% Liquidity / 0.50% CryLo Gas Treasury** allocation. The mainnet source remains an **unreleased validation candidate**, and Testnet.25 consensus and wallet data are unchanged. Mainnet release is blocked pending independent Liquidity recipient-key verification, full native consensus/chain tests, and authenticated mainnet signing and updating.
 
 CryLo and wCryLo use **11 decimal places**.
 
