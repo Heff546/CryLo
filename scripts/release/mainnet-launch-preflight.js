@@ -30,12 +30,12 @@ function numberMacro(name) {
 }
 
 const dev = numberMacro('CryLo_DEV_FUND_FEE_BPS');
-const legacyLiquidity = numberMacro('CryLo_LIQUIDITY_FUND_FEE_BPS');
-const legacyGas = numberMacro('CryLo_GAS_TREASURY_FEE_BPS');
+const liquidity = numberMacro('CryLo_LIQUIDITY_FUND_FEE_BPS');
+const gas = numberMacro('CryLo_GAS_TREASURY_FEE_BPS');
 
-console.log('Observed shared consensus defaults (basis points): Dev=' + dev +
-  ', Liquidity=' + legacyLiquidity + ', Gas=' + legacyGas);
-console.log('UNAPPROVED CANDIDATE mainnet allocation (basis points): Dev=75, Liquidity=0, Gas=75');
+console.log('Observed consensus treasury allocation (basis points): Dev=' + dev +
+  ', Liquidity=' + liquidity + ', Gas=' + gas);
+console.log('APPROVED mainnet allocation: Dev=75, Liquidity=25, Gas=50');
 console.log('');
 
 check(
@@ -44,25 +44,29 @@ check(
   'Set and test the intended 75 bp Development payout'
 );
 check(
-  'Candidate mainnet code uses no liquidity coinbase output',
-  /mainnet/i.test(miner) &&
-  /liquidity_fund_amount\s*=\s*\(?m_nettype\s*==\s*MAINNET\s*\?\s*0(?:ULL)?\s*:/.test(miner) &&
-  /liquidity_fund_expected\s*=\s*\(?m_nettype\s*==\s*MAINNET\s*\?\s*0(?:ULL)?\s*:/.test(blockchain),
-  'Remove mainnet liquidity allocation in both coinbase creation and validation, preserving testnet rules'
+  'All networks allocate 0.25% to the Liquidity Fund',
+  liquidity === 25 &&
+  /liquidity_fund_amount\s*=\s*block_reward\s*\*\s*CryLo_LIQUIDITY_FUND_FEE_BPS\s*\/\s*10000/.test(miner) &&
+  /liquidity_fund_expected\s*=\s*total_reward\s*\*\s*CryLo_LIQUIDITY_FUND_FEE_BPS\s*\/\s*10000/.test(blockchain) &&
+  blockchain.includes('b.miner_tx.vout[3].amount != liquidity_fund_expected'),
+  'Enforce 25 bp Liquidity output index 3 on every network; destination recipient proof remains a separate launch gate'
 );
 check(
-  'Candidate mainnet code uses 0.75% Gas Treasury allocation',
-  (numberMacro('CryLo_GAS_TREASURY_FEE_BPS_MAINNET') === 75 ||
-   numberMacro('CryLo_MAINNET_GAS_TREASURY_FEE_BPS') === 75) &&
-  miner.includes('CryLo_GAS_TREASURY_FEE_BPS_MAINNET') &&
-  blockchain.includes('CryLo_GAS_TREASURY_FEE_BPS_MAINNET'),
-  'Set 75 bp mainnet-only gas allocation in construction AND validation'
+  'All networks allocate 0.50% to the Gas Treasury',
+  gas === 50 &&
+  !config.includes('CryLo_GAS_TREASURY_FEE_BPS_MAINNET') &&
+  /gas_treasury_amount\s*=\s*block_reward\s*\*\s*CryLo_GAS_TREASURY_FEE_BPS\s*\/\s*10000/.test(miner) &&
+  /gas_treasury_expected\s*=\s*total_reward\s*\*\s*CryLo_GAS_TREASURY_FEE_BPS\s*\/\s*10000/.test(blockchain) &&
+  blockchain.includes('b.miner_tx.vout[4].amount != gas_treasury_expected'),
+  'Enforce 50 bp Gas Treasury output index 4 and prevent unapproved mainnet-specific rates'
 );
 check(
-  'Mainnet HF19+ coinbase has four validated outputs',
-  /m_nettype\s*==\s*MAINNET\s*\?\s*4\s*:\s*5/.test(blockchain) &&
-  /m_nettype\s*==\s*MAINNET\s*\?\s*4\s*:\s*5/.test(blockchain.slice(blockchain.indexOf('size_t max_outs'))),
-  'Validate instant, vested, Dev and Gas output order (4); preserve testnet (5)'
+  'HF19+ coinbase has five validated outputs on all networks',
+  /const size_t required_outs = 5;/.test(blockchain) &&
+  /size_t max_outs = hf_version >= HF_VERSION_VESTING \?\s*5\s*:/.test(blockchain) &&
+  miner.includes('gas_treasury_addr.m_spend_public_key, 4)') &&
+  blockchain.includes('gas_treasury_view_pkey, gas_treasury_spend_pkey, 4)'),
+  'Validate instant, vested, Dev, Liquidity, Gas output order (5) on every network'
 );
 // STRUCTURAL ONLY: this is not a native consensus or cryptographic audit.
 // The earlier gate required a treasury view secret in public validator source.
@@ -90,14 +94,16 @@ check(
   !blockchain.includes('CryLo_GAS_TREASURY_VIEWKEY_SECRET'),
   'Independently review DLEQ proof, run native malformed-proof/recipient/height/replay tests and verify testnet history before mainnet release'
 );
-// Keep official MAINNET signing disabled while the proposed economic
-// allocation and the public DLEQ proof lack independent native verification.
-// This is intentionally an unconditional launch hold, not a CI override.
-// Unsigned native mainnet validation builds remain available for testing.
+// Official mainnet economics are approved (75/25/50), but the Liquidity
+// output currently lacks independent recipient-key verification. A miner
+// could otherwise redirect that output while preserving its correct amount.
+// The Gas DLEQ proof does not authenticate the Liquidity destination.
+// Keep official MAINNET signing blocked until both recipients are verified,
+// full native consensus/replay and independent-platform tests are complete.
 check(
-  'Mainnet allocation approval and native DLEQ consensus evidence',
+  'Mainnet Liquidity recipient proof and full native consensus evidence',
   false,
-  'Candidate 75/0/75 basis-point split is not approved; native proof, replay and five-platform consensus tests have not cleared. Remove this hold only in a reviewed launch-approval change.'
+  'Implement and adversarially test independent Liquidity recipient verification at output 3; full-block consensus, history replay and cross-platform checks remain required. This is a mandatory release hold.'
 );
 
 check(
