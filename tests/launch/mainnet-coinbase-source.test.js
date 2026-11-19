@@ -23,53 +23,52 @@ function macro(name) {
 
 const devBps = macro('CryLo_DEV_FUND_FEE_BPS');
 const liquidityBps = macro('CryLo_LIQUIDITY_FUND_FEE_BPS');
-const testnetGasBps = macro('CryLo_GAS_TREASURY_FEE_BPS');
-const mainnetGasBps = macro('CryLo_GAS_TREASURY_FEE_BPS_MAINNET');
+const gasBps = macro('CryLo_GAS_TREASURY_FEE_BPS');
 
-function allocations(rewardAtomic, network) {
+function allocations(rewardAtomic) {
   const dev = rewardAtomic * devBps / 10000n;
-  const liquidity = network === 'mainnet'
-    ? 0n : rewardAtomic * liquidityBps / 10000n;
-  const gas = rewardAtomic *
-    (network === 'mainnet' ? mainnetGasBps : testnetGasBps) / 10000n;
+  const liquidity = rewardAtomic * liquidityBps / 10000n;
+  const gas = rewardAtomic * gasBps / 10000n;
   const miner = rewardAtomic - dev - liquidity - gas;
   const instant = miner / 2n;
   const vested = miner - instant;
-  return network === 'mainnet'
-    ? [instant, vested, dev, gas]
-    : [instant, vested, dev, liquidity, gas];
+  return [instant, vested, dev, liquidity, gas];
 }
 
-test('mainnet and existing testnet protocol allocations both total 150 basis points', () => {
+test('all networks use the owner-approved 75/25/50 bp treasury split', () => {
   assert.equal(devBps, 75n);
   assert.equal(liquidityBps, 25n);
-  assert.equal(testnetGasBps, 50n);
-  assert.equal(mainnetGasBps, 75n);
-  assert.equal(devBps + mainnetGasBps, 150n);
-  assert.equal(devBps + liquidityBps + testnetGasBps, 150n);
+  assert.equal(gasBps, 50n);
+  assert.equal(devBps + liquidityBps + gasBps, 150n);
+  assert.doesNotMatch(config, /CryLo_GAS_TREASURY_FEE_BPS_MAINNET/);
 });
 
-test('coinbase creator selects mainnet zero liquidity and higher Gas Treasury rate', () => {
+test('coinbase creator pays liquidity and Gas Treasury on every network', () => {
   assert.match(generator,
-    /liquidity_fund_amount\s*=\s*\(m_nettype\s*==\s*MAINNET\s*\?\s*0\s*:/);
+    /liquidity_fund_amount\s*=\s*block_reward\s*\*\s*CryLo_LIQUIDITY_FUND_FEE_BPS\s*\/\s*10000/);
   assert.match(generator,
-    /gas_treasury_amount\s*=\s*block_reward\s*\*\s*\(m_nettype\s*==\s*MAINNET\s*\?\s*CryLo_GAS_TREASURY_FEE_BPS_MAINNET\s*:\s*CryLo_GAS_TREASURY_FEE_BPS\)/);
+    /gas_treasury_amount\s*=\s*block_reward\s*\*\s*CryLo_GAS_TREASURY_FEE_BPS\s*\/\s*10000/);
   assert.match(generator, /if \(liquidity_fund_amount > 0\)/);
   assert.match(generator, /if \(gas_treasury_amount > 0\)/);
+  assert.match(generator,
+    /gas_treasury_addr\.m_spend_public_key, 4\)/);
+  assert.doesNotMatch(generator, /CryLo_GAS_TREASURY_FEE_BPS_MAINNET/);
 });
 
-test('validator mirrors both network allocations and enforces correct output indices', () => {
-  assert.match(validator, /const size_t required_outs = m_nettype == MAINNET \? 4 : 5;/);
+test('validator requires five outputs and matches the approved amounts and indices', () => {
+  assert.match(validator, /const size_t required_outs = 5;/);
   assert.match(validator, /b\.miner_tx\.vout\.size\(\) != required_outs/);
   assert.match(validator,
-    /liquidity_fund_expected\s*=\s*\(m_nettype\s*==\s*MAINNET\s*\?\s*0\s*:/);
+    /liquidity_fund_expected\s*=\s*total_reward\s*\*\s*CryLo_LIQUIDITY_FUND_FEE_BPS\s*\/\s*10000/);
   assert.match(validator,
-    /gas_treasury_expected\s*=\s*total_reward\s*\*\s*\(m_nettype\s*==\s*MAINNET\s*\?\s*CryLo_GAS_TREASURY_FEE_BPS_MAINNET\s*:\s*CryLo_GAS_TREASURY_FEE_BPS\)/);
+    /gas_treasury_expected\s*=\s*total_reward\s*\*\s*CryLo_GAS_TREASURY_FEE_BPS\s*\/\s*10000/);
   assert.match(validator,
-    /if \(m_nettype == MAINNET\)[\s\S]*?b\.miner_tx\.vout\[3\]\.amount != gas_treasury_expected/);
+    /b\.miner_tx\.vout\[3\]\.amount != liquidity_fund_expected/);
   assert.match(validator,
-    /b\.miner_tx\.vout\[3\]\.amount != liquidity_fund_expected[\s\S]*?b\.miner_tx\.vout\[4\]\.amount != gas_treasury_expected/);
-  assert.match(validator, /size_t max_outs = hf_version >= HF_VERSION_VESTING \?\s*\(m_nettype == MAINNET \? 4 : 5\)/);
+    /b\.miner_tx\.vout\[4\]\.amount != gas_treasury_expected/);
+  assert.match(validator, /size_t max_outs = hf_version >= HF_VERSION_VESTING \?\s*5\s*:/);
+  assert.match(validator, /gas_treasury_view_pkey, gas_treasury_spend_pkey, 4\)/);
+  assert.doesNotMatch(validator, /CryLo_GAS_TREASURY_FEE_BPS_MAINNET/);
 });
 
 test('mainnet v21 and testnet hardfork schedules are preserved', () => {
@@ -84,17 +83,14 @@ test('integer rounding and conservation at a range of coinbase rewards', () => {
   ];
   for (const reward of atomicSamples) {
     for (const network of ['mainnet', 'testnet']) {
-      const outputs = allocations(reward, network);
-      assert.equal(outputs.length, network === 'mainnet' ? 4 : 5);
+      const outputs = allocations(reward);
+      assert.equal(outputs.length, 5, network);
       assert.equal(outputs.reduce((sum, amount) => sum + amount, 0n), reward);
       assert.ok(outputs.every(amount => amount >= 0n));
       assert.ok(outputs[1] >= outputs[0] && outputs[1] - outputs[0] <= 1n);
-      if (network === 'mainnet') {
-        assert.equal(outputs[3], reward * 75n / 10000n);
-      } else {
-        assert.equal(outputs[3], reward * 25n / 10000n);
-        assert.equal(outputs[4], reward * 50n / 10000n);
-      }
+      assert.equal(outputs[2], reward * 75n / 10000n);
+      assert.equal(outputs[3], reward * 25n / 10000n);
+      assert.equal(outputs[4], reward * 50n / 10000n);
     }
   }
 });
@@ -127,10 +123,10 @@ test('launch preflight checks the public proof rather than a public wallet view 
 });
 
 test('source-only proof checks never authorize official mainnet release signing', () => {
-  // The 75/0/75 candidate allocation and native DLEQ proof still require
-  // explicit approval and adversarial testing, independent of static checks.
-  assert.match(preflight, /'Mainnet allocation approval and native DLEQ consensus evidence',\s*false,/);
-  assert.match(preflight, /UNAPPROVED CANDIDATE mainnet allocation/);
+  // The approved 75/25/50 policy must not bypass missing Liquidity recipient
+  // authentication, independent consensus tests, or the updater block.
+  assert.match(preflight, /'Mainnet Liquidity recipient proof and full native consensus evidence',\s*false,/);
+  assert.match(preflight, /APPROVED mainnet allocation: Dev=75, Liquidity=25, Gas=50/);
 });
 
 test('official mainnet release builder fails closed on source preflight', () => {

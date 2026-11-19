@@ -1441,7 +1441,7 @@ bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, 
       const bool is_genesis_block = (m_db->height() == 0);
       if (!is_genesis_block && b.miner_tx.vout.size() != 1 &&
           !(hf_version >= HF_VERSION_VESTING &&
-            b.miner_tx.vout.size() == (m_nettype == MAINNET ? 4 : 5)))
+            b.miner_tx.vout.size() == 5))
       {
           MWARNING("Only 1 output in miner transaction allowed");
           return false;
@@ -1575,11 +1575,11 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
       partial_block_reward = true;
     base_reward = money_in_use - fee;
   }
-  // CryLo Chain: HF19+ validate 50/50 miner split and network-specific
-  // foundation outputs. Testnet's existing five-output history is immutable.
+  // HF19+: validate 50/50 miner split and the same 75/25/50 foundation
+  // allocations on MAINNET, TESTNET and STAGENET; testnet history is immutable.
   if (version >= HF_VERSION_VESTING && b.miner_tx.vout.size() > 0 && m_db->height() > 0)
   {
-    const size_t required_outs = m_nettype == MAINNET ? 4 : 5;
+    const size_t required_outs = 5;
     if (b.miner_tx.vout.size() != required_outs)
     {
       MERROR_VER("HF19+ coinbase requires " << required_outs
@@ -1589,11 +1589,8 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
 
     const uint64_t total_reward = base_reward + fee;
     const uint64_t dev_fund_expected = total_reward * CryLo_DEV_FUND_FEE_BPS / 10000;
-    const uint64_t liquidity_fund_expected = (m_nettype == MAINNET ? 0 :
-        total_reward * CryLo_LIQUIDITY_FUND_FEE_BPS / 10000);
-    const uint64_t gas_treasury_expected = total_reward *
-        (m_nettype == MAINNET ? CryLo_GAS_TREASURY_FEE_BPS_MAINNET :
-                                CryLo_GAS_TREASURY_FEE_BPS) / 10000;
+    const uint64_t liquidity_fund_expected = total_reward * CryLo_LIQUIDITY_FUND_FEE_BPS / 10000;
+    const uint64_t gas_treasury_expected = total_reward * CryLo_GAS_TREASURY_FEE_BPS / 10000;
     const uint64_t miner_reward =
         total_reward - dev_fund_expected - liquidity_fund_expected - gas_treasury_expected;
 
@@ -1603,15 +1600,11 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     if (b.miner_tx.vout[0].amount != miner_instant_expected) return false;
     if (b.miner_tx.vout[1].amount != miner_vested_expected) return false;
     if (b.miner_tx.vout[2].amount != dev_fund_expected) return false;
-    if (m_nettype == MAINNET)
-    {
-      if (b.miner_tx.vout[3].amount != gas_treasury_expected) return false;
-    }
-    else
-    {
-      if (b.miner_tx.vout[3].amount != liquidity_fund_expected) return false;
-      if (b.miner_tx.vout[4].amount != gas_treasury_expected) return false;
-    }
+    if (b.miner_tx.vout[3].amount != liquidity_fund_expected) return false;
+    if (b.miner_tx.vout[4].amount != gas_treasury_expected) return false;
+    // SECURITY HOLD: liquidity payout destination is not yet cryptographically
+    // verified. Mainnet launch is forbidden until it is proven to the
+    // configured public liquidity recipient (not merely amount-checked).
     // Verify dev fund output key is derived from the correct dev fund address
     crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(b.miner_tx);
     if (tx_pub_key == crypto::null_pkey)
@@ -1682,7 +1675,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
               CryLo_GAS_TREASURY_VIEWKEY, gas_treasury_view_pkey) ||
           !verify_crylo_mainnet_treasury_proof(
               b.miner_tx, generation->height,
-              gas_treasury_view_pkey, gas_treasury_spend_pkey, 3))
+              gas_treasury_view_pkey, gas_treasury_spend_pkey, 4))
       {
         MERROR_VER("Gas Treasury output key MISMATCH or invalid proof: rejecting mainnet miner reward");
         return false;
@@ -1992,7 +1985,7 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
   //make blocks coin-base tx looks close to real coinbase tx to get truthful blob weight
   uint8_t hf_version = b.major_version;
   size_t max_outs = hf_version >= HF_VERSION_VESTING ?
-      (m_nettype == MAINNET ? 4 : 5) : (hf_version >= 4 ? 1 : 11);
+      5 : (hf_version >= 4 ? 1 : 11);
   bool r = construct_miner_tx(this, m_nettype, height, median_weight, already_generated_coins, txs_weight, fee, miner_address, b.miner_tx, ex_nonce, max_outs, hf_version);
   CHECK_AND_ASSERT_MES(r, false, "Failed to construct miner tx, first chance");
   size_t cumulative_weight = txs_weight + get_transaction_weight(b.miner_tx);

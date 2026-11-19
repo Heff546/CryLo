@@ -36,10 +36,13 @@ jobs:
           set -e
           cat mainnet-preflight.log
           if [ "$code" -eq 0 ]; then
-            echo "ERROR: mainnet preflight unexpectedly passed before economic approval, native consensus proof and updater gates"
+            echo "ERROR: mainnet preflight unexpectedly passed before Liquidity recipient proof, full consensus and updater gates"
             exit 1
           fi
           grep -Fqx "PASS Mainnet Treasury public recipient proof is wired into consensus (source-only)" mainnet-preflight.log
-          grep -Fqx "BLOCK Mainnet allocation approval and native DLEQ consensus evidence" mainnet-preflight.log
+          grep -Fqx "PASS All networks allocate 0.25% to the Liquidity Fund" mainnet-preflight.log
+          grep -Fqx "PASS All networks allocate 0.50% to the Gas Treasury" mainnet-preflight.log
+          grep -Fqx "PASS HF19+ coinbase has five validated outputs on all networks" mainnet-preflight.log
+          grep -Fqx "BLOCK Mainnet Liquidity recipient proof and full native consensus evidence" mainnet-preflight.log
           grep -Fqx "BLOCK Mainnet updater has a dedicated authenticated release channel" mainnet-preflight.log
           echo "PASS: launch remains explicitly blocked until all gates are addressed"

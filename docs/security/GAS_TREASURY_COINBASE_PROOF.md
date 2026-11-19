@@ -1,6 +1,6 @@
 # CryLo Gas Treasury coinbase recipient proof — security design gate
 
-**Status: SOURCE CANDIDATE IMPLEMENTED; NATIVE VALIDATION AND CRYPTOGRAPHIC REVIEW OUTSTANDING. NO MAINNET RELEASE AUTHORIZED.**
+**Status: GAS DLEQ PROOF NATIVE-TESTED ON EARLIER FOUR-OUTPUT CANDIDATE; REVISED FIVE-OUTPUT CANDIDATE AND LIQUIDITY RECIPIENT STILL UNVERIFIED. NO MAINNET RELEASE AUTHORIZED.**
 
 ## Historical defect and current candidate
 
@@ -13,11 +13,30 @@ The current **unreleased mainnet source candidate** adds
 height-bound transaction proof, and the MAINNET validator calls
 `verify_crylo_mainnet_treasury_proof` to check a public proof and derive
 the one-time Treasury output key from the configured Treasury **public**
-spend and view keys. It rejects invalid proof or output checks.
+spend and view keys. It rejects invalid proof or output checks. On the
+owner-approved five-output mainnet layout, Gas is output **4**.
 
-This is a source-level finding, **not** evidence that the implementation
-has passed native adversarial tests or independent cryptographic review.
+The earlier four-output candidate passed 13 native Gas proof tests on Pi1
+and a combined set of 31 CryptoNote regressions; 36 emission/hardfork
+tests also passed. Those results are **not** proof of independent
+cryptographic correctness or of this revised five-output candidate.
 Never assume a source string check alone proves correct recipient payment.
+
+## Liquidity recipient protection — mandatory separate gate
+
+**Owner-approved on November 18, 2026:** all networks pay **0.75%
+Development, 0.25% Liquidity and 0.50% Gas Treasury**, with exactly
+five outputs after vesting activation.
+
+The Gas public DLEQ proof protects output [4]. It also commits to the
+coinbase prefix, but that **does not** prove the identity of output [3]
+(Liquidity). A malicious miner with its own transaction secret can
+generate a valid Gas proof over a coinbase whose Liquidity output pays
+an attacker. Independent Liquidity recipient verification is mandatory
+before mainnet release. A separate public DLEQ or an equivalently
+auditable recipient proof may be used only after canonical transaction-extra
+format, proof ordering, replay protection, output index and version are
+specified and tested; never embed a private Liquidity view/spend key.
 
 ## Privacy constraint
 
@@ -80,16 +99,17 @@ adversarial tests and security review before consensus is approved.
    signatures, multiple or missing proofs all reject.
 6. Pre-hardfork mainnet genesis/height-1 compatibility as specified;
    TESTNET/STAGENET existing miner transaction formats remain unchanged.
-7. 45-day vesting, **owner-approved** mainnet basis-point allocation (75/0/75 is only the current candidate; signed testnet uses 75/25/50), 5M supply, reward rounding,
-   CPU mining, reorg, fork-split and synchronized independent nodes.
+7. 45-day vesting, **approved 75/25/50 bp allocation for all networks**, 5M
+   supply, reward rounding, CPU mining, reorg, fork-split and synchronized independent nodes.
 8. L1 privacy: no miner key disclosure, no public L1-to-Nexus correlation
    identifiers or change to wallet scanning assumptions.
 9. Five-architecture deterministic native compilation and regression.
 
 **Deployment condition:** the source implementation must not be
 promoted until native adversarial consensus tests, independent
-cryptographic/privacy review, owner-confirmed public Treasury recipient
-keys, and an approved mainnet allocation are complete.
+cryptographic/privacy review, owner-confirmed public Liquidity and Gas
+Treasury recipient keys, and independently verified Liquidity proof are complete.
 `mainnet-launch-preflight.js` explicitly holds official release signing
-closed pending those items, separately from the mainnet updater gate.
+closed pending those security items, separately from the mainnet updater gate.
+The economic allocation itself is approved and is no longer a blocker.
 Unsigned validation builds may be used for testing only.

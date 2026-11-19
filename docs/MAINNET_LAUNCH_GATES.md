@@ -16,55 +16,48 @@ reserve keys, or switching user wallets.
 3. Keep staking, node rewards, validators, Orbit, NFTs, buyback, and daily gas
    epoch distribution disabled in the initial Nexus configuration.
 
-## Gate A — immutable L1 consensus (PARTIAL SOURCE CHANGE; STILL BLOCKED)
+## Gate A — immutable L1 consensus (APPROVED ECONOMICS; VALIDATION IN PROGRESS)
 
-The existing L1 mainnet source candidate implements **75 bp Development /
-0 bp Liquidity / 75 bp CryLo Gas Treasury**. The signed Testnet.25 source uses
-**75 bp Development / 25 bp Liquidity / 50 bp Gas Treasury**. An older Nexus
-checklist describes the candidate mainnet split, but that does **not** establish
-owner approval to change the L1 distribution. The mainnet split must be confirmed
-before merging consensus source or approving a mainnet release.
+**Owner-confirmed November 18, 2026: CryLo MAINNET, TESTNET and STAGENET use
+75 bp Development / 25 bp Liquidity / 50 bp CryLo Gas Treasury.** Each
+allocates exactly 1.50% of the block reward. The earlier proposed mainnet
+75/0/75 change is **rejected** and must never enter a signed release.
 
-The *unapproved candidate* currently contains the following changes:
+The isolated implementation branch
+`fix/mainnet-approved-75-25-50-20261118` restores five HF19+ coinbase
+outputs, ordered **miner instant [0], miner vested [1], Dev [2],
+Liquidity [3], Gas Treasury [4]**, with identical fee percentages on
+all networks. Mainnet Treasury's existing public DLEQ proof now
+authenticates output index **4**. The original signed testnet rules are
+unchanged. The mainnet source must be compiled and verified on Pi1
+before being merged into the L1 candidate. Historical testnet replay
+and independent cross-platform builds remain outstanding.
 
-- `src/cryptonote_config.h` defines a separate 75 bp mainnet Gas rate,
-  while testnet/stagenet retain their original 75/25/50 bp split.
-- `src/cryptonote_core/cryptonote_tx_utils.cpp` constructs 4 mainnet
-  HF19+ outputs: miner instant, miner vested, Development, Gas Treasury.
-  TESTNET/STAGENET continue to construct 5.
-- `src/cryptonote_core/blockchain.cpp` mirrors the separate allocation,
-  output count, amounts and output indices and chooses matching `max_outs`.
-- `tests/launch/mainnet-coinbase-source.test.js` provides read-only,
-  integer reward conservation and source-structure regressions.
+**CRITICAL LIQUIDITY SECURITY BLOCKER:** The existing validator checks
+the amount of output [3] but does NOT verify that its one-time key pays
+the approved Liquidity Fund wallet. A malicious miner could sign a
+valid Gas Treasury proof over a coinbase with a substituted Liquidity
+recipient. Because the Liquidity output is restored for mainnet,
+**independent cryptographic recipient authentication is mandatory**
+before mainnet release. The Gas Treasury proof does not solve this.
+Do not rely on liquidity amount checks or expose a Liquidity private
+view/spend key in publicly distributed daemons.
 
-**This is still not a verified consensus implementation.** The source candidate
-now contains `src/cryptonote_core/crylo_gas_treasury_proof.h`: its miner
-constructs a public DLEQ transaction proof and its MAINNET validator calls
-`verify_crylo_mainnet_treasury_proof` to check the proof, intended public
-recipient keys, and one-time output key. The validator rejects an invalid
-proof. This corrects the earlier amount-only *source* design, but does **not**
-establish that the proof implementation is cryptographically secure.
+Prior validation on Pi1: 13 native Gas Treasury tests, 31 combined
+CryptoNote regressions and 36 emission/hardfork tests passed on the
+*earlier four-output mainnet candidate*. These results support the
+existing proof implementation but **do not validate the revised
+five-output mainnet candidate**. Re-run the native suite and add
+Liquidity-recipient attack tests after implementing its proof.
 
-A stale source test incorrectly asserted that the validator must **not**
-contain the Gas Treasury mismatch rejection; the old preflight demanded a
-private-view-key-based verification instead of the new public proof. The isolated
-`fix/mainnet-dleq-source-gate-20261117` branch aligns those source checks with
-the implementation and retains a mandatory launch hold. These revisions have
-not been established as passing native C++ compilation or a complete Node CI
-suite, and do not prove testnet history replay, malformed-proof rejection,
-malicious destination rejection, chain convergence or consensus correctness.
+Other mandatory gates: independent genesis and network IDs; mainnet
+height 1→2 hardfork transition; complete miner coinbase recipient
+validation; 50/50 instant and 45-day vesting; emission cap; full-block
+consensus rejection of malicious recipient substitutions; testnet v4
+history replay; peer synchronization, reorg and multi-architecture
+determinism.
 
-Do not embed a Treasury private view or spend key in public daemon binaries.
-See [`docs/security/GAS_TREASURY_COINBASE_PROOF.md`](security/GAS_TREASURY_COINBASE_PROOF.md)
-for the source implementation and outstanding cryptographic acceptance gates.
-
-**Mandatory native regression tests:** genesis; mainnet height 1 → 2
-hardfork transition (v17 → v21); coinbase payout amounts and exact recipient;
-50/50 immediate/45-day vesting; difficulty floor; 5M emission cap; malicious
-miner replacement of Gas payout; invalid address/output/count rejection;
-testnet v4 historical replay compatibility; cross-platform determinism.
-
-Do not change the already-published Testnet.25 tag to implement this.
+Do not modify the already published signed Testnet.25 release.
 
 ## Gate B — mainnet network identity and launch (UNVERIFIED)
 
@@ -138,11 +131,11 @@ purchase remains possible, as does signed onboarding / starter gas.
 ## Launch decision
 
 Run the source-only preflight with `node scripts/release/mainnet-launch-preflight.js`.
-It deliberately exits nonzero because mainnet economic approval and native DLEQ
-proof evidence are missing, independently of the unfinished mainnet updater.
-Static source checks can support code review; they do **not** constitute release
-approval. The explicit hold may only be removed in a reviewed change after
-the consensus policy is approved and native evidence is verified.
+It deliberately exits nonzero because Liquidity-recipient validation,
+complete native consensus evidence and the mainnet updater are unfinished.
+**The 75/25/50 economic policy is approved**, but that approval is not
+a release authorization. Keep the explicit launch hold until all recipients
+and full chain acceptance/rejection tests pass in a reviewed change.
 
 **Do not launch L1 mainnet now.** A mainnet launch is authorized only after
 all L1 gates A/B/C pass independently of Nexus. Nexus can be enabled later
