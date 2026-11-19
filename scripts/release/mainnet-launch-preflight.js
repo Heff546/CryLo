@@ -52,7 +52,7 @@ check(
   /liquidity_fund_amount\s*=\s*block_reward\s*\*\s*CryLo_LIQUIDITY_FUND_FEE_BPS\s*\/\s*10000/.test(miner) &&
   /liquidity_fund_expected\s*=\s*total_reward\s*\*\s*CryLo_LIQUIDITY_FUND_FEE_BPS\s*\/\s*10000/.test(blockchain) &&
   blockchain.includes('b.miner_tx.vout[3].amount != liquidity_fund_expected'),
-  'Enforce 25 bp Liquidity output index 3 on every network; destination recipient proof remains a separate launch gate'
+  'Enforce 25 bp Liquidity output index 3; source recipient-proof wiring and native proof validity are separate gates'
 );
 check(
   'All networks allocate 0.50% to the Gas Treasury',
