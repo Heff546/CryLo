@@ -6,8 +6,7 @@
 set -Eeuo pipefail
 
 STOP_HEIGHT=2959
-BUILD_DIR="${CRYLO_REPLAY_BUILD_DIR:-$HOME/CryLo-Testing/CryLo-Electron-Mainnet-Review-do-not-use}"
-# Use the same external, already configured native review build by default.
+# Use the already configured native Pi1 review build by default.
 BUILD_DIR="${CRYLO_REPLAY_BUILD_DIR:-/tmp/crylo-native-dleq-20261118/build}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -48,6 +47,14 @@ echo "SOURCE LMDB: $SOURCE_LMDB (READ ONLY)"
 echo "WORKSPACE: $WORK"
 echo "LAST BLOCK TO VERIFY: $STOP_HEIGHT"
 echo "TESTNET ONLY: no peer/network connection"
+
+# Refuse a snapshot likely to exhaust the Pi1 filesystem; full replay
+# also needs room for two bootstrap files and a new verified LMDB.
+SOURCE_KB="$(du -sk "$SOURCE_LMDB" | awk '{print $1}')"
+FREE_KB="$(df -Pk "$WORK" | awk 'END {print $4}')"
+if (( FREE_KB < SOURCE_KB * 2 + 524288 )); then
+  die "Insufficient free disk space for isolated snapshot + history replay"
+fi
 
 # A compact, consistent LMDB snapshot while the Pi1 source might be open.
 # mdb_copy reads the source environment; the destination is a new directory.
