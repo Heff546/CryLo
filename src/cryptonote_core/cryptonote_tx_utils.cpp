@@ -30,6 +30,10 @@
 
 #include <unordered_set>
 #include <random>
+#include <sstream>
+// Needed before tx_extra_nonce's templated FIELD(nonce) is instantiated:
+// supplies ::do_serialize(binary_archive<true>&, std::string&).
+#include "serialization/string.h"
 #include "include_base_utils.h"
 #include "string_tools.h"
 using namespace epee;
@@ -85,9 +89,37 @@ namespace cryptonote
 
     keypair txkey = keypair::generate(hw::get_device("default"));
     add_tx_pub_key_to_extra(tx, txkey.pub);
-    if(!extra_nonce.empty())
-      if(!add_extra_nonce_to_tx_extra(tx.extra, extra_nonce))
+    if (!extra_nonce.empty())
+    {
+      if (m_nettype == MAINNET && height > 0 &&
+          hard_fork_version >= HF_VERSION_VESTING)
+      {
+        // The legacy helper writes a ONE-BYTE length. At nonce length
+        // 128+ it is no longer a valid canonical varint for tx_extra_nonce;
+        // parse_tx_extra() then rejects otherwise valid miner templates.
+        // Serialize the typed field with the same binary archive used by
+        // parsers and sorters. Only MAINNET v21+ needs this compatibility
+        // correction; signed TESTNET/STAGENET history is untouched.
+        if (extra_nonce.size() > TX_EXTRA_NONCE_MAX_COUNT)
+          return false;
+        tx_extra_nonce canonical_nonce{};
+        canonical_nonce.nonce = extra_nonce;
+        std::ostringstream stream;
+        binary_archive<true> ar(stream);
+        // Match the proven pick<tx_extra_nonce>() serializer: explicitly
+        // write the tag, then the typed nonce. Passing a tx_extra_field
+        // boost::variant to the qualified ::do_serialize overload does
+        // not resolve its saving specialization in this translation unit.
+        uint8_t nonce_tag = TX_EXTRA_NONCE;
+        if (!::do_serialize(ar, nonce_tag) ||
+            !::do_serialize(ar, canonical_nonce))
+          return false;
+        const std::string bytes = stream.str();
+        tx.extra.insert(tx.extra.end(), bytes.begin(), bytes.end());
+      }
+      else if (!add_extra_nonce_to_tx_extra(tx.extra, extra_nonce))
         return false;
+    }
     if (!sort_tx_extra(tx.extra, tx.extra))
       return false;
 

@@ -71,6 +71,24 @@ check(
   blockchain.includes('gas_treasury_view_pkey, gas_treasury_spend_pkey, 4)'),
   'Validate instant, vested, Dev, Liquidity, Gas output order (5) on every network'
 );
+check(
+  'Mainnet block-template padding preserves canonical dual-proof suffix (source-only)',
+  blockchain.includes('blobdata consensus_extra_nonce = ex_nonce;') &&
+  blockchain.includes('consensus_extra_nonce.append(added_nonce_bytes') &&
+  blockchain.includes('added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length') &&
+  blockchain.includes('original_nonce_length >= 128 ? 1 : 0') &&
+  blockchain.includes('new_nonce_length >= 128 ? 1 : 0') &&
+  miner.includes('#include "serialization/string.h"') &&
+  miner.indexOf('#include "serialization/string.h"') <
+    miner.indexOf('#include "cryptonote_basic/tx_extra.h"') &&
+  miner.includes('uint8_t nonce_tag = TX_EXTRA_NONCE;') &&
+  miner.includes('binary_archive<true> ar(stream);') &&
+  miner.includes('!::do_serialize(ar, nonce_tag)') &&
+  miner.includes('!::do_serialize(ar, canonical_nonce)') &&
+  /m_nettype == MAINNET && height > 0 &&\s*hf_version >= HF_VERSION_VESTING/.test(blockchain) &&
+  (blockchain.match(/construct_miner_tx\(this, m_nettype, height, median_weight, already_generated_coins,[^;]+consensus_extra_nonce, max_outs, hf_version\)/g) || []).length === 2,
+  'Rebuild the MAINNET coinbase with nonce padding BEFORE Liquidity and Gas proofs; never add trailing bytes after the proof fields'
+);
 // STRUCTURAL ONLY: this is not a native consensus or cryptographic audit.
 // The earlier gate required a treasury view secret in public validator source.
 // The current mainnet candidate instead uses a public, height-bound DLEQ proof.

@@ -43,6 +43,7 @@ jobs:
           grep -Fqx "PASS All networks allocate 0.25% to the Liquidity Fund" mainnet-preflight.log
           grep -Fqx "PASS All networks allocate 0.50% to the Gas Treasury" mainnet-preflight.log
           grep -Fqx "PASS HF19+ coinbase has five validated outputs on all networks" mainnet-preflight.log
+          grep -Fqx "PASS Mainnet block-template padding preserves canonical dual-proof suffix (source-only)" mainnet-preflight.log
           grep -Fqx "PASS Mainnet Liquidity public recipient proof is wired into consensus (source-only)" mainnet-preflight.log
           grep -Fqx "BLOCK Mainnet dual-recipient native consensus and replay evidence" mainnet-preflight.log
           grep -Fqx "BLOCK Mainnet updater has a dedicated authenticated release channel" mainnet-preflight.log

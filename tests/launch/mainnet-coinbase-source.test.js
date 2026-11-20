@@ -145,6 +145,30 @@ test('source-only proof checks never authorize official mainnet release signing'
 });
 
 
+test('mainnet template weight-convergence padding is inserted before both proof signatures', () => {
+  assert.match(validator, /blobdata consensus_extra_nonce = ex_nonce;/);
+  assert.match(validator, /consensus_extra_nonce\.append\(added_nonce_bytes, '\\0'\)/);
+  assert.match(validator, /m_nettype == MAINNET && height > 0 &&\s*hf_version >= HF_VERSION_VESTING/);
+  assert.match(validator, /Never append padding AFTER the canonical Liquidity\/Gas proof/);
+  assert.match(validator, /added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length/);
+  assert.match(validator, /original_nonce_length >= 128 \? 1 : 0/);
+  assert.match(validator, /new_nonce_length >= 128 \? 1 : 0/);
+  assert.match(generator, /#include "serialization\/string\.h"/);
+  assert.ok(generator.indexOf('#include "serialization/string.h"') <
+    generator.indexOf('#include "cryptonote_basic/tx_extra.h"'));
+  assert.match(generator, /uint8_t nonce_tag = TX_EXTRA_NONCE;/);
+  assert.match(generator, /binary_archive<true> ar\(stream\);/);
+  assert.match(generator, /::do_serialize\(ar, nonce_tag\)/);
+  assert.match(generator, /::do_serialize\(ar, canonical_nonce\)/);
+  assert.doesNotMatch(generator, /::do_serialize\(ar, field\)/);
+  assert.match(generator, /m_nettype == MAINNET && height > 0 &&\s*hard_fork_version >= HF_VERSION_VESTING/);
+  assert.match(mainnetHarness, /parse_tx_extra\(with_nonce.miner_tx.extra, parsed\)/);
+  assert.match(mainnetHarness, /Mainnet coinbase nonce round-trip failed for size/);
+  assert.equal((validator.match(/construct_miner_tx\(this, m_nettype, height, median_weight, already_generated_coins,[^;]+consensus_extra_nonce, max_outs, hf_version\)/g) || []).length, 2);
+  assert.match(mainnetHarness, /Six nonce-length mainnet block templates preserve both proofs/);
+  assert.match(preflight, /Mainnet block-template padding preserves canonical dual-proof suffix \(source-only\)/);
+});
+
 test('mainnet block tests use real explicitly selected consensus, isolated offline data', () => {
   assert.match(coreHeader, /arg_mainnet_on/);
   assert.match(core, /"mainnet"/);
