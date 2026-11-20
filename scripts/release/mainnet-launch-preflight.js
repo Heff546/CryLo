@@ -78,6 +78,9 @@ check(
   blockchain.includes('added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length') &&
   blockchain.includes('original_nonce_length >= 128 ? 1 : 0') &&
   blockchain.includes('new_nonce_length >= 128 ? 1 : 0') &&
+  miner.includes('#include "serialization/string.h"') &&
+  miner.indexOf('#include "serialization/string.h"') <
+    miner.indexOf('#include "cryptonote_basic/tx_extra.h"') &&
   miner.includes('uint8_t nonce_tag = TX_EXTRA_NONCE;') &&
   miner.includes('binary_archive<true> ar(stream);') &&
   miner.includes('!::do_serialize(ar, nonce_tag)') &&
