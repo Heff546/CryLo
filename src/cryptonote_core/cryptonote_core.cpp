@@ -388,6 +388,12 @@ namespace cryptonote
           MERROR("--mainnet requires an explicit separate --data-dir");
           return false;
         }
+        if (command_line::get_arg(vm, arg_fixed_difficulty) != 0 &&
+            !command_line::get_arg(vm, arg_offline))
+        {
+          MERROR("--fixed-difficulty on --mainnet requires --offline (test-only mode)");
+          return false;
+        }
         m_nettype = MAINNET;
       }
       else
