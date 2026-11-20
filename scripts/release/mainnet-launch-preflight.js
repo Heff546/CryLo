@@ -78,9 +78,10 @@ check(
   blockchain.includes('added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length') &&
   blockchain.includes('original_nonce_length >= 128 ? 1 : 0') &&
   blockchain.includes('new_nonce_length >= 128 ? 1 : 0') &&
-  miner.includes('tx_extra_field field = canonical_nonce;') &&
+  miner.includes('uint8_t nonce_tag = TX_EXTRA_NONCE;') &&
   miner.includes('binary_archive<true> ar(stream);') &&
-  miner.includes('!::do_serialize(ar, field)') &&
+  miner.includes('!::do_serialize(ar, nonce_tag)') &&
+  miner.includes('!::do_serialize(ar, canonical_nonce)') &&
   /m_nettype == MAINNET && height > 0 &&\s*hf_version >= HF_VERSION_VESTING/.test(blockchain) &&
   (blockchain.match(/construct_miner_tx\(this, m_nettype, height, median_weight, already_generated_coins,[^;]+consensus_extra_nonce, max_outs, hf_version\)/g) || []).length === 2,
   'Rebuild the MAINNET coinbase with nonce padding BEFORE Liquidity and Gas proofs; never add trailing bytes after the proof fields'
