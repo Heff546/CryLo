@@ -153,6 +153,9 @@ test('mainnet template weight-convergence padding is inserted before both proof 
   assert.match(validator, /added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length/);
   assert.match(validator, /original_nonce_length >= 128 \? 1 : 0/);
   assert.match(validator, /new_nonce_length >= 128 \? 1 : 0/);
+  assert.match(generator, /#include "serialization\/string\.h"/);
+  assert.ok(generator.indexOf('#include "serialization/string.h"') <
+    generator.indexOf('#include "cryptonote_basic/tx_extra.h"'));
   assert.match(generator, /uint8_t nonce_tag = TX_EXTRA_NONCE;/);
   assert.match(generator, /binary_archive<true> ar\(stream\);/);
   assert.match(generator, /::do_serialize\(ar, nonce_tag\)/);
