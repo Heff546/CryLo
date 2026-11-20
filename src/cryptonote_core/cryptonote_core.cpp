@@ -73,6 +73,11 @@ DISABLE_VS_WARNINGS(4355)
 
 namespace cryptonote
 {
+  const command_line::arg_descriptor<bool, false> arg_mainnet_on  = {
+    "mainnet"
+  , "Run on mainnet. Requires an explicit, separate --data-dir."
+  , false
+  };
   const command_line::arg_descriptor<bool, false> arg_testnet_on  = {
     "testnet"
   , "Run on testnet. The wallet must be launched with --testnet flag."
@@ -327,6 +332,7 @@ namespace cryptonote
     command_line::add_arg(desc, arg_test_drop_download);
     command_line::add_arg(desc, arg_test_drop_download_height);
 
+    command_line::add_arg(desc, arg_mainnet_on);
     command_line::add_arg(desc, arg_testnet_on);
     command_line::add_arg(desc, arg_stagenet_on);
     command_line::add_arg(desc, arg_regtest_on);
@@ -357,9 +363,35 @@ namespace cryptonote
   //-----------------------------------------------------------------------------------------------
   bool core::handle_command_line(const boost::program_options::variables_map& vm)
   {
+    const bool explicit_mainnet = command_line::get_arg(vm, arg_mainnet_on);
+    const bool explicit_testnet = command_line::get_arg(vm, arg_testnet_on);
+    const bool explicit_stagenet = command_line::get_arg(vm, arg_stagenet_on);
+    const bool explicit_regtest = command_line::get_arg(vm, arg_regtest_on);
+
+    if (static_cast<unsigned>(explicit_mainnet) +
+        static_cast<unsigned>(explicit_testnet) +
+        static_cast<unsigned>(explicit_stagenet) +
+        static_cast<unsigned>(explicit_regtest) > 1)
+    {
+      MERROR("Choose only one network: --mainnet, --testnet, --stagenet or --regtest");
+      return false;
+    }
+
     if (m_nettype != FAKECHAIN)
     {
-      m_nettype = TESTNET;
+      if (explicit_mainnet)
+      {
+        // Fail closed: an opt-in mainnet node must never reuse the default
+        // testnet data directory or silently start on the operational chain.
+        if (command_line::is_arg_defaulted(vm, arg_data_dir))
+        {
+          MERROR("--mainnet requires an explicit separate --data-dir");
+          return false;
+        }
+        m_nettype = MAINNET;
+      }
+      else
+        m_nettype = explicit_stagenet ? STAGENET : TESTNET;
     }
 
     m_config_folder = command_line::get_arg(vm, arg_data_dir);
