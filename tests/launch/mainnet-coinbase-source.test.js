@@ -145,6 +145,16 @@ test('source-only proof checks never authorize official mainnet release signing'
 });
 
 
+test('mainnet template weight-convergence padding is inserted before both proof signatures', () => {
+  assert.match(validator, /blobdata consensus_extra_nonce = ex_nonce;/);
+  assert.match(validator, /consensus_extra_nonce\.append\(added_nonce_bytes, '\\0'\)/);
+  assert.match(validator, /m_nettype == MAINNET && height > 0 &&\s*hf_version >= HF_VERSION_VESTING/);
+  assert.match(validator, /Never append padding AFTER the canonical Liquidity\/Gas proof/);
+  assert.match(validator, /added_nonce_bytes >\s*TX_EXTRA_NONCE_MAX_COUNT - consensus_extra_nonce\.size\(\)/);
+  assert.equal((validator.match(/construct_miner_tx\(this, m_nettype, height, median_weight, already_generated_coins,[^;]+consensus_extra_nonce, max_outs, hf_version\)/g) || []).length, 2);
+  assert.match(mainnetHarness, /Six nonce-length mainnet block templates preserve both proofs/);
+});
+
 test('mainnet block tests use real explicitly selected consensus, isolated offline data', () => {
   assert.match(coreHeader, /arg_mainnet_on/);
   assert.match(core, /"mainnet"/);
