@@ -50,6 +50,18 @@ existing Gas proof implementation but **do not validate the revised
 five-output dual-proof candidate**. Compile and run its 26 in-memory
 native proof tests plus full-block acceptance/rejection regressions.
 
+**Proof-aware miner template weight convergence — NOT YET NATIVE VERIFIED**
+(the follow-up `fix/mainnet-proof-safe-block-template-padding-20261119`).
+The original block-template builder could append trailing zero bytes to
+`tx.extra` after both recipient proofs were signed, violating the mandatory
+[Liquidity][Gas] suffix and making some miner templates invalid. The
+review branch now places any needed weight-adjustment padding inside the
+coinbase extra nonce BEFORE rebuilding and signing both proofs. Mainnet
+only; the established testnet template behavior is unchanged. Pi1 must
+compile this change and exercise several extra nonce lengths and actual
+full-block acceptance before considering the risk closed. The mainnet
+preflight remains unconditionally blocked.
+
 Other mandatory gates: independent genesis and network IDs; mainnet
 height 1→2 hardfork transition; complete miner coinbase recipient
 validation; 50/50 instant and 45-day vesting; emission cap; full-block
