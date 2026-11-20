@@ -159,6 +159,32 @@ bool run()
     return reject("Mainnet block template has malformed public Liquidity/Gas proofs");
   std::cout << "PASS v21 block template has valid dual public recipient proofs" << std::endl;
 
+  // Fee, extra-nonce and block-weight convergence can change tx.extra size.
+  // Verify different canonical nonce lengths still leave the two proof
+  // fields at the end and maintain valid DLEQ recipient authentication.
+  for (const size_t nonce_size : {
+       size_t(1), size_t(16), size_t(64), size_t(127),
+       size_t(128), size_t(240)})
+  {
+    cryptonote::block with_nonce;
+    cryptonote::difficulty_type nonce_difficulty = 0;
+    uint64_t nonce_height = 0, nonce_reward = 0, seed_height = 0;
+    crypto::hash nonce_seed_hash = crypto::null_hash;
+    if (!test.chain.get_block_template(
+            with_nonce, miner.get_keys().m_account_address,
+            nonce_difficulty, nonce_height, nonce_reward,
+            cryptonote::blobdata(nonce_size, 'N'), seed_height,
+            nonce_seed_hash))
+      return reject("Unable to create v21 template for nonce size " +
+                    std::to_string(nonce_size));
+    if (nonce_height != 2 || nonce_difficulty != 1 ||
+        with_nonce.miner_tx.vout.size() != 5 || !proofs_verify(with_nonce))
+      return reject("Invalid v21 canonical dual proof with nonce size " +
+                    std::to_string(nonce_size));
+  }
+  std::cout << "PASS Six nonce-length mainnet block templates preserve both proofs"
+            << std::endl;
+
   // A malicious miner can use their own transaction key but must still
   // pay the official recipients. A substituted Liquidity/Gas output
   // must fail full block admission, even when amounts remain unchanged.
