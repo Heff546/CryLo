@@ -55,12 +55,19 @@ native proof tests plus full-block acceptance/rejection regressions.
 The original block-template builder could append trailing zero bytes to
 `tx.extra` after both recipient proofs were signed, violating the mandatory
 [Liquidity][Gas] suffix and making some miner templates invalid. The
-review branch now places any needed weight-adjustment padding inside the
-coinbase extra nonce BEFORE rebuilding and signing both proofs. Mainnet
-only; the established testnet template behavior is unchanged. Pi1 must
-compile this change and exercise several extra nonce lengths and actual
-full-block acceptance before considering the risk closed. The mainnet
-preflight remains unconditionally blocked.
+review branch places any needed weight-adjustment padding inside the
+coinbase extra nonce BEFORE rebuilding and signing both proofs.
+
+**Pi1 finding (November 19, 2026):** the first implementation compiled,
+but actual MAINNET full-block test failed at nonce size **128** because
+`add_extra_nonce_to_tx_extra` wrote the length as one byte whereas
+`tx_extra_nonce` deserialization requires canonical varint length encoding.
+The review branch now uses the typed binary serializer for MAINNET v21+
+nonces (including the 127→128 boundary) and accounts for the extra
+length byte in weight convergence. Existing TESTNET/STAGENET nonce encoding
+is left untouched. The 128/240-byte round-trip test and native full-block
+test must pass on Pi1 before this fix is validated. The mainnet preflight
+remains unconditionally blocked.
 
 Other mandatory gates: independent genesis and network IDs; mainnet
 height 1→2 hardfork transition; complete miner coinbase recipient
