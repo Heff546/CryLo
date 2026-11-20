@@ -92,3 +92,24 @@ set_property(TARGET core_tests
 add_test(
   NAME    core_tests
   COMMAND core_tests --generate_and_play_test_data)
+
+# Explicit opt-in integration executable. This is NOT the FAKECHAIN core_tests
+# harness: it constructs an isolated, offline actual MAINNET database and
+# checks production block acceptance. Never run automatically in CTest.
+monero_add_minimal_executable(crylo_mainnet_consensus_tests
+  crylo_mainnet_consensus_tests.cpp)
+target_link_libraries(crylo_mainnet_consensus_tests
+  PRIVATE
+    multisig
+    cryptonote_core
+    p2p
+    version
+    epee
+    device
+    wallet
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${EXTRA_LIBRARIES})
+enable_stack_trace(crylo_mainnet_consensus_tests)
+set_property(TARGET crylo_mainnet_consensus_tests
+  PROPERTY FOLDER "tests")
+

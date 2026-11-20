@@ -12,6 +12,11 @@ const generator = read('src/cryptonote_core/cryptonote_tx_utils.cpp');
 const validator = read('src/cryptonote_core/blockchain.cpp');
 const hardforks = read('src/hardforks/hardforks.cpp');
 const preflight = read('scripts/release/mainnet-launch-preflight.js');
+const core = read('src/cryptonote_core/cryptonote_core.cpp');
+const coreHeader = read('src/cryptonote_core/cryptonote_core.h');
+const daemonMain = read('src/daemon/main.cpp');
+const mainnetHarness = read('tests/core_tests/crylo_mainnet_consensus_tests.cpp');
+const cmakeCore = read('tests/core_tests/CMakeLists.txt');
 
 function macro(name) {
   const match = config.match(
@@ -137,6 +142,26 @@ test('source-only proof checks never authorize official mainnet release signing'
   // consensus, historical chain replay, independent review, or updater gates.
   assert.match(preflight, /'Mainnet dual-recipient native consensus and replay evidence',\s*false,/);
   assert.match(preflight, /APPROVED mainnet allocation: Dev=75, Liquidity=25, Gas=50/);
+});
+
+
+test('mainnet block tests use real explicitly selected consensus, isolated offline data', () => {
+  assert.match(coreHeader, /arg_mainnet_on/);
+  assert.match(core, /"mainnet"/);
+  assert.match(core, /m_nettype = MAINNET;/);
+  assert.match(core, /m_nettype = explicit_stagenet \? STAGENET : TESTNET;/);
+  assert.match(core, /--mainnet requires an explicit separate --data-dir/);
+  assert.match(core, /--fixed-difficulty on --mainnet requires --offline/);
+  assert.match(daemonMain, /arg_mainnet_on/);
+  assert.match(daemonMain, /Only one of --mainnet, --testnet, --stagenet or --regtest/);
+  assert.match(mainnetHarness, /"--mainnet"/);
+  assert.match(mainnetHarness, /"--offline"/);
+  assert.match(mainnetHarness, /"--fixed-difficulty=1"/);
+  assert.match(mainnetHarness, /fs::unique_path\(/);
+  assert.match(mainnetHarness, /handle_single_incoming_block\(/);
+  assert.match(mainnetHarness, /MAINNET ACCEPTED redirected payout index/);
+  assert.match(cmakeCore, /monero_add_minimal_executable\(crylo_mainnet_consensus_tests/);
+  assert.doesNotMatch(cmakeCore, /add_test\(\s*NAME\s+crylo_mainnet_consensus_tests/);
 });
 
 test('official mainnet release builder fails closed on source preflight', () => {
