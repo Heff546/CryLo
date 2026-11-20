@@ -153,6 +153,7 @@ test('mainnet template weight-convergence padding is inserted before both proof 
   assert.match(validator, /added_nonce_bytes >\s*TX_EXTRA_NONCE_MAX_COUNT - consensus_extra_nonce\.size\(\)/);
   assert.equal((validator.match(/construct_miner_tx\(this, m_nettype, height, median_weight, already_generated_coins,[^;]+consensus_extra_nonce, max_outs, hf_version\)/g) || []).length, 2);
   assert.match(mainnetHarness, /Six nonce-length mainnet block templates preserve both proofs/);
+  assert.match(preflight, /Mainnet block-template padding preserves canonical dual-proof suffix \(source-only\)/);
 });
 
 test('mainnet block tests use real explicitly selected consensus, isolated offline data', () => {
