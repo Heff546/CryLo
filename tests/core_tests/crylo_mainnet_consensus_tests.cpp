@@ -181,6 +181,22 @@ bool run()
         with_nonce.miner_tx.vout.size() != 5 || !proofs_verify(with_nonce))
       return reject("Invalid v21 canonical dual proof with nonce size " +
                     std::to_string(nonce_size));
+
+    // The 127/128-byte boundary is especially important: tx.extra nonces
+    // must use the canonical serialized length (not the old one-byte
+    // length), and the parser must recover the complete nonce payload.
+    std::vector<cryptonote::tx_extra_field> parsed;
+    cryptonote::tx_extra_nonce decoded_nonce{};
+    if (!cryptonote::parse_tx_extra(with_nonce.miner_tx.extra, parsed) ||
+        !cryptonote::find_tx_extra_field_by_type(parsed, decoded_nonce) ||
+        decoded_nonce.nonce.size() < nonce_size ||
+        decoded_nonce.nonce.compare(
+            0, nonce_size, std::string(nonce_size, 'N')) != 0)
+      return reject("Mainnet coinbase nonce round-trip failed for size " +
+                    std::to_string(nonce_size));
+    for (size_t j = nonce_size; j < decoded_nonce.nonce.size(); ++j)
+      if (decoded_nonce.nonce[j] != '\0')
+        return reject("Unexpected nonzero mainnet coinbase padding");
   }
   std::cout << "PASS Six nonce-length mainnet block templates preserve both proofs"
             << std::endl;
