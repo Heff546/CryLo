@@ -150,7 +150,15 @@ test('mainnet template weight-convergence padding is inserted before both proof 
   assert.match(validator, /consensus_extra_nonce\.append\(added_nonce_bytes, '\\0'\)/);
   assert.match(validator, /m_nettype == MAINNET && height > 0 &&\s*hf_version >= HF_VERSION_VESTING/);
   assert.match(validator, /Never append padding AFTER the canonical Liquidity\/Gas proof/);
-  assert.match(validator, /added_nonce_bytes >\s*TX_EXTRA_NONCE_MAX_COUNT - consensus_extra_nonce\.size\(\)/);
+  assert.match(validator, /added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length/);
+  assert.match(validator, /original_nonce_length >= 128 \? 1 : 0/);
+  assert.match(validator, /new_nonce_length >= 128 \? 1 : 0/);
+  assert.match(generator, /tx_extra_field field = canonical_nonce;/);
+  assert.match(generator, /binary_archive<true> ar\(stream\);/);
+  assert.match(generator, /::do_serialize\(ar, field\)/);
+  assert.match(generator, /m_nettype == MAINNET && height > 0 &&\s*hard_fork_version >= HF_VERSION_VESTING/);
+  assert.match(mainnetHarness, /parse_tx_extra\(with_nonce.miner_tx.extra, parsed\)/);
+  assert.match(mainnetHarness, /Mainnet coinbase nonce round-trip failed for size/);
   assert.equal((validator.match(/construct_miner_tx\(this, m_nettype, height, median_weight, already_generated_coins,[^;]+consensus_extra_nonce, max_outs, hf_version\)/g) || []).length, 2);
   assert.match(mainnetHarness, /Six nonce-length mainnet block templates preserve both proofs/);
   assert.match(preflight, /Mainnet block-template padding preserves canonical dual-proof suffix \(source-only\)/);
