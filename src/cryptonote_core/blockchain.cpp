@@ -37,6 +37,7 @@
 
 #include "include_base_utils.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
+#include "cryptonote_basic/tx_extra.h"
 #include "tx_pool.h"
 #include "blockchain.h"
 #include "crylo_gas_treasury_proof.h"
@@ -1992,9 +1993,13 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
    */
   //make blocks coin-base tx looks close to real coinbase tx to get truthful blob weight
   uint8_t hf_version = b.major_version;
+  // This is the nonce payload used to construct AND sign the coinbase.
+  // For mainnet proof-bound coinbases, any weight-convergence padding must
+  // be encoded here BEFORE both DLEQ signatures are generated.
+  blobdata consensus_extra_nonce = ex_nonce;
   size_t max_outs = hf_version >= HF_VERSION_VESTING ?
       5 : (hf_version >= 4 ? 1 : 11);
-  bool r = construct_miner_tx(this, m_nettype, height, median_weight, already_generated_coins, txs_weight, fee, miner_address, b.miner_tx, ex_nonce, max_outs, hf_version);
+  bool r = construct_miner_tx(this, m_nettype, height, median_weight, already_generated_coins, txs_weight, fee, miner_address, b.miner_tx, consensus_extra_nonce, max_outs, hf_version);
   CHECK_AND_ASSERT_MES(r, false, "Failed to construct miner tx, first chance");
   size_t cumulative_weight = txs_weight + get_transaction_weight(b.miner_tx);
 #if defined(DEBUG_CREATE_BLOCK_TEMPLATE)
@@ -2003,7 +2008,7 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
 #endif
   for (size_t try_count = 0; try_count != 10; ++try_count)
   {
-    r = construct_miner_tx(this, m_nettype, height, median_weight, already_generated_coins, cumulative_weight, fee, miner_address, b.miner_tx, ex_nonce, max_outs, hf_version);
+    r = construct_miner_tx(this, m_nettype, height, median_weight, already_generated_coins, cumulative_weight, fee, miner_address, b.miner_tx, consensus_extra_nonce, max_outs, hf_version);
 
     CHECK_AND_ASSERT_MES(r, false, "Failed to construct miner tx, second chance");
     size_t coinbase_weight = get_transaction_weight(b.miner_tx);
@@ -2025,6 +2030,36 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
           ", cumulative weight " << txs_weight + coinbase_weight <<
           " is less than before, adding " << delta << " zero bytes");
 #endif
+      if (m_nettype == MAINNET && height > 0 &&
+          hf_version >= HF_VERSION_VESTING)
+      {
+        // Never append padding AFTER the canonical Liquidity/Gas proof
+        // suffix: it would invalidate both public recipient signatures.
+        // Instead, expand the existing nonce payload, rebuild the miner
+        // transaction and re-sign BOTH proofs in construct_miner_tx().
+        //
+        // Creating a nonce field when there was none costs 2 tag/length
+        // bytes. Require at least one data byte, so a 1- or 2-byte gap
+        // may grow the intended cumulative weight by a small amount.
+        // The next pass recalculates the block reward using that weight.
+        const size_t field_overhead = consensus_extra_nonce.empty() ? 2 : 0;
+        const size_t added_nonce_bytes =
+            std::max<size_t>(1, delta > field_overhead ?
+                                delta - field_overhead : 1);
+        if (consensus_extra_nonce.size() > TX_EXTRA_NONCE_MAX_COUNT ||
+            added_nonce_bytes >
+                TX_EXTRA_NONCE_MAX_COUNT - consensus_extra_nonce.size())
+        {
+          MERROR("Mainnet coinbase nonce padding exceeds canonical limit");
+          return false;
+        }
+        consensus_extra_nonce.append(added_nonce_bytes, '\0');
+        const size_t added_weight = added_nonce_bytes + field_overhead;
+        if (added_weight > delta)
+          cumulative_weight += added_weight - delta;
+        continue;
+      }
+      // Older networks retain the original tx.extra padding behavior.
       b.miner_tx.extra.insert(b.miner_tx.extra.end(), delta, 0);
       //here  could be 1 byte difference, because of extra field counter is varint, and it can become from 1-byte len to 2-bytes len.
       if (cumulative_weight != txs_weight + get_transaction_weight(b.miner_tx))
