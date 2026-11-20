@@ -153,9 +153,11 @@ test('mainnet template weight-convergence padding is inserted before both proof 
   assert.match(validator, /added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length/);
   assert.match(validator, /original_nonce_length >= 128 \? 1 : 0/);
   assert.match(validator, /new_nonce_length >= 128 \? 1 : 0/);
-  assert.match(generator, /tx_extra_field field = canonical_nonce;/);
+  assert.match(generator, /uint8_t nonce_tag = TX_EXTRA_NONCE;/);
   assert.match(generator, /binary_archive<true> ar\(stream\);/);
-  assert.match(generator, /::do_serialize\(ar, field\)/);
+  assert.match(generator, /::do_serialize\(ar, nonce_tag\)/);
+  assert.match(generator, /::do_serialize\(ar, canonical_nonce\)/);
+  assert.doesNotMatch(generator, /::do_serialize\(ar, field\)/);
   assert.match(generator, /m_nettype == MAINNET && height > 0 &&\s*hard_fork_version >= HF_VERSION_VESTING/);
   assert.match(mainnetHarness, /parse_tx_extra\(with_nonce.miner_tx.extra, parsed\)/);
   assert.match(mainnetHarness, /Mainnet coinbase nonce round-trip failed for size/);
