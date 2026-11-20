@@ -101,10 +101,15 @@ namespace cryptonote
           return false;
         tx_extra_nonce canonical_nonce{};
         canonical_nonce.nonce = extra_nonce;
-        tx_extra_field field = canonical_nonce;
         std::ostringstream stream;
         binary_archive<true> ar(stream);
-        if (!::do_serialize(ar, field))
+        // Match the proven pick<tx_extra_nonce>() serializer: explicitly
+        // write the tag, then the typed nonce. Passing a tx_extra_field
+        // boost::variant to the qualified ::do_serialize overload does
+        // not resolve its saving specialization in this translation unit.
+        uint8_t nonce_tag = TX_EXTRA_NONCE;
+        if (!::do_serialize(ar, nonce_tag) ||
+            !::do_serialize(ar, canonical_nonce))
           return false;
         const std::string bytes = stream.str();
         tx.extra.insert(tx.extra.end(), bytes.begin(), bytes.end());
