@@ -162,6 +162,8 @@ bool run()
   // Fee, extra-nonce and block-weight convergence can change tx.extra size.
   // Verify different canonical nonce lengths still leave the two proof
   // fields at the end and maintain valid DLEQ recipient authentication.
+  cryptonote::block nonce_128_block;
+  bool have_nonce_128_block = false;
   for (const size_t nonce_size : {
        size_t(1), size_t(16), size_t(64), size_t(127),
        size_t(128), size_t(240)})
@@ -197,7 +199,14 @@ bool run()
     for (size_t j = nonce_size; j < decoded_nonce.nonce.size(); ++j)
       if (decoded_nonce.nonce[j] != '\0')
         return reject("Unexpected nonzero mainnet coinbase padding");
+    if (nonce_size == 128)
+    {
+      nonce_128_block = with_nonce;
+      have_nonce_128_block = true;
+    }
   }
+  if (!have_nonce_128_block)
+    return reject("Did not capture 128-byte nonce block template");
   std::cout << "PASS Six nonce-length mainnet block templates preserve both proofs"
             << std::endl;
 
@@ -226,11 +235,11 @@ bool run()
               << index << std::endl;
   }
 
-  if (!submit_block(test.chain, second))
-    return reject("Actual MAINNET consensus rejected valid dual-proof v21 block");
+  if (!submit_block(test.chain, nonce_128_block))
+    return reject("Actual MAINNET consensus rejected v21 dual-proof 128-byte nonce block");
   if (test.chain.get_current_blockchain_height() != 3)
     return reject("Expected mainnet height 3 after valid v21 block");
-  std::cout << "PASS Valid v21 dual-proof block accepted by MAINNET consensus"
+  std::cout << "PASS Valid 128-byte nonce v21 dual-proof block accepted by MAINNET consensus"
             << std::endl;
   return true;
 }
