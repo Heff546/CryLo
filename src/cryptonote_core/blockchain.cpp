@@ -2042,19 +2042,26 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
         // bytes. Require at least one data byte, so a 1- or 2-byte gap
         // may grow the intended cumulative weight by a small amount.
         // The next pass recalculates the block reward using that weight.
-        const size_t field_overhead = consensus_extra_nonce.empty() ? 2 : 0;
+        const size_t original_nonce_length = consensus_extra_nonce.size();
+        const size_t field_overhead = original_nonce_length == 0 ? 2 : 0;
         const size_t added_nonce_bytes =
             std::max<size_t>(1, delta > field_overhead ?
                                 delta - field_overhead : 1);
-        if (consensus_extra_nonce.size() > TX_EXTRA_NONCE_MAX_COUNT ||
-            added_nonce_bytes >
-                TX_EXTRA_NONCE_MAX_COUNT - consensus_extra_nonce.size())
+        if (original_nonce_length > TX_EXTRA_NONCE_MAX_COUNT ||
+            added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length)
         {
           MERROR("Mainnet coinbase nonce padding exceeds canonical limit");
           return false;
         }
+        const size_t new_nonce_length = original_nonce_length + added_nonce_bytes;
+        // The canonical nonce length becomes a TWO-byte varint at 128.
+        // Calculate the serialized size change exactly across 127/128.
+        const size_t original_field_size = original_nonce_length == 0 ? 0 :
+            original_nonce_length + 2 + (original_nonce_length >= 128 ? 1 : 0);
+        const size_t new_field_size =
+            new_nonce_length + 2 + (new_nonce_length >= 128 ? 1 : 0);
+        const size_t added_weight = new_field_size - original_field_size;
         consensus_extra_nonce.append(added_nonce_bytes, '\0');
-        const size_t added_weight = added_nonce_bytes + field_overhead;
         if (added_weight > delta)
           cumulative_weight += added_weight - delta;
         continue;
