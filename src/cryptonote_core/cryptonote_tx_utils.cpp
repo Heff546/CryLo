@@ -31,6 +31,9 @@
 #include <unordered_set>
 #include <random>
 #include <sstream>
+// Needed before tx_extra_nonce's templated FIELD(nonce) is instantiated:
+// supplies ::do_serialize(binary_archive<true>&, std::string&).
+#include "serialization/string.h"
 #include "include_base_utils.h"
 #include "string_tools.h"
 using namespace epee;
