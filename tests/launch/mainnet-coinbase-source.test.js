@@ -190,7 +190,11 @@ test('mainnet block tests use real explicitly selected consensus, isolated offli
 });
 
 test('testnet v4 historical replay uses copied LMDB, verified import and exact export comparison', () => {
-  assert.match(v4HistoryReplay, /STOP_HEIGHT=2959/);
+  assert.match(v4HistoryReplay, /CRYLO_REPLAY_STOP_HEIGHT:-2959/);
+  assert.match(v4HistoryReplay, /CRYLO_REPLAY_ALLOW_PARTIAL:-0/);
+  assert.match(v4HistoryReplay, /heights below 2959 require explicit CRYLO_REPLAY_ALLOW_PARTIAL=1/);
+  assert.match(v4HistoryReplay, /BLOCK Historical fork boundary 2957 \/ 2958 \/ 2959 NOT included/);
+  assert.match(v4HistoryReplay, /RESULT: PARTIAL PRE-BOUNDARY REPLAY ONLY/);
   assert.match(v4HistoryReplay, /mdb_copy -c/);
   assert.match(v4HistoryReplay, /--testnet --offline --disable-dns-checkpoints/);
   assert.match(v4HistoryReplay, /--block-stop="\$STOP_HEIGHT"/);
