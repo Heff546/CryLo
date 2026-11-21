@@ -845,7 +845,7 @@ function verifyLinuxDependsConfigure(target, context, configureOutput) {
     }
   ];
   for (const requirement of requiredHardening) {
-    const line = configureOutput.split(/\\r?\\n/).find(
+    const line = configureOutput.split(/\r?\n/).find(
       (entry) => entry.includes(requirement.label)
     );
     for (const flag of requirement.flags) {
@@ -1848,14 +1848,14 @@ function verifyLinuxRuntimeAbi(target, nativeBin) {
       fail('Cannot inspect Linux ELF hardening for ' + name);
     }
     const headers = elf.stdout;
-    const stack = headers.split(/\\r?\\n/).find(
-      (line) => /\\bGNU_STACK\\b/.test(line)
+    const stack = headers.split(/\r?\n/).find(
+      (line) => /\bGNU_STACK\b/.test(line)
     );
-    if (!/\\bType:\\s+DYN\\b/.test(headers) ||
-        !/\\bGNU_RELRO\\b/.test(headers) ||
-        !stack || !/\\bRW\\b/.test(stack) || /\\bRWE\\b/.test(stack) ||
-        !(/\\bBIND_NOW\\b/.test(headers) ||
-          /\\bFLAGS_1\\b[^\\n]*\\bNOW\\b/.test(headers))) {
+    if (!/\bType:\s+DYN\b/.test(headers) ||
+        !/\bGNU_RELRO\b/.test(headers) ||
+        !stack || !/\bRW\b/.test(stack) || /\bRWE\b/.test(stack) ||
+        !(/\bBIND_NOW\b/.test(headers) ||
+          /\bFLAGS_1\b[^\n]*\bNOW\b/.test(headers))) {
       fail(
         'Linux native release ELF hardening check failed for ' + name +
         ': require PIE, RELRO, NOW and a non-executable stack.'
