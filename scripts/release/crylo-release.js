@@ -821,6 +821,42 @@ function verifyLinuxDependsConfigure(target, context, configureOutput) {
     );
   }
 
+  // Never trade away CryLo's existing compiler/linker hardening to obtain
+  // an older Linux runtime ABI. An older host with GCC 12 must still pass.
+  if (!configureOutput.includes('Using _FORTIFY_SOURCE=3')) {
+    fail('Linux release must retain effective _FORTIFY_SOURCE=3.');
+  }
+
+  const requiredHardening = [
+    {
+      label: 'Using C security hardening flags:',
+      flags: ['-D_FORTIFY_SOURCE=3', '-fstack-protector-strong',
+        '-fstack-clash-protection', '-Wformat-security']
+    },
+    {
+      label: 'Using C++ security hardening flags:',
+      flags: ['-D_FORTIFY_SOURCE=3', '-fstack-protector-strong',
+        '-fstack-clash-protection', '-Wformat-security']
+    },
+    {
+      label: 'Using linker security hardening flags:',
+      flags: ['-pie', '-Wl,-z,relro', '-Wl,-z,now',
+        '-Wl,-z,noexecstack']
+    }
+  ];
+  for (const requirement of requiredHardening) {
+    const line = configureOutput.split(/\\r?\\n/).find(
+      (entry) => entry.includes(requirement.label)
+    );
+    for (const flag of requirement.flags) {
+      if (!line || !line.includes(flag)) {
+        fail('Linux release configuration lost security flag ' + flag +
+          ' from ' + requirement.label);
+      }
+    }
+  }
+  console.log('Linux release hardening flags... VERIFIED (FORTIFY=3)');
+
   console.log('Linux pinned dependency configure... VERIFIED');
 }
 
@@ -1799,6 +1835,33 @@ function verifyLinuxRuntimeAbi(target, nativeBin) {
       }
       console.log(`PASS ${name}: ${family}_${highest} <= ${family}_${maximum}`);
     }
+
+
+    // Required runtime ABI limits alone are not a hardening proof.
+    // Verify the final ELF program headers and dynamic binding properties.
+    const elf = spawnSync(
+      'readelf',
+      ['-W', '-h', '-l', '-d', executable],
+      { encoding: 'utf8', shell: false, maxBuffer: 16 * 1024 * 1024 }
+    );
+    if (elf.error || elf.status !== 0) {
+      fail('Cannot inspect Linux ELF hardening for ' + name);
+    }
+    const headers = elf.stdout;
+    const stack = headers.split(/\\r?\\n/).find(
+      (line) => /\\bGNU_STACK\\b/.test(line)
+    );
+    if (!/\\bType:\\s+DYN\\b/.test(headers) ||
+        !/\\bGNU_RELRO\\b/.test(headers) ||
+        !stack || !/\\bRW\\b/.test(stack) || /\\bRWE\\b/.test(stack) ||
+        !(/\\bBIND_NOW\\b/.test(headers) ||
+          /\\bFLAGS_1\\b[^\\n]*\\bNOW\\b/.test(headers))) {
+      fail(
+        'Linux native release ELF hardening check failed for ' + name +
+        ': require PIE, RELRO, NOW and a non-executable stack.'
+      );
+    }
+    console.log('PASS ' + name + ': ELF PIE, RELRO, NOW, NX stack');
 
     const started = spawnSync(executable, ['--version'], {
       encoding: 'utf8',
