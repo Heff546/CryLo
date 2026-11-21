@@ -44,6 +44,7 @@ using namespace epee;
 #include "blockchain.h"
 #include "crylo_gas_treasury_proof.h"
 #include "crylo_liquidity_proof.h"
+#include "crylo_dev_fund_proof.h"
 #include "cryptonote_basic/miner.h"
 #include "cryptonote_basic/tx_extra.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
@@ -162,8 +163,19 @@ namespace cryptonote
         crypto::public_key dev_spend_pkey;
         crypto::public_key dev_view_pkey;
 
-        epee::string_tools::hex_to_pod(CryLo_DEV_FUND_SPENDKEY, dev_spend_pkey);
-        epee::string_tools::hex_to_pod(CryLo_DEV_FUND_VIEWKEY, dev_view_pkey);
+        // No Mainnet fallback to the historically exposed Testnet recipient.
+        const char *dev_spend_hex = m_nettype == MAINNET
+            ? CryLo_MAINNET_DEV_FUND_SPENDKEY : CryLo_DEV_FUND_SPENDKEY;
+        const char *dev_view_hex = m_nettype == MAINNET
+            ? CryLo_MAINNET_DEV_FUND_VIEWKEY : CryLo_DEV_FUND_VIEWKEY;
+        if (!epee::string_tools::hex_to_pod(dev_spend_hex, dev_spend_pkey) ||
+            !epee::string_tools::hex_to_pod(dev_view_hex, dev_view_pkey) ||
+            dev_spend_pkey == crypto::null_pkey ||
+            dev_view_pkey == crypto::null_pkey)
+        {
+          LOG_ERROR("Development Fund recipient public keys are not configured for this network");
+          return false;
+        }
 
         dev_fund_addr.m_spend_public_key = dev_spend_pkey;
         dev_fund_addr.m_view_public_key = dev_view_pkey;
@@ -363,14 +375,19 @@ namespace cryptonote
     }
     tx.vin.push_back(in);
 
-    // MAINNET v21+: both foundation recipients use public DLEQ proofs.
-    // Liquidity proof precedes Gas proof; Gas signs the transaction prefix
-    // including the Liquidity proof. No public validator wallet secret.
+    // MAINNET v21+: all three foundation recipients use public DLEQ proofs.
+    // Canonical suffix: [Development][Liquidity][Gas]. Each proof signs
+    // the prefix including earlier proofs. No MAINNET private view secret.
     // Pre-fork mainnet and all testnet/stagenet coinbases are unchanged.
     if (m_nettype == MAINNET && height > 0 &&
         hard_fork_version >= HF_VERSION_VESTING)
     {
-      if (liquidity_fund_amount == 0 || gas_treasury_amount == 0 ||
+      if (dev_fund_amount == 0 || liquidity_fund_amount == 0 ||
+          gas_treasury_amount == 0 ||
+          !add_crylo_mainnet_dev_fund_proof(
+              tx, height, txkey.sec,
+              dev_fund_addr.m_view_public_key,
+              dev_fund_addr.m_spend_public_key, 2) ||
           !add_crylo_mainnet_liquidity_proof(
               tx, height, txkey.sec,
               liquidity_fund_addr.m_view_public_key,
@@ -380,7 +397,7 @@ namespace cryptonote
               gas_treasury_addr.m_view_public_key,
               gas_treasury_addr.m_spend_public_key, 4))
       {
-        LOG_ERROR("Mainnet miner coinbase Liquidity/Gas public recipient proof failed");
+        LOG_ERROR("Mainnet miner coinbase Development/Liquidity/Gas public recipient proof failed");
         return false;
       }
     }
