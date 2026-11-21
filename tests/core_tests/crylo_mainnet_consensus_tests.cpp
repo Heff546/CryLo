@@ -20,6 +20,7 @@
 #include "cryptonote_core/cryptonote_core.h"
 #include "cryptonote_core/crylo_gas_treasury_proof.h"
 #include "cryptonote_core/crylo_liquidity_proof.h"
+#include "cryptonote_core/crylo_dev_fund_proof.h"
 #include "string_tools.h"
 
 namespace
@@ -116,13 +117,17 @@ bool get_template(cryptonote::core& chain,
 
 bool proofs_verify(const cryptonote::block& candidate)
 {
-  crypto::public_key liq_view, liq_spend, gas_view, gas_spend;
-  if (!epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_VIEWKEY, liq_view) ||
+  crypto::public_key dev_view, dev_spend, liq_view, liq_spend, gas_view, gas_spend;
+  if (!epee::string_tools::hex_to_pod(CryLo_MAINNET_DEV_FUND_VIEWKEY, dev_view) ||
+      !epee::string_tools::hex_to_pod(CryLo_MAINNET_DEV_FUND_SPENDKEY, dev_spend) ||
+      !epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_VIEWKEY, liq_view) ||
       !epee::string_tools::hex_to_pod(CryLo_LIQUIDITY_FUND_SPENDKEY, liq_spend) ||
       !epee::string_tools::hex_to_pod(CryLo_GAS_TREASURY_VIEWKEY, gas_view) ||
       !epee::string_tools::hex_to_pod(CryLo_GAS_TREASURY_SPENDKEY, gas_spend))
     return false;
-  return cryptonote::verify_crylo_mainnet_liquidity_proof(
+  return cryptonote::verify_crylo_mainnet_dev_fund_proof(
+             candidate.miner_tx, 2, dev_view, dev_spend, 2) &&
+         cryptonote::verify_crylo_mainnet_liquidity_proof(
              candidate.miner_tx, 2, liq_view, liq_spend, 3) &&
          cryptonote::verify_crylo_mainnet_treasury_proof(
              candidate.miner_tx, 2, gas_view, gas_spend, 4);
@@ -156,11 +161,11 @@ bool run()
   if (second.major_version != 21 || second.miner_tx.vout.size() != 5)
     return reject("Mainnet height 2 must activate v21 with five outputs");
   if (!proofs_verify(second))
-    return reject("Mainnet block template has malformed public Liquidity/Gas proofs");
-  std::cout << "PASS v21 block template has valid dual public recipient proofs" << std::endl;
+    return reject("Mainnet block template has malformed public Development/Liquidity/Gas proofs");
+  std::cout << "PASS v21 block template has valid three public recipient proofs" << std::endl;
 
   // Fee, extra-nonce and block-weight convergence can change tx.extra size.
-  // Verify different canonical nonce lengths still leave the two proof
+  // Verify different canonical nonce lengths still leave all three proof
   // fields at the end and maintain valid DLEQ recipient authentication.
   cryptonote::block nonce_128_block;
   bool have_nonce_128_block = false;
@@ -181,7 +186,7 @@ bool run()
                     std::to_string(nonce_size));
     if (nonce_height != 2 || nonce_difficulty != 1 ||
         with_nonce.miner_tx.vout.size() != 5 || !proofs_verify(with_nonce))
-      return reject("Invalid v21 canonical dual proof with nonce size " +
+      return reject("Invalid v21 canonical three-proof suffix with nonce size " +
                     std::to_string(nonce_size));
 
     // The 127/128-byte boundary is especially important: tx.extra nonces
@@ -207,15 +212,15 @@ bool run()
   }
   if (!have_nonce_128_block)
     return reject("Did not capture 128-byte nonce block template");
-  std::cout << "PASS Six nonce-length mainnet block templates preserve both proofs"
+  std::cout << "PASS Six nonce-length mainnet block templates preserve all three proofs"
             << std::endl;
 
   // A malicious miner can use their own transaction key but must still
-  // pay the official recipients. A substituted Liquidity/Gas output
+  // pay the official recipients. A substituted Development/Liquidity/Gas output
   // must fail full block admission, even when amounts remain unchanged.
   cryptonote::account_base attacker;
   attacker.generate();
-  for (size_t index : {size_t(3), size_t(4)})
+  for (size_t index : {size_t(2), size_t(3), size_t(4)})
   {
     cryptonote::block invalid = second;
     auto *destination =
@@ -236,10 +241,10 @@ bool run()
   }
 
   if (!submit_block(test.chain, nonce_128_block))
-    return reject("Actual MAINNET consensus rejected v21 dual-proof 128-byte nonce block");
+    return reject("Actual MAINNET consensus rejected v21 three-proof 128-byte nonce block");
   if (test.chain.get_current_blockchain_height() != 3)
     return reject("Expected mainnet height 3 after valid v21 block");
-  std::cout << "PASS Valid 128-byte nonce v21 dual-proof block accepted by MAINNET consensus"
+  std::cout << "PASS Valid 128-byte nonce v21 three-proof block accepted by MAINNET consensus"
             << std::endl;
   return true;
 }
