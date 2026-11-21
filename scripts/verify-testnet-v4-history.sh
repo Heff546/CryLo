@@ -5,7 +5,19 @@
 # verifies them into a fresh isolated database and compares full exports.
 set -Eeuo pipefail
 
-STOP_HEIGHT=2959
+STOP_HEIGHT="${CRYLO_REPLAY_STOP_HEIGHT:-2959}"
+ALLOW_PARTIAL="${CRYLO_REPLAY_ALLOW_PARTIAL:-0}"
+case "$STOP_HEIGHT" in
+  ''|*[!0-9]*) echo "ERROR: stop height must be an unsigned integer" >&2; exit 1 ;;
+esac
+if (( STOP_HEIGHT < 2959 )) && [ "$ALLOW_PARTIAL" != "1" ]; then
+  echo "ERROR: heights below 2959 require explicit CRYLO_REPLAY_ALLOW_PARTIAL=1" >&2
+  exit 1
+fi
+if (( STOP_HEIGHT < 1 )); then
+  echo "ERROR: stop height must be greater than 0" >&2
+  exit 1
+fi
 # Use the already configured native Pi1 review build by default.
 BUILD_DIR="${CRYLO_REPLAY_BUILD_DIR:-/tmp/crylo-native-dleq-20261118/build}"
 
@@ -46,6 +58,10 @@ echo "===== CRYLO V4 HISTORICAL CHAIN REPLAY ====="
 echo "SOURCE LMDB: $SOURCE_LMDB (READ ONLY)"
 echo "WORKSPACE: $WORK"
 echo "LAST BLOCK TO VERIFY: $STOP_HEIGHT"
+if (( STOP_HEIGHT < 2959 )); then
+  echo "PARTIAL PRE-BOUNDARY CHECK ONLY: v4 block 2958 WILL NOT BE TESTED"
+  echo "THIS DOES NOT SATISFY MAINNET LAUNCH REPLAY GATE"
+fi
 echo "TESTNET ONLY: no peer/network connection"
 
 # Refuse a snapshot likely to exhaust the Pi1 filesystem; full replay
@@ -122,8 +138,14 @@ if ! cmp -s "$ORIGINAL" "$REPLAYED"; then
 fi
 
 echo "PASS Original and verified-replay exports match byte-for-byte"
-echo "PASS Testnet v4 historical consensus through height $STOP_HEIGHT"
-echo "PASS Historical fork boundary 2957 / 2958 / 2959 included"
-echo "RESULT: VERIFIED TESTNET HISTORY REPLAY PASSED"
+if (( STOP_HEIGHT >= 2959 )); then
+  echo "PASS Testnet v4 historical consensus through height $STOP_HEIGHT"
+  echo "PASS Historical fork boundary 2957 / 2958 / 2959 included"
+  echo "RESULT: VERIFIED TESTNET HISTORY REPLAY PASSED"
+else
+  echo "PASS Prefix historical replay through height $STOP_HEIGHT"
+  echo "BLOCK Historical fork boundary 2957 / 2958 / 2959 NOT included"
+  echo "RESULT: PARTIAL PRE-BOUNDARY REPLAY ONLY — MAINNET LAUNCH GATE UNSATISFIED"
+fi
 echo "MAINNET RELEASE: STILL BLOCKED"
 echo "LOGS AND SNAPSHOTS: $WORK"
