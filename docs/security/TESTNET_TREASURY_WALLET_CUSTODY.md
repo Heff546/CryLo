@@ -9,7 +9,7 @@ The existing published **Testnet.27** L1 source hard-codes **public** view and s
 
 `src/cryptonote_core/cryptonote_tx_utils.cpp` derives each coinbase one-time destination from those pairs of public keys. Those constants **are not proof that an actual owner-controlled wallet exists** or that its seed/spend key was backed up. The hard-coded `CryLo_DEV_FUND_ADDRESS_TESTNET` address string is **not** used to build the treasury outputs; the public key pair is. Derive and independently verify any displayed address against that actual pair and the selected Testnet address prefix.
 
-**The operator reports that Development and Liquidity wallets have not yet been created. Ownership of the old receiving keys is unknown.** Do not assume that the original matching private spend keys exist, or that newly created wallets can unlock already mined outputs.
+**Custody gate:** Before relying on these recipients, independently verify control of each preconfigured wallet and its backed-up private spend key. Do not assume that the original matching private keys exist, or that a newly generated wallet can unlock already mined outputs.
 
 ## Immediate custody priority — no blockchain mutation
 
