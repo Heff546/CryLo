@@ -24,6 +24,10 @@ The Testnet.27 release comprises five architectures from the same frozen source 
 
 **Do not merge `testnet` into `main` wholesale**, and do not merge draft Mainnet branches back into active Testnet V4 without reviewing consensus compatibility and wallet-data safety.
 
+## Treasury wallet custody gate
+
+**Before the Testnet V4 treasury recipient hardfork:** read [the treasury wallet custody and offline creation runbook](security/TESTNET_TREASURY_WALLET_CUSTODY.md). Existing hard-coded public recipient keys do not establish that an owner possesses the corresponding private spending keys; newly generated wallets cannot retroactively take custody of historical outputs. Verify recipients and backups before selecting any forward-only activation height. Do not publish or transmit private wallet material.
+
 ## Security boundary: historical Development Fund viewing key
 
 Testnet V4 source publicly contains `CryLo_DEV_FUND_VIEWKEY_SECRET`, a **private viewing** key used to verify historical Development Fund coinbase outputs. This key cannot alone spend funds, but it is already disclosed and **must never be reused for the Mainnet Development Fund**. Removing or replacing this value in the legacy Testnet V4 consensus path without a protocol migration could invalidate historical block validation.
