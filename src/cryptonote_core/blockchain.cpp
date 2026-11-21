@@ -2051,7 +2051,7 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
       if (m_nettype == MAINNET && height > 0 &&
           hf_version >= HF_VERSION_VESTING)
       {
-        // Never append padding AFTER the canonical Liquidity/Gas proof
+        // Never append padding AFTER the canonical Development/Liquidity/Gas proof
         // suffix: it would invalidate both public recipient signatures.
         // Instead, expand the existing nonce payload, rebuild the miner
         // transaction and re-sign BOTH proofs in construct_miner_tx().
