@@ -124,7 +124,7 @@ namespace cryptonote
       const size_t liquidity_index)
   {
     if (liquidity_index >= tx.vout.size() ||
-        tx.extra.size() < 2 * CRYLO_TREASURY_PROOF_FIELD_BYTES ||
+        tx.extra.size() < 3 * CRYLO_TREASURY_PROOF_FIELD_BYTES ||
         tx.extra.size() > MAX_TX_EXTRA_SIZE)
       return false;
 
@@ -136,7 +136,11 @@ namespace cryptonote
         tx.extra.size() - CRYLO_TREASURY_PROOF_FIELD_BYTES;
     const size_t proof_start =
         gas_start - CRYLO_TREASURY_PROOF_FIELD_BYTES;
-    if (tx.extra[proof_start] != TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF ||
+    const size_t dev_start =
+        proof_start - CRYLO_TREASURY_PROOF_FIELD_BYTES;
+    if (tx.extra[dev_start] != TX_EXTRA_TAG_CRYLO_DEV_FUND_PROOF ||
+        tx.extra[dev_start + 1] != CRYLO_TREASURY_PROOF_BYTES ||
+        tx.extra[proof_start] != TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF ||
         tx.extra[proof_start + 1] != CRYLO_TREASURY_PROOF_BYTES ||
         tx.extra[gas_start] != TX_EXTRA_TAG_CRYLO_GAS_TREASURY_PROOF ||
         tx.extra[gas_start + 1] != CRYLO_TREASURY_PROOF_BYTES)
@@ -148,6 +152,7 @@ namespace cryptonote
 
     size_t liquidity_count = 0;
     size_t gas_count = 0;
+    size_t dev_count = 0;
     for (const auto& field : fields)
     {
       if (const auto *proof =
@@ -157,6 +162,18 @@ namespace cryptonote
         if (proof->data.size() != CRYLO_TREASURY_PROOF_BYTES ||
             !std::equal(proof->data.begin(), proof->data.end(),
                 tx.extra.begin() + proof_start + 2,
+                [](char a, uint8_t b) {
+                  return static_cast<uint8_t>(a) == b;
+                }))
+          return false;
+      }
+      if (const auto *dev =
+              boost::get<tx_extra_crylo_dev_fund_proof>(&field))
+      {
+        ++dev_count;
+        if (dev->data.size() != CRYLO_TREASURY_PROOF_BYTES ||
+            !std::equal(dev->data.begin(), dev->data.end(),
+                tx.extra.begin() + dev_start + 2,
                 [](char a, uint8_t b) {
                   return static_cast<uint8_t>(a) == b;
                 }))
@@ -175,7 +192,7 @@ namespace cryptonote
           return false;
       }
     }
-    if (liquidity_count != 1 || gas_count != 1)
+    if (dev_count != 1 || liquidity_count != 1 || gas_count != 1)
       return false;
 
     crypto::public_key shared_point;

@@ -1,5 +1,21 @@
 # CryLo L1 mainnet — launch gates and minimal Nexus handoff
 
+> **SECURITY UPDATE — November 21, 2026:** The independently prepared
+> `security/mainnet-dev-recipient-proof-20261121` candidate extends the
+> earlier two-recipient proof design to **three public, domain-separated
+> recipient proofs**: Development [2], Liquidity [3], Gas Treasury [4].
+> A new Mainnet Development wallet with independently controlled keys
+> is **required**. The historical publicly disclosed Testnet Development
+> view secret must **never** be reused for Mainnet; new Mainnet recipient
+> public keys remain intentionally unconfigured. The candidate is untested
+> natively, and no Mainnet release is authorized. See
+> [Mainnet Development recipient security](security/MAINNET_DEV_RECIPIENT_SECURITY.md).
+>
+> The older two-proof sections below document historical PR #15–17 design
+> evolution and are **not** the final proof layout. Verified Testnet.27
+> source remains frozen at `27c8c3b1fe974f00e7f1c2ce196562135837831f`.
+
+
 **Status: NOT READY FOR MAINNET / source-only launch candidate.** This record is
 based on unified Testnet.25 source commit
 `e0326c141900e1c7a830df3108d9be3a8c019a40`.

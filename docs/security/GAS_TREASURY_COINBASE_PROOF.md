@@ -1,5 +1,17 @@
 # CryLo Gas Treasury coinbase recipient proof — security design gate
 
+> **November 21, 2026: SUPERSEDED PROOF LAYOUT.** The two-proof layout
+> discussed below is historical review evidence. The current **unreleased**
+> security candidate `security/mainnet-dev-recipient-proof-20261121`
+> extends Mainnet to three canonical public recipient proofs:
+> **[Development 0x07][Liquidity 0x06][Gas 0x05]**. A fresh Mainnet
+> Development Fund wallet is REQUIRED; the publicly exposed historical
+> Testnet private viewing key must never be reused. See
+> [Mainnet Development recipient security](MAINNET_DEV_RECIPIENT_SECURITY.md).
+> Mainnet remains blocked pending keys, native verification, independent
+> cryptographic review and release approval.
+
+
 **Status: ISOLATED DUAL-RECIPIENT DLEQ SOURCE CANDIDATE IMPLEMENTED; NATIVE BUILD, CRYPTOGRAPHIC REVIEW AND FULL-BLOCK TESTS OUTSTANDING. NO MAINNET RELEASE AUTHORIZED.**
 
 ## Historical defect and current candidate

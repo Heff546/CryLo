@@ -100,14 +100,17 @@ test('integer rounding and conservation at a range of coinbase rewards', () => {
   }
 });
 
-test('mainnet Liquidity and Gas public recipient proofs are connected to miner and validator', () => {
+test('mainnet Development, Liquidity and Gas public recipient proofs are connected to miner and validator', () => {
   // These assertions check source wiring ONLY. They do not cryptographically
   // validate a DLEQ proof or authorize a native mainnet release.
   const proof = read('src/cryptonote_core/crylo_gas_treasury_proof.h');
   const liquidity = read('src/cryptonote_core/crylo_liquidity_proof.h');
+  const devProof = read('src/cryptonote_core/crylo_dev_fund_proof.h');
   const verifier = proof.slice(proof.indexOf('inline bool verify_crylo_mainnet_treasury_proof('));
+  assert.match(generator, /!add_crylo_mainnet_dev_fund_proof\(/);
   assert.match(generator, /!add_crylo_mainnet_liquidity_proof\(/);
   assert.match(generator, /!add_crylo_mainnet_treasury_proof\(/);
+  assert.match(validator, /!verify_crylo_mainnet_dev_fund_proof\(/);
   assert.match(validator, /!verify_crylo_mainnet_liquidity_proof\(/);
   assert.match(validator, /!verify_crylo_mainnet_treasury_proof\(/);
   assert.match(validator, /b\.miner_tx, generation->height/);
@@ -122,11 +125,30 @@ test('mainnet Liquidity and Gas public recipient proofs are connected to miner a
   assert.doesNotMatch(validator, /CryLo_GAS_TREASURY_VIEWKEY_SECRET/);
   assert.doesNotMatch(proof, /CryLo_GAS_TREASURY_VIEWKEY_SECRET/);
   assert.match(liquidity, /LiquidityCoinbase:DLEQ:v1/);
-  assert.match(liquidity, /liquidity_count != 1 \|\| gas_count != 1/);
+  assert.match(liquidity, /dev_count != 1 \|\| liquidity_count != 1 \|\| gas_count != 1/);
   assert.match(liquidity, /TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF/);
   assert.match(liquidity, /crypto::check_tx_proof\(/);
   assert.match(liquidity, /expected_output != actual_output/);
   assert.doesNotMatch(liquidity, /CryLo_LIQUIDITY_FUND_VIEWKEY_SECRET/);
+  assert.match(devProof, /DevelopmentFundCoinbase:DLEQ:v1/);
+  assert.match(devProof, /verify_crylo_mainnet_dev_fund_proof/);
+  assert.match(devProof, /dev_count != 1 \|\| liquidity_count != 1 \|\| gas_count != 1/);
+  assert.match(devProof, /crypto::check_tx_proof\(/);
+  assert.doesNotMatch(devProof, /CryLo_DEV_FUND_VIEWKEY_SECRET/);
+});
+
+
+test('Mainnet recipient keys fail closed and never reuse exposed Testnet Development view key', () => {
+  assert.match(config, /#define CryLo_MAINNET_DEV_FUND_VIEWKEY/);
+  assert.match(config, /#define CryLo_MAINNET_DEV_FUND_SPENDKEY/);
+  assert.match(generator, /CryLo_MAINNET_DEV_FUND_VIEWKEY/);
+  assert.match(generator, /CryLo_MAINNET_DEV_FUND_SPENDKEY/);
+  assert.match(generator, /!epee::string_tools::hex_to_pod\(dev_view_hex, dev_view_pkey\)/);
+  assert.match(validator, /if \(m_nettype != MAINNET\)/);
+  assert.match(validator, /CryLo_MAINNET_DEV_FUND_VIEWKEY/);
+  assert.match(validator, /CryLo_MAINNET_DEV_FUND_SPENDKEY/);
+  assert.match(preflight, /mainnetDevView !== historicalDevView/);
+  assert.match(preflight, /mainnetDevSpend !== historicalDevSpend/);
 });
 
 test('launch preflight checks the public proof rather than a public wallet view secret', () => {
@@ -134,22 +156,24 @@ test('launch preflight checks the public proof rather than a public wallet view 
   assert.match(preflight, /liquidityProof\.includes\('inline bool verify_crylo_mainnet_liquidity_proof\('\)/);
   assert.match(preflight, /verifyProof\.includes\('crypto::check_tx_proof\('\)/);
   assert.match(preflight, /verifyProof\.includes\('expected_output != actual_output'\)/);
+  assert.match(preflight, /'Mainnet Development Fund has independent non-Testnet recipient public keys'/);
+  assert.match(preflight, /'Mainnet Development Fund public proof is wired into consensus \(source-only\)'/);
   assert.doesNotMatch(preflight, /blockchain\.includes\('gas_treasury_view_skey'\)/);
 });
 
 test('source-only proof checks never authorize official mainnet release signing', () => {
-  // Approval and source wiring must not bypass native dual-recipient
+  // Approval and source wiring must not bypass native three-recipient
   // consensus, historical chain replay, independent review, or updater gates.
-  assert.match(preflight, /'Mainnet dual-recipient native consensus and replay evidence',\s*false,/);
+  assert.match(preflight, /'Mainnet three-recipient native consensus and replay evidence',\s*false,/);
   assert.match(preflight, /APPROVED mainnet allocation: Dev=75, Liquidity=25, Gas=50/);
 });
 
 
-test('mainnet template weight-convergence padding is inserted before both proof signatures', () => {
+test('mainnet template weight-convergence padding is inserted before all three proof signatures', () => {
   assert.match(validator, /blobdata consensus_extra_nonce = ex_nonce;/);
   assert.match(validator, /consensus_extra_nonce\.append\(added_nonce_bytes, '\\0'\)/);
   assert.match(validator, /m_nettype == MAINNET && height > 0 &&\s*hf_version >= HF_VERSION_VESTING/);
-  assert.match(validator, /Never append padding AFTER the canonical Liquidity\/Gas proof/);
+  assert.match(validator, /Never append padding AFTER the canonical Development\/Liquidity\/Gas proof/);
   assert.match(validator, /added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length/);
   assert.match(validator, /original_nonce_length >= 128 \? 1 : 0/);
   assert.match(validator, /new_nonce_length >= 128 \? 1 : 0/);
@@ -165,8 +189,8 @@ test('mainnet template weight-convergence padding is inserted before both proof 
   assert.match(mainnetHarness, /parse_tx_extra\(with_nonce.miner_tx.extra, parsed\)/);
   assert.match(mainnetHarness, /Mainnet coinbase nonce round-trip failed for size/);
   assert.equal((validator.match(/construct_miner_tx\(this, m_nettype, height, median_weight, already_generated_coins,[^;]+consensus_extra_nonce, max_outs, hf_version\)/g) || []).length, 2);
-  assert.match(mainnetHarness, /Six nonce-length mainnet block templates preserve both proofs/);
-  assert.match(preflight, /Mainnet block-template padding preserves canonical dual-proof suffix \(source-only\)/);
+  assert.match(mainnetHarness, /Six nonce-length mainnet block templates preserve all three proofs/);
+  assert.match(preflight, /Mainnet block-template padding preserves canonical three-proof suffix \(source-only\)/);
 });
 
 test('mainnet block tests use real explicitly selected consensus, isolated offline data', () => {

@@ -42,6 +42,7 @@
 #include "blockchain.h"
 #include "crylo_gas_treasury_proof.h"
 #include "crylo_liquidity_proof.h"
+#include "crylo_dev_fund_proof.h"
 #include "blockchain_db/blockchain_db.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "cryptonote_basic/events.h"
@@ -1606,6 +1607,10 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     if (b.miner_tx.vout[4].amount != gas_treasury_expected) return false;
     // Native acceptance and independent review of both recipient proofs
     // remain mandatory; release preflight is blocked until these tests pass.
+    // Preserve existing, already-mined TESTNET/STAGENET consensus exactly.
+    // MAINNET must not use the historically disclosed Testnet private view key.
+    if (m_nettype != MAINNET)
+    {
     // Verify dev fund output key is derived from the correct dev fund address
     crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(b.miner_tx);
     if (tx_pub_key == crypto::null_pkey)
@@ -1658,12 +1663,16 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
       return false;
     }
 
+    }
+
     if (m_nettype == MAINNET)
     {
-      // Both treasury destinations must be proven with domain-separated
-      // public DLEQ proofs, not merely correct output amounts. The
-      // canonical suffix is [Liquidity proof][Gas proof] (98 bytes each).
-      // No Liquidity/Gas recipient wallet private view/spend key is exposed.
+      // All three recipients require domain-separated public DLEQ proofs.
+      // Canonical suffix: [Development][Liquidity][Gas], 98 bytes each.
+      // Mainnet uses only the NEW Development recipient public keys.
+      // No Mainnet recipient private view/spend key is required.
+      crypto::public_key dev_spend_mainnet_pkey;
+      crypto::public_key dev_view_mainnet_pkey;
       crypto::public_key liquidity_spend_pkey;
       crypto::public_key liquidity_view_pkey;
       crypto::public_key gas_treasury_spend_pkey;
@@ -1672,6 +1681,12 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
           boost::get<txin_gen>(&b.miner_tx.vin[0]) : nullptr;
       if (!generation ||
           !epee::string_tools::hex_to_pod(
+              CryLo_MAINNET_DEV_FUND_SPENDKEY, dev_spend_mainnet_pkey) ||
+          !epee::string_tools::hex_to_pod(
+              CryLo_MAINNET_DEV_FUND_VIEWKEY, dev_view_mainnet_pkey) ||
+          dev_spend_mainnet_pkey == crypto::null_pkey ||
+          dev_view_mainnet_pkey == crypto::null_pkey ||
+          !epee::string_tools::hex_to_pod(
               CryLo_LIQUIDITY_FUND_SPENDKEY, liquidity_spend_pkey) ||
           !epee::string_tools::hex_to_pod(
               CryLo_LIQUIDITY_FUND_VIEWKEY, liquidity_view_pkey) ||
@@ -1679,6 +1694,9 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
               CryLo_GAS_TREASURY_SPENDKEY, gas_treasury_spend_pkey) ||
           !epee::string_tools::hex_to_pod(
               CryLo_GAS_TREASURY_VIEWKEY, gas_treasury_view_pkey) ||
+          !verify_crylo_mainnet_dev_fund_proof(
+              b.miner_tx, generation->height,
+              dev_view_mainnet_pkey, dev_spend_mainnet_pkey, 2) ||
           !verify_crylo_mainnet_liquidity_proof(
               b.miner_tx, generation->height,
               liquidity_view_pkey, liquidity_spend_pkey, 3) ||
@@ -1686,7 +1704,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
               b.miner_tx, generation->height,
               gas_treasury_view_pkey, gas_treasury_spend_pkey, 4))
       {
-        MERROR_VER("Liquidity/Gas Treasury output key MISMATCH or invalid proof: rejecting mainnet miner reward");
+        MERROR_VER("Development/Liquidity/Gas Treasury output key MISMATCH or invalid proof: rejecting mainnet miner reward");
         return false;
       }
     }
@@ -2033,7 +2051,7 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
       if (m_nettype == MAINNET && height > 0 &&
           hf_version >= HF_VERSION_VESTING)
       {
-        // Never append padding AFTER the canonical Liquidity/Gas proof
+        // Never append padding AFTER the canonical Development/Liquidity/Gas proof
         // suffix: it would invalidate both public recipient signatures.
         // Instead, expand the existing nonce payload, rebuild the miner
         // transaction and re-sign BOTH proofs in construct_miner_tx().

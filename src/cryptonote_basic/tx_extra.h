@@ -42,6 +42,7 @@
 // Versioned mainnet coinbase-only treasury payment destination proof.
 #define TX_EXTRA_TAG_CRYLO_GAS_TREASURY_PROOF  0x05
 #define TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF     0x06
+#define TX_EXTRA_TAG_CRYLO_DEV_FUND_PROOF      0x07
 #define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG   0xDE
 
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
@@ -183,6 +184,18 @@ namespace cryptonote
 
   // MAINNET only: independent fixed-size public recipient proof for the
   // Liquidity wallet. Must precede the Gas proof at the end of tx.extra.
+  // MAINNET only: public recipient proof for the Development Fund.
+  // Canonical proof suffix order is Dev, Liquidity, Gas.
+  struct tx_extra_crylo_dev_fund_proof
+  {
+    std::string data;
+
+    BEGIN_SERIALIZE()
+      FIELD(data)
+      if (data.size() != 96) return false;
+    END_SERIALIZE()
+  };
+
   struct tx_extra_crylo_liquidity_proof
   {
     std::string data;
@@ -206,7 +219,7 @@ namespace cryptonote
   //   varint tag;
   //   varint size;
   //   varint data[];
-  typedef boost::variant<tx_extra_padding, tx_extra_pub_key, tx_extra_nonce, tx_extra_merge_mining_tag, tx_extra_additional_pub_keys, tx_extra_crylo_liquidity_proof, tx_extra_crylo_gas_treasury_proof, tx_extra_mysterious_minergate> tx_extra_field;
+  typedef boost::variant<tx_extra_padding, tx_extra_pub_key, tx_extra_nonce, tx_extra_merge_mining_tag, tx_extra_additional_pub_keys, tx_extra_crylo_dev_fund_proof, tx_extra_crylo_liquidity_proof, tx_extra_crylo_gas_treasury_proof, tx_extra_mysterious_minergate> tx_extra_field;
 }
 
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_padding, TX_EXTRA_TAG_PADDING);
@@ -214,6 +227,7 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_pub_key, TX_EXTRA_TAG_PUBKEY);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_nonce, TX_EXTRA_NONCE);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_merge_mining_tag, TX_EXTRA_MERGE_MINING_TAG);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_additional_pub_keys, TX_EXTRA_TAG_ADDITIONAL_PUBKEYS);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_crylo_dev_fund_proof, TX_EXTRA_TAG_CRYLO_DEV_FUND_PROOF);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_crylo_liquidity_proof, TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_crylo_gas_treasury_proof, TX_EXTRA_TAG_CRYLO_GAS_TREASURY_PROOF);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_mysterious_minergate, TX_EXTRA_MYSTERIOUS_MINERGATE_TAG);
