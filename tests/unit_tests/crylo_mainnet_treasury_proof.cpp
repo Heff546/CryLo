@@ -185,6 +185,56 @@ TEST_F(CryLoMainnetTreasuryProof, DevelopmentProofOutputTamperRejected)
   ASSERT_FALSE(verify_dev(tx));
 }
 
+TEST_F(CryLoMainnetTreasuryProof, DevelopmentProofDuplicateRejected)
+{
+  ASSERT_TRUE(verify_dev(tx));
+  const size_t pos = tx.extra.size() - 3 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  const std::vector<uint8_t> field(
+      tx.extra.begin() + pos,
+      tx.extra.begin() + pos + cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES);
+  tx.extra.insert(tx.extra.begin() + pos, field.begin(), field.end());
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_dev(tx));
+  ASSERT_FALSE(verify_liquidity(tx));
+  ASSERT_FALSE(verify(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, DevelopmentProofViewTagTamperRejected)
+{
+  ASSERT_TRUE(verify_dev(tx));
+  auto *target = boost::get<cryptonote::txout_to_tagged_key>(
+      &tx.vout[2].target);
+  ASSERT_NE(nullptr, target);
+  target->view_tag.data ^= 1;
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_dev(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, DevelopmentProofReorderedRejected)
+{
+  ASSERT_TRUE(verify_dev(tx));
+  const size_t begin =
+      tx.extra.size() - 3 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  const auto fieldSize = cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  std::swap_ranges(
+      tx.extra.begin() + begin, tx.extra.begin() + begin + fieldSize,
+      tx.extra.begin() + begin + fieldSize);
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_dev(tx));
+  ASSERT_FALSE(verify_liquidity(tx));
+  ASSERT_FALSE(verify(tx));
+}
+
+TEST_F(CryLoMainnetTreasuryProof, DevelopmentProofSharedPointTamperRejected)
+{
+  ASSERT_TRUE(verify_dev(tx));
+  const size_t begin =
+      tx.extra.size() - 3 * cryptonote::CRYLO_TREASURY_PROOF_FIELD_BYTES;
+  tx.extra[begin + 2] ^= 1;
+  tx.invalidate_hashes();
+  ASSERT_FALSE(verify_dev(tx));
+}
+
 TEST_F(CryLoMainnetTreasuryProof, DifferentBlockHeightRejected)
 {
   ASSERT_TRUE(verify(tx));
