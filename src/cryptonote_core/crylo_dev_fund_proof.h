@@ -1,9 +1,9 @@
 // Copyright (c) 2026 CryLo contributors
 // Distributed under the GNU General Public License v3.0.
 //
-// Mainnet DevelopmentFund recipient proof. NEVER embed a wallet view or spend
+// Mainnet Development Fund recipient proof. NEVER embed a wallet view or spend
 // secret in public consensus code. This header complements the Gas proof
-// with a distinct DLEQ transcript and canonical two-field suffix.
+// with a distinct DLEQ transcript and canonical three-field suffix.
 #pragma once
 
 #include "cryptonote_core/crylo_gas_treasury_proof.h"
@@ -31,8 +31,8 @@ namespace cryptonote
     return crypto::cn_fast_hash(transcript.data(), transcript.size());
   }
 
-  // Add this FIRST, then the existing Gas Treasury proof, which signs
-  // over the already-present DevelopmentFund proof. Do not re-sort after signing.
+  // Add this FIRST, then Liquidity and Gas Treasury proofs, each signing
+  // over preceding proofs. Do not re-sort after signing.
   inline bool add_crylo_mainnet_dev_fund_proof(
       transaction& tx,
       const uint64_t height,
