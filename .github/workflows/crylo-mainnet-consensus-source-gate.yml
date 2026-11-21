@@ -36,15 +36,17 @@ jobs:
           set -e
           cat mainnet-preflight.log
           if [ "$code" -eq 0 ]; then
-            echo "ERROR: mainnet preflight unexpectedly passed before native dual-proof consensus, history replay and updater gates"
+            echo "ERROR: mainnet preflight unexpectedly passed before native three-proof consensus, history replay and updater gates"
             exit 1
           fi
           grep -Fqx "PASS Mainnet Gas Treasury public recipient proof is wired into consensus (source-only)" mainnet-preflight.log
           grep -Fqx "PASS All networks allocate 0.25% to the Liquidity Fund" mainnet-preflight.log
           grep -Fqx "PASS All networks allocate 0.50% to the Gas Treasury" mainnet-preflight.log
           grep -Fqx "PASS HF19+ coinbase has five validated outputs on all networks" mainnet-preflight.log
-          grep -Fqx "PASS Mainnet block-template padding preserves canonical dual-proof suffix (source-only)" mainnet-preflight.log
+          grep -Fqx "PASS Mainnet block-template padding preserves canonical three-proof suffix (source-only)" mainnet-preflight.log
           grep -Fqx "PASS Mainnet Liquidity public recipient proof is wired into consensus (source-only)" mainnet-preflight.log
-          grep -Fqx "BLOCK Mainnet dual-recipient native consensus and replay evidence" mainnet-preflight.log
+          grep -Fqx "BLOCK Mainnet three-recipient native consensus and replay evidence" mainnet-preflight.log
+          grep -Fqx "PASS Mainnet Development Fund public proof is wired into consensus (source-only)" mainnet-preflight.log
+          grep -Fqx "BLOCK Mainnet Development Fund has independent non-Testnet recipient public keys" mainnet-preflight.log
           grep -Fqx "BLOCK Mainnet updater has a dedicated authenticated release channel" mainnet-preflight.log
           echo "PASS: launch remains explicitly blocked until all gates are addressed"
