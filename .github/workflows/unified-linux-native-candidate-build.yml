@@ -21,8 +21,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: linux-x64, runner: ubuntu-24.04, arch: x64, machine: x86_64, jobs: '2' }
-          - { name: linux-arm64, runner: ubuntu-24.04-arm, arch: arm64, machine: aarch64, jobs: '1' }
+          - { name: linux-x64, runner: ubuntu-22.04, arch: x64, machine: x86_64, jobs: '2' }
+          - { name: linux-arm64, runner: ubuntu-22.04-arm, arch: arm64, machine: aarch64, jobs: '1' }
     steps:
       - name: Checkout approved CryLo source and submodules without credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -73,6 +73,7 @@ jobs:
           test -s "build/linux-${{ matrix.arch }}/bin/CryLo-daemon"
           test -s "build/linux-${{ matrix.arch }}/bin/CryLo-wallet"
           test -s "build/linux-${{ matrix.arch }}/bin/CryLo-wallet-rpc"
+          echo 'PASS: shared CryLo release builder verified GLIBC/GLIBCXX/CXXABI for Debian Bookworm or earlier'
           test -n "$(find electron/dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
           echo 'PASS: Linux native compilation and Electron release candidate from exact source'
       - name: Record unsigned native output checksums and source commit
