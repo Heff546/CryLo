@@ -1728,6 +1728,98 @@ function verifyNativePair(target) {
   return bin;
 }
 
+// Fail closed before creating any official Linux or Electron artifact.
+// Debian Bookworm ships GLIBC 2.36, libstdc++ GCC 12 (GLIBCXX_3.4.30)
+// and CXXABI 1.3.13. Running a binary on a newer build host alone does
+// not prove it can be loaded by Pi1 or other supported older Linux hosts.
+function compareRuntimeSymbolVersions(left, right) {
+  const a = left.split('.').map(Number);
+  const b = right.split('.').map(Number);
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const difference = (a[index] || 0) - (b[index] || 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
+
+function verifyLinuxRuntimeAbi(target, nativeBin) {
+  if (target.platform !== 'linux') {
+    return;
+  }
+
+  const ceilings = {
+    GLIBC: '2.36',
+    GLIBCXX: '3.4.30',
+    CXXABI: '1.3.13'
+  };
+
+  for (const name of [target.daemon, target.walletCli, target.walletRpc]) {
+    const executable = path.join(nativeBin, name);
+    const symbols = spawnSync(
+      'readelf',
+      ['-W', '--version-info', executable],
+      {
+        encoding: 'utf8',
+        shell: false,
+        maxBuffer: 16 * 1024 * 1024
+      }
+    );
+
+    if (symbols.error || symbols.status !== 0) {
+      fail(
+        `Unable to inspect Linux release ABI for ${name}: ` +
+        `${symbols.error ? symbols.error.message : symbols.stderr}`
+      );
+    }
+
+    for (const [family, maximum] of Object.entries(ceilings)) {
+      const expression = new RegExp(
+        `\\b${family}_(\\d+(?:\\.\\d+)+)\\b`,
+        'g'
+      );
+      const requirements = [...symbols.stdout.matchAll(expression)]
+        .map((match) => match[1]);
+      if (family === 'GLIBC' && requirements.length === 0) {
+        fail(`No GLIBC ABI requirements found in Linux native binary ${name}`);
+      }
+      if (requirements.length === 0) {
+        continue;
+      }
+
+      requirements.sort(compareRuntimeSymbolVersions);
+      const highest = requirements[requirements.length - 1];
+      if (compareRuntimeSymbolVersions(highest, maximum) > 0) {
+        fail(
+          `Linux ${target.arch} binary ${name} requires ${family}_${highest}; ` +
+          `Debian Bookworm compatibility limit is ${family}_${maximum}. ` +
+          'Rebuild on the supported older Linux release runner.'
+        );
+      }
+      console.log(`PASS ${name}: ${family}_${highest} <= ${family}_${maximum}`);
+    }
+
+    const started = spawnSync(executable, ['--version'], {
+      encoding: 'utf8',
+      shell: false,
+      timeout: 10000
+    });
+    if (started.error || started.status !== 0) {
+      fail(`Linux release ${name} cannot execute --version on build host`);
+    }
+    const version = String(started.stdout || '') + String(started.stderr || '');
+    if (releaseNetwork === 'testnet' && !version.includes("CryLo Chain 'Testnet'")) {
+      fail(`Linux release ${name} does not identify as CryLo Testnet`);
+    }
+    if (releaseNetwork === 'mainnet' && /testnet/i.test(version)) {
+      fail(`Linux mainnet release ${name} incorrectly identifies as Testnet`);
+    }
+  }
+
+  console.log('PASS Linux native release ABI fits Debian Bookworm');
+}
+
 function packageElectron(target, nativeBin) {
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
@@ -2308,6 +2400,7 @@ if (target.platform === 'win') {
 }
 
 const nativeBin = verifyNativePair(target);
+verifyLinuxRuntimeAbi(target, nativeBin);
 
 console.log();
 console.log('===== NATIVE RELEASE COMPLETE =====');
