@@ -173,7 +173,7 @@ test('mainnet template weight-convergence padding is inserted before all three p
   assert.match(validator, /blobdata consensus_extra_nonce = ex_nonce;/);
   assert.match(validator, /consensus_extra_nonce\.append\(added_nonce_bytes, '\\0'\)/);
   assert.match(validator, /m_nettype == MAINNET && height > 0 &&\s*hf_version >= HF_VERSION_VESTING/);
-  assert.match(validator, /Never append padding AFTER the canonical Liquidity\/Gas proof/);
+  assert.match(validator, /Never append padding AFTER the canonical Development\/Liquidity\/Gas proof/);
   assert.match(validator, /added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length/);
   assert.match(validator, /original_nonce_length >= 128 \? 1 : 0/);
   assert.match(validator, /new_nonce_length >= 128 \? 1 : 0/);
