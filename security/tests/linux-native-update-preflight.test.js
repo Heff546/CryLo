@@ -61,7 +61,7 @@ test('rejects GLIBC loader error before any installed file is replaced', (t) => 
   );
   assert.throws(
     () => verifyStagedLinuxNativeExecutables(state.staged, state.native, 'testnet'),
-    /GLIBC_2\\.38 not found/
+    /GLIBC_2\.38 not found/
   );
   assertOriginalsUnchanged(state);
 });
