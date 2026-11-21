@@ -15,6 +15,7 @@ const miner = source('src/cryptonote_core/cryptonote_tx_utils.cpp');
 const blockchain = source('src/cryptonote_core/blockchain.cpp');
 const treasuryProof = source('src/cryptonote_core/crylo_gas_treasury_proof.h');
 const liquidityProof = source('src/cryptonote_core/crylo_liquidity_proof.h');
+const devProof = source('src/cryptonote_core/crylo_dev_fund_proof.h');
 const txExtra = source('src/cryptonote_basic/tx_extra.h');
 const txExtraParser = source('src/cryptonote_basic/cryptonote_format_utils.cpp');
 const launcher = source('scripts/crylo.js');
@@ -30,6 +31,11 @@ function numberMacro(name) {
   const escaped = name.replace(/[.*+?^$()|[\]{}]/g, '\\$&');
   const match = config.match(new RegExp('^#define\\s+' + escaped + '\\s+(\\d+)\\b', 'm'));
   return match ? Number(match[1]) : null;
+}
+
+function publicKeyMacro(name) {
+  const match = config.match(new RegExp('^#define\\s+' + name + '\\s+"([a-fA-F0-9]*)"', 'm'));
+  return match ? match[1].toLowerCase() : null;
 }
 
 const dev = numberMacro('CryLo_DEV_FUND_FEE_BPS');
@@ -72,7 +78,7 @@ check(
   'Validate instant, vested, Dev, Liquidity, Gas output order (5) on every network'
 );
 check(
-  'Mainnet block-template padding preserves canonical dual-proof suffix (source-only)',
+  'Mainnet block-template padding preserves canonical three-proof suffix (source-only)',
   blockchain.includes('blobdata consensus_extra_nonce = ex_nonce;') &&
   blockchain.includes('consensus_extra_nonce.append(added_nonce_bytes') &&
   blockchain.includes('added_nonce_bytes > TX_EXTRA_NONCE_MAX_COUNT - original_nonce_length') &&
@@ -87,7 +93,7 @@ check(
   miner.includes('!::do_serialize(ar, canonical_nonce)') &&
   /m_nettype == MAINNET && height > 0 &&\s*hf_version >= HF_VERSION_VESTING/.test(blockchain) &&
   (blockchain.match(/construct_miner_tx\(this, m_nettype, height, median_weight, already_generated_coins,[^;]+consensus_extra_nonce, max_outs, hf_version\)/g) || []).length === 2,
-  'Rebuild the MAINNET coinbase with nonce padding BEFORE Liquidity and Gas proofs; never add trailing bytes after the proof fields'
+  'Rebuild the MAINNET coinbase with nonce padding BEFORE Development, Liquidity and Gas proofs; never append trailing bytes'
 );
 // STRUCTURAL ONLY: this is not a native consensus or cryptographic audit.
 // The earlier gate required a treasury view secret in public validator source.
@@ -132,7 +138,7 @@ check(
   txExtra.includes('TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF') &&
   txExtra.includes('tx_extra_crylo_liquidity_proof') &&
   txExtraParser.includes('pick<tx_extra_crylo_liquidity_proof>') &&
-  liquidityVerify.includes('liquidity_count != 1 || gas_count != 1') &&
+  liquidityVerify.includes('dev_count != 1 || liquidity_count != 1 || gas_count != 1') &&
   liquidityVerify.includes('tx.extra[proof_start] != TX_EXTRA_TAG_CRYLO_LIQUIDITY_PROOF') &&
   liquidityVerify.includes('tx.extra[gas_start] != TX_EXTRA_TAG_CRYLO_GAS_TREASURY_PROOF') &&
   liquidityVerify.includes('crypto::check_tx_proof(') &&
@@ -141,17 +147,56 @@ check(
   liquidityVerify.includes('expected_output != actual_output') &&
   liquidityVerify.includes('get_output_view_tag(tx.vout[liquidity_index])') &&
   !liquidityProof.includes('CryLo_LIQUIDITY_FUND_VIEWKEY_SECRET'),
-  'Independently verify Liquidity DLEQ cryptographic soundness and canonical two-proof suffix in actual mainnet block consensus'
+  'Independently verify Liquidity DLEQ cryptographic soundness and canonical three-proof suffix in actual mainnet block consensus'
 );
 
-// 75/25/50 economics are owner-approved. Static wiring for BOTH recipient
+// Development Fund: even though the historical Testnet view secret cannot
+// spend funds, it is public and must not be reused on production Mainnet.
+const mainnetDevView = publicKeyMacro('CryLo_MAINNET_DEV_FUND_VIEWKEY');
+const mainnetDevSpend = publicKeyMacro('CryLo_MAINNET_DEV_FUND_SPENDKEY');
+const historicalDevView = publicKeyMacro('CryLo_DEV_FUND_VIEWKEY');
+const historicalDevSpend = publicKeyMacro('CryLo_DEV_FUND_SPENDKEY');
+check(
+  'Mainnet Development Fund has independent non-Testnet recipient public keys',
+  /^[a-f0-9]{64}$/.test(mainnetDevView || '') &&
+  /^[a-f0-9]{64}$/.test(mainnetDevSpend || '') &&
+  mainnetDevView !== historicalDevView &&
+  mainnetDevSpend !== historicalDevSpend,
+  'Generate a fresh, separately backed-up Mainnet Development wallet OFFLINE. Configure only its public view/spend keys. Never commit the private view/spend keys or seed.'
+);
+const devVerify = devProof.slice(
+  devProof.indexOf('inline bool verify_crylo_mainnet_dev_fund_proof(')
+);
+const mainnetValidator = blockchain.slice(
+  blockchain.indexOf('    if (m_nettype == MAINNET)\n    {')
+);
+check(
+  'Mainnet Development Fund public proof is wired into consensus (source-only)',
+  devProof.includes('DevelopmentFundCoinbase:DLEQ:v1') &&
+  devProof.includes('inline bool add_crylo_mainnet_dev_fund_proof(') &&
+  devVerify.includes('inline bool verify_crylo_mainnet_dev_fund_proof(') &&
+  miner.includes('!add_crylo_mainnet_dev_fund_proof(') &&
+  mainnetValidator.includes('!verify_crylo_mainnet_dev_fund_proof(') &&
+  devVerify.includes('crypto::check_tx_proof(') &&
+  devVerify.includes('crylo_dev_fund_proof_message(without_proof, height)') &&
+  devVerify.includes('dev_count != 1 || liquidity_count != 1 || gas_count != 1') &&
+  devVerify.includes('get_output_view_tag(tx.vout[dev_fund_index])') &&
+  txExtra.includes('TX_EXTRA_TAG_CRYLO_DEV_FUND_PROOF') &&
+  txExtra.includes('tx_extra_crylo_dev_fund_proof') &&
+  txExtraParser.includes('pick<tx_extra_crylo_dev_fund_proof>') &&
+  blockchain.includes('if (m_nettype != MAINNET)') &&
+  !mainnetValidator.includes('CryLo_DEV_FUND_VIEWKEY_SECRET'),
+  'Confirm new Mainnet Dev recipient proofs in native adversarial/full-block tests. Preserve legacy Testnet history and forbid leaked Testnet secret use on Mainnet.'
+);
+
+// 75/25/50 economics are owner-approved. Static wiring for THREE recipient
 // proofs is necessary but insufficient for native full-block, historical
 // chain replay, cross-platform consensus and independent cryptographic audit.
 // This unconditional release hold must only be removed via reviewed approval.
 check(
-  'Mainnet dual-recipient native consensus and replay evidence',
+  'Mainnet three-recipient native consensus and replay evidence',
   false,
-  'Execute native dual-proof adversarial and full-block tests, testnet history replay, independent review and five-platform consensus checks before any signed mainnet release'
+  'Execute native three-proof adversarial and full-block tests, Testnet V4 history replay, independent review and five-platform consensus checks before any signed Mainnet release'
 );
 
 check(
