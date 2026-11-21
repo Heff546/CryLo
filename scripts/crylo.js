@@ -2091,6 +2091,14 @@ function installAuthorizedLinuxBundle(
       }
 
       /*
+       * Staged files are already authenticated and re-hashed.
+       * Prove all three native executables can actually load on this Linux
+       * host before any installed release file or backup is touched.
+       */
+      require('./release/linux-native-update-preflight')
+        .verifyStagedLinuxNativeExecutables(staged, native, network.mode);
+
+      /*
        * Replace each destination only after every release file
        * has staged successfully.
        */

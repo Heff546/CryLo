@@ -821,6 +821,42 @@ function verifyLinuxDependsConfigure(target, context, configureOutput) {
     );
   }
 
+  // Never trade away CryLo's existing compiler/linker hardening to obtain
+  // an older Linux runtime ABI. An older host with GCC 12 must still pass.
+  if (!configureOutput.includes('Using _FORTIFY_SOURCE=3')) {
+    fail('Linux release must retain effective _FORTIFY_SOURCE=3.');
+  }
+
+  const requiredHardening = [
+    {
+      label: 'Using C security hardening flags:',
+      flags: ['-D_FORTIFY_SOURCE=3', '-fstack-protector-strong',
+        '-fstack-clash-protection', '-Wformat-security']
+    },
+    {
+      label: 'Using C++ security hardening flags:',
+      flags: ['-D_FORTIFY_SOURCE=3', '-fstack-protector-strong',
+        '-fstack-clash-protection', '-Wformat-security']
+    },
+    {
+      label: 'Using linker security hardening flags:',
+      flags: ['-pie', '-Wl,-z,relro', '-Wl,-z,now',
+        '-Wl,-z,noexecstack']
+    }
+  ];
+  for (const requirement of requiredHardening) {
+    const line = configureOutput.split(/\r?\n/).find(
+      (entry) => entry.includes(requirement.label)
+    );
+    for (const flag of requirement.flags) {
+      if (!line || !line.includes(flag)) {
+        fail('Linux release configuration lost security flag ' + flag +
+          ' from ' + requirement.label);
+      }
+    }
+  }
+  console.log('Linux release hardening flags... VERIFIED (FORTIFY=3)');
+
   console.log('Linux pinned dependency configure... VERIFIED');
 }
 
@@ -1728,6 +1764,125 @@ function verifyNativePair(target) {
   return bin;
 }
 
+// Fail closed before creating any official Linux or Electron artifact.
+// Debian Bookworm ships GLIBC 2.36, libstdc++ GCC 12 (GLIBCXX_3.4.30)
+// and CXXABI 1.3.13. Running a binary on a newer build host alone does
+// not prove it can be loaded by Pi1 or other supported older Linux hosts.
+function compareRuntimeSymbolVersions(left, right) {
+  const a = left.split('.').map(Number);
+  const b = right.split('.').map(Number);
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const difference = (a[index] || 0) - (b[index] || 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
+
+function verifyLinuxRuntimeAbi(target, nativeBin) {
+  if (target.platform !== 'linux') {
+    return;
+  }
+
+  const ceilings = {
+    GLIBC: '2.36',
+    GLIBCXX: '3.4.30',
+    CXXABI: '1.3.13'
+  };
+
+  for (const name of [target.daemon, target.walletCli, target.walletRpc]) {
+    const executable = path.join(nativeBin, name);
+    const symbols = spawnSync(
+      'readelf',
+      ['-W', '--version-info', executable],
+      {
+        encoding: 'utf8',
+        shell: false,
+        maxBuffer: 16 * 1024 * 1024
+      }
+    );
+
+    if (symbols.error || symbols.status !== 0) {
+      fail(
+        `Unable to inspect Linux release ABI for ${name}: ` +
+        `${symbols.error ? symbols.error.message : symbols.stderr}`
+      );
+    }
+
+    for (const [family, maximum] of Object.entries(ceilings)) {
+      const expression = new RegExp(
+        `\\b${family}_(\\d+(?:\\.\\d+)+)\\b`,
+        'g'
+      );
+      const requirements = [...symbols.stdout.matchAll(expression)]
+        .map((match) => match[1]);
+      if (family === 'GLIBC' && requirements.length === 0) {
+        fail(`No GLIBC ABI requirements found in Linux native binary ${name}`);
+      }
+      if (requirements.length === 0) {
+        continue;
+      }
+
+      requirements.sort(compareRuntimeSymbolVersions);
+      const highest = requirements[requirements.length - 1];
+      if (compareRuntimeSymbolVersions(highest, maximum) > 0) {
+        fail(
+          `Linux ${target.arch} binary ${name} requires ${family}_${highest}; ` +
+          `Debian Bookworm compatibility limit is ${family}_${maximum}. ` +
+          'Rebuild on the supported older Linux release runner.'
+        );
+      }
+      console.log(`PASS ${name}: ${family}_${highest} <= ${family}_${maximum}`);
+    }
+
+
+    // Required runtime ABI limits alone are not a hardening proof.
+    // Verify the final ELF program headers and dynamic binding properties.
+    const elf = spawnSync(
+      'readelf',
+      ['-W', '-h', '-l', '-d', executable],
+      { encoding: 'utf8', shell: false, maxBuffer: 16 * 1024 * 1024 }
+    );
+    if (elf.error || elf.status !== 0) {
+      fail('Cannot inspect Linux ELF hardening for ' + name);
+    }
+    const headers = elf.stdout;
+    const stack = headers.split(/\r?\n/).find(
+      (line) => /\bGNU_STACK\b/.test(line)
+    );
+    if (!/\bType:\s+DYN\b/.test(headers) ||
+        !/\bGNU_RELRO\b/.test(headers) ||
+        !stack || !/\bRW\b/.test(stack) || /\bRWE\b/.test(stack) ||
+        !(/\bBIND_NOW\b/.test(headers) ||
+          /\bFLAGS_1\b[^\n]*\bNOW\b/.test(headers))) {
+      fail(
+        'Linux native release ELF hardening check failed for ' + name +
+        ': require PIE, RELRO, NOW and a non-executable stack.'
+      );
+    }
+    console.log('PASS ' + name + ': ELF PIE, RELRO, NOW, NX stack');
+
+    const started = spawnSync(executable, ['--version'], {
+      encoding: 'utf8',
+      shell: false,
+      timeout: 10000
+    });
+    if (started.error || started.status !== 0) {
+      fail(`Linux release ${name} cannot execute --version on build host`);
+    }
+    const version = String(started.stdout || '') + String(started.stderr || '');
+    if (releaseNetwork === 'testnet' && !version.includes("CryLo Chain 'Testnet'")) {
+      fail(`Linux release ${name} does not identify as CryLo Testnet`);
+    }
+    if (releaseNetwork === 'mainnet' && /testnet/i.test(version)) {
+      fail(`Linux mainnet release ${name} incorrectly identifies as Testnet`);
+    }
+  }
+
+  console.log('PASS Linux native release ABI fits Debian Bookworm');
+}
+
 function packageElectron(target, nativeBin) {
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
@@ -2308,6 +2463,7 @@ if (target.platform === 'win') {
 }
 
 const nativeBin = verifyNativePair(target);
+verifyLinuxRuntimeAbi(target, nativeBin);
 
 console.log();
 console.log('===== NATIVE RELEASE COMPLETE =====');
