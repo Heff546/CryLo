@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - feature/mac-first-build-gate
+      - fix/testnet25-linux-bookworm-abi-20261121
     paths:
       - .github/workflows/unified-linux-native-candidate-build.yml
       - electron/scripts/release-linux.sh
+      - scripts/release/crylo-release.js
   workflow_dispatch:
 
 permissions:
