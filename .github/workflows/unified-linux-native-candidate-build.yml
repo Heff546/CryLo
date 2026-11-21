@@ -58,9 +58,9 @@ jobs:
             build-essential cmake pkg-config python3 perl make \
             autoconf automake libtool bison flex gettext \
             curl wget tar patch unzip file
-          cmake --version | head -1
-          make --version | head -1
-          gcc --version | head -1
+          cmake --version | sed -n '1p'
+          make --version | sed -n '1p'
+          gcc --version | sed -n '1p'
           python3 --version
           df -h .
           echo 'Only host build utilities are provisioned; CryLo native libraries must come from hash-pinned contrib/depends'
