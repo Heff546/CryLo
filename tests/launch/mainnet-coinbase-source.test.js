@@ -17,6 +17,7 @@ const coreHeader = read('src/cryptonote_core/cryptonote_core.h');
 const daemonMain = read('src/daemon/main.cpp');
 const mainnetHarness = read('tests/core_tests/crylo_mainnet_consensus_tests.cpp');
 const cmakeCore = read('tests/core_tests/CMakeLists.txt');
+const v4HistoryReplay = read('scripts/verify-testnet-v4-history.sh');
 
 function macro(name) {
   const match = config.match(
@@ -186,6 +187,21 @@ test('mainnet block tests use real explicitly selected consensus, isolated offli
   assert.match(mainnetHarness, /MAINNET ACCEPTED redirected payout index/);
   assert.match(cmakeCore, /monero_add_minimal_executable\(crylo_mainnet_consensus_tests/);
   assert.doesNotMatch(cmakeCore, /add_test\(\s*NAME\s+crylo_mainnet_consensus_tests/);
+});
+
+test('testnet v4 historical replay uses copied LMDB, verified import and exact export comparison', () => {
+  assert.match(v4HistoryReplay, /CRYLO_REPLAY_STOP_HEIGHT:-2959/);
+  assert.match(v4HistoryReplay, /CRYLO_REPLAY_ALLOW_PARTIAL:-0/);
+  assert.match(v4HistoryReplay, /heights below 2959 require explicit CRYLO_REPLAY_ALLOW_PARTIAL=1/);
+  assert.match(v4HistoryReplay, /BLOCK Historical fork boundary 2957 \/ 2958 \/ 2959 NOT included/);
+  assert.match(v4HistoryReplay, /RESULT: PARTIAL PRE-BOUNDARY REPLAY ONLY/);
+  assert.match(v4HistoryReplay, /mdb_copy -c/);
+  assert.match(v4HistoryReplay, /--testnet --offline --disable-dns-checkpoints/);
+  assert.match(v4HistoryReplay, /--block-stop="\$STOP_HEIGHT"/);
+  assert.match(v4HistoryReplay, /cmp -s "\$ORIGINAL" "\$REPLAYED"/);
+  assert.match(v4HistoryReplay, /verify:\[\[:space:\]\]\+true/);
+  assert.match(v4HistoryReplay, /MAINNET RELEASE: STILL BLOCKED/);
+  assert.doesNotMatch(v4HistoryReplay, /--dangerous-unverified-import/);
 });
 
 test('official mainnet release builder fails closed on source preflight', () => {

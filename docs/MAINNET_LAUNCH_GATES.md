@@ -69,6 +69,38 @@ is left untouched. The 128/240-byte round-trip test and native full-block
 test must pass on Pi1 before this fix is validated. The mainnet preflight
 remains unconditionally blocked.
 
+**Testnet v4 historical replay — INDEPENDENT EVIDENCE PENDING.**
+The isolated `test/testnet-v4-history-replay-20261119` review branch
+adds `scripts/verify-testnet-v4-history.sh`. On Pi1 this script accepts
+the existing local v4 LMDB path; it creates a consistent `mdb_copy -c`
+snapshot (does not write to the source LMDB), exports canonical TESTNET
+history from genesis through height **2959**, imports with block/tx
+verification explicitly enabled into a fresh offline TESTNET database,
+then re-exports and requires a byte-identical bootstrap file. This
+covers the historical correction at block **2958**. It also detects the
+existing importer exit-status bug by requiring the actual result to
+match, not just relying on a process exit code.
+
+**Pi1 observed result (November 21, 2026):** source tests, importer/exporter
+build and consistent LMDB snapshot succeeded, but the Pi1 local
+`~/.CryLo-testnet-v4/testnet/lmdb` contained blocks only through height
+**2777**. The replay correctly refused to claim the 2958 boundary was
+covered. This is a source-history shortage, not a failed consensus
+validation. The script now optionally allows a **clearly labeled partial
+pre-boundary** prefix replay (set
+`CRYLO_REPLAY_STOP_HEIGHT=2777 CRYLO_REPLAY_ALLOW_PARTIAL=1`) but such
+results **do not** satisfy the mandatory height-2958 history gate.
+Full replay requires a trustworthy canonical history through height
+2959, ideally sourced from Pi2's anchor after verifying its real height
+and matching block identities, not replacing canonical chain data.
+
+This replay requires source chain data at least through block 2959,
+`mdb_copy`, free Pi1 disk space and separately built blockchain import
+and export executables. The full 0-2959 replay has **not yet run**; a pass would validate
+the historical range but **not** later chain history, the anchor's
+canonical identity, independent-node agreement or public PoW. Run it
+only against the user's Pi1 data and disposable copies, never Pi2.
+
 Other mandatory gates: independent genesis and network IDs; mainnet
 height 1→2 hardfork transition; complete miner coinbase recipient
 validation; 50/50 instant and 45-day vesting; emission cap; full-block
