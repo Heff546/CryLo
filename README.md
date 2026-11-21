@@ -1,4 +1,10 @@
-# CryLo
+# CryLo — Testnet
+
+> **TESTNET SOURCE — NOT MAINNET.** This branch contains CryLo Testnet development source. The currently verified five-platform source snapshot is **[Testnet.27](https://github.com/Heff546/CryLo/releases/tag/v1.1.1-testnet.27)** at commit `27c8c3b1fe974f00e7f1c2ce196562135837831f`. Use the [immutable release tag](https://github.com/Heff546/CryLo/tree/v1.1.1-testnet.27) when reproducing the signed release; later commits on this branch may contain additional CI or documentation work.
+>
+> **Mainnet is not launched.** The [default `main` branch](https://github.com/Heff546/CryLo/tree/main) is for Mainnet preparation, **not an approved production release**. Mainnet source must be independently validated before deployment. Testnet and Mainnet wallet/blockchain directories must remain separate.
+>
+> Supported Testnet.27 release targets: Windows x64, Linux x64, Linux ARM64, macOS Intel, and macOS Apple Silicon. The macOS installer packages are unsigned/unnotarized and require user approval. Existing supported installations update with `crylo update`. Published packages do not guarantee active public peers or an active relay.
 
 CryLo is a CPU-mined blockchain ecosystem built around accessible solo mining, long-term network participation, and user-controlled infrastructure.
 
@@ -26,8 +32,9 @@ CryLo is currently in public testnet development ahead of mainnet release.
 | Linear emission | 3,703,704 blocks |
 | Miner unlock | 50% immediate |
 | Miner vesting | 50% over 45 days |
-| Development allocation | 1.0% |
-| Liquidity allocation | 0.5% |
+| Development allocation | 0.75% |
+| Liquidity allocation | 0.25% |
+| CryLo Gas Treasury allocation | 0.50% |
 | P2P port | 22640 |
 | RPC port | 22641 |
 | ZMQ port | 22642 |
