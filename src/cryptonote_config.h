@@ -185,8 +185,17 @@
 // CryLo Chain: 0.75% dev fund + 0.25% liquidity fund + 0.50% NEX gas fund
 #define CryLo_DEV_FUND_FEE_BPS                  75
 #define CryLo_DEV_FUND_VIEWKEY                   "3847665251fbb4b9cf1e3ce13cce9b4af0decd740a7527df72218e6629540f21"
+// Historical Testnet validation only. This public source value is NOT secret.
+// NEVER use this viewing key for a production Mainnet wallet.
 #define CryLo_DEV_FUND_VIEWKEY_SECRET            "8ce4343589f1a6890a83cd1b4a3033553ff277082eed2c89575d16e151593d09"
 #define CryLo_DEV_FUND_SPENDKEY                  "e0d2a33356a379d24842f98be0d5b8ee43f3e346d9c15c02554c5c8cfee29ac5"
+// Mainnet Development Fund must use a NEW, independently controlled wallet.
+// Set PUBLIC view and spend keys before Mainnet testing/launch. Never commit
+// its private view key, private spend key, seed, or wallet files.
+// Empty defaults deliberately prevent Mainnet miner templates and validation
+// from operating until the independent recipient is configured.
+#define CryLo_MAINNET_DEV_FUND_VIEWKEY           ""
+#define CryLo_MAINNET_DEV_FUND_SPENDKEY          ""
 #define CryLo_DEV_FUND_ADDRESS_TESTNET           "A1goGSHDZtkcB15sZuucudgrUSxUUGLaF1Pdpu6F2jqjZzHDCx5CDbyY5ag6qPQPfpDY2CJfiyNVCeNhrbQqfnia4q5JXZ9"
 
 #define CryLo_LIQUIDITY_FUND_FEE_BPS           25
