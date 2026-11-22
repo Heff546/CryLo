@@ -684,4 +684,95 @@ TEST(CryLoTestnetV21AdmissionFoundation, CompetingV21BranchReorganization) {
   EXPECT_EQ(cryptonote::TESTNET, chain.m_nettype);
   ASSERT_TRUE(chain.deinit());
 }
+
+TEST(CryLoTestnetV21AdmissionFoundation, IndependentTestnetDatabasesAgreeOnV21TreasuryBlocks) {
+  TemporaryTestnetDB a_tmp, b_tmp;
+  cryptonote::core a_core(nullptr), b_core(nullptr);
+  auto a_db = std::make_unique<cryptonote::BlockchainLMDB>();
+  auto b_db = std::make_unique<cryptonote::BlockchainLMDB>();
+  ASSERT_NO_THROW(a_db->open(a_tmp.path.string()));
+  ASSERT_NO_THROW(b_db->open(b_tmp.path.string()));
+  auto& a = a_core.get_blockchain_storage();
+  auto& b = b_core.get_blockchain_storage();
+  ASSERT_TRUE(a.init(a_db.release(), cryptonote::TESTNET, true, nullptr, 1));
+  ASSERT_TRUE(b.init(b_db.release(), cryptonote::TESTNET, true, nullptr, 1));
+
+  const auto set_forks = [](cryptonote::Blockchain& chain) {
+    auto* fork = new cryptonote::HardFork(*chain.m_db, 17, 0);
+    EXPECT_TRUE(fork->add_fork(17, 0, 0, 1700000000));
+    EXPECT_TRUE(fork->add_fork(20, 1, 0, 1700000001));
+    EXPECT_TRUE(fork->add_fork(HF_VERSION_TESTNET_TREASURY_PROOFS,
+                               2, 0, 1700000002));
+    auto* old = chain.m_hardfork;
+    chain.m_hardfork = fork;
+    chain.m_db->set_hard_fork(fork);
+    delete old;
+    fork->init();
+  };
+  set_forks(a);
+  set_forks(b);
+  ASSERT_EQ(cryptonote::TESTNET, a.m_nettype);
+  ASSERT_EQ(cryptonote::TESTNET, b.m_nettype);
+  ASSERT_EQ(a.get_tail_id(), b.get_tail_id());
+
+  const auto submit = [](cryptonote::Blockchain& chain,
+                         const cryptonote::block& block,
+                         cryptonote::block_verification_context& result) {
+    chain.prepare_handle_incoming_block_no_preprocess(
+        cryptonote::block_to_blob(block).size());
+    const bool ok = chain.add_new_block(block, result);
+    EXPECT_TRUE(chain.cleanup_handle_incoming_blocks());
+    return ok;
+  };
+  cryptonote::account_base miner, attacker;
+  miner.generate();
+  attacker.generate();
+
+  for (uint64_t expected_height = 1; expected_height <= 3; ++expected_height) {
+    cryptonote::block block{};
+    cryptonote::difficulty_type difficulty = 0;
+    uint64_t height = 0, reward = 0, seed_height = 0;
+    crypto::hash seed_hash = crypto::null_hash;
+    ASSERT_TRUE(a.create_block_template(
+        block, miner.get_keys().m_account_address,
+        difficulty, height, reward, cryptonote::blobdata{},
+        seed_height, seed_hash));
+    ASSERT_EQ(expected_height, height);
+    ASSERT_EQ(uint64_t{1}, uint64_t(difficulty));
+    ASSERT_EQ(expected_height == 1 ? 20 : HF_VERSION_TESTNET_TREASURY_PROOFS,
+              block.major_version);
+
+    if (expected_height == 2) {
+      auto redirected = block;
+      auto* gas = boost::get<cryptonote::txout_to_tagged_key>(
+          &redirected.miner_tx.vout.at(4).target);
+      ASSERT_NE(nullptr, gas);
+      gas->key = attacker.get_keys().m_account_address.m_spend_public_key;
+      redirected.miner_tx.invalidate_hashes();
+      for (auto* chain : {&a, &b}) {
+        cryptonote::block_verification_context rejected{};
+        EXPECT_FALSE(submit(*chain, redirected, rejected));
+        EXPECT_TRUE(rejected.m_verifivation_failed);
+        EXPECT_FALSE(rejected.m_added_to_main_chain);
+        EXPECT_EQ(expected_height, chain->get_current_blockchain_height());
+      }
+    }
+
+    for (auto* chain : {&a, &b}) {
+      cryptonote::block_verification_context accepted{};
+      ASSERT_TRUE(submit(*chain, block, accepted));
+      ASSERT_FALSE(accepted.m_verifivation_failed);
+      ASSERT_TRUE(accepted.m_added_to_main_chain);
+      EXPECT_EQ(expected_height + 1, chain->get_current_blockchain_height());
+      EXPECT_EQ(cryptonote::get_block_hash(block), chain->get_tail_id());
+    }
+    EXPECT_EQ(a.get_tail_id(), b.get_tail_id());
+  }
+  ASSERT_EQ(a.get_current_hard_fork_version(),
+            b.get_current_hard_fork_version());
+  EXPECT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS,
+            a.get_current_hard_fork_version());
+  ASSERT_TRUE(a.deinit());
+  ASSERT_TRUE(b.deinit());
+}
 } // namespace
