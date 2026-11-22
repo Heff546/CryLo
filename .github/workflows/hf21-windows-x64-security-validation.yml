@@ -138,6 +138,29 @@ jobs:
 
           cd "$1"
 
+          echo "===== ISOLATED OPENSSL CONST-CORRECTNESS TRIAL ====="
+          python - <<'PATCH'
+          from pathlib import Path
+
+          p = Path("contrib/epee/src/net_ssl.cpp")
+          s = p.read_text()
+
+          old = "X509_NAME *name = X509_get_subject_name(cert);"
+          new = "const X509_NAME *name = X509_get_subject_name(cert);"
+
+          assert s.count(old) == 2, "Unexpected OpenSSL source"
+          p.write_text(s.replace(old, new))
+
+          print("Applied exactly two const-correctness changes")
+          PATCH
+
+          test "$(git diff --name-only)" = "contrib/epee/src/net_ssl.cpp"
+          git diff --check
+          git diff -- contrib/epee/src/net_ssl.cpp
+
+          echo "NOTICE: Windows trial uses a two-line source overlay."
+          echo "NOTICE: HF21 upstream source remains unchanged."
+
           command -v ninja
           command -v gcc
           command -v g++
