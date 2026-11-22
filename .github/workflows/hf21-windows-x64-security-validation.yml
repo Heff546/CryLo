@@ -102,7 +102,7 @@ jobs:
           mingw-w64-x86_64-abseil-cpp 20260817.0
           mingw-w64-x86_64-zeromq 4.3.5
           mingw-w64-x86_64-libsodium 1.0.22
-          mingw-w64-x86_64-libiconv 1.19.1
+          mingw-w64-x86_64-libiconv 1.19
           mingw-w64-x86_64-icu 78.3
           VERSIONS
           mismatch=0
@@ -122,6 +122,44 @@ jobs:
           SH
           C:/msys64/usr/bin/bash.exe -lc \
             "bash '$(cygpath -u "$script")'"
+
+      - name: Build canonical Windows OpenSSL 3.5.9
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = 'scripts/release/crylo-release.js'
+          $temporary = 'scripts/release/.hf21-openssl-ci.cjs'
+          $marker = "const officialReleaseTag ="
+          $original = [IO.File]::ReadAllText($source)
+          $position = $original.IndexOf($marker)
+          if ($position -lt 0) {
+            throw "Canonical release entrypoint not found"
+          }
+          if ($original.IndexOf($marker, $position + 1) -ge 0) {
+            throw "Ambiguous canonical release entrypoint"
+          }
+          if (Test-Path $temporary) {
+            throw "Temporary builder already exists"
+          }
+          $script = $original.Substring(0, $position) +
+            "`nbuildWindowsPinnedOpenSSL(2);`n"
+          try {
+            [IO.File]::WriteAllText($temporary, $script)
+            & node $temporary
+            if ($LASTEXITCODE -ne 0) {
+              throw "Pinned Windows OpenSSL build failed"
+            }
+            if (!(Test-Path 'build/windows-deps/openssl-3.5.9/lib/libcrypto.a')) {
+              throw "Canonical static libcrypto missing"
+            }
+            if (!(Test-Path 'build/windows-deps/openssl-3.5.9/lib/libssl.a')) {
+              throw "Canonical static libssl missing"
+            }
+            Write-Host "PASS: Canonical CryLo OpenSSL 3.5.9 static libraries"
+          }
+          finally {
+            Remove-Item $temporary -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Configure compile and run native HF21 tests
         shell: bash
