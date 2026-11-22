@@ -1,0 +1,81 @@
+name: CryLo HF21 Linux x64 isolated security validation
+
+on:
+  push:
+    branches:
+      - security/hf21-linux-x64-validation-20261122
+    paths:
+      - .github/workflows/hf21-linux-x64-security-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  hf21-linux-x64:
+    name: HF21 native consensus and wallet regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout exact reviewed HF21 source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 04764f9221481095f6565e7a01761086fceff507
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify source and architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "x86_64"
+          test "$(git rev-parse HEAD)" = \
+            "04764f9221481095f6565e7a01761086fceff507"
+          echo "PASS: exact HF21 candidate on Linux x64"
+
+      - name: Install native test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config python3 \
+            protobuf-compiler libprotobuf-dev \
+            libusb-1.0-0-dev libhidapi-dev libudev-dev \
+            libzstd-dev nettle-dev libgmp-dev \
+            libminiupnpc-dev libssl-dev libboost-all-dev \
+            libzmq3-dev libsodium-dev libunbound-dev \
+            libreadline-dev libexpat1-dev zlib1g-dev \
+            libunwind-dev
+
+      - name: Configure native security tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/hf21-security \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=ON \
+            -DSTATIC=OFF \
+            -DARCH=default
+
+      - name: Compile native unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/hf21-security \
+            --target unit_tests --parallel 2
+
+      - name: Verify HF21 consensus and wallet behavior
+        shell: bash
+        env:
+          MONERO_RANDOMX_UMASK: "1"
+        run: |
+          set -euo pipefail
+          TEST="build/hf21-security/tests/unit_tests/unit_tests"
+          test -x "$TEST"
+
+          "$TEST" \
+            --gtest_filter='CryLoTestnetV21AdmissionFoundation.*:ringct.CryLoHF21*'
+
+          echo "PASS: Linux x64 HF21 admission and wallet regressions"
+          echo "No mining, network activation, signing, or release."
