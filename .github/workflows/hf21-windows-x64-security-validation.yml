@@ -138,8 +138,15 @@ jobs:
 
           cd "$1"
 
+          command -v ninja
+          command -v gcc
+          command -v g++
+          ninja --version
+
           cmake -S . -B build/hf21-windows-test \
-            -G "MinGW Makefiles" \
+            -G "Ninja" \
+            -DCMAKE_C_COMPILER=/mingw64/bin/gcc.exe \
+            -DCMAKE_CXX_COMPILER=/mingw64/bin/g++.exe \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=ON \
             -DSTATIC=OFF \
