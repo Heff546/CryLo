@@ -585,4 +585,102 @@ TEST(CryLoTestnetV21AdmissionFoundation, RevalidatesTreasuryProofsAfterV21Rollba
   EXPECT_EQ(cryptonote::TESTNET, chain.m_nettype);
   ASSERT_TRUE(chain.deinit());
 }
+
+TEST(CryLoTestnetV21AdmissionFoundation, CompetingV21BranchReorganization) {
+  TemporaryTestnetDB tmp;
+  cryptonote::core core(nullptr);
+  auto db = std::make_unique<cryptonote::BlockchainLMDB>();
+  ASSERT_NO_THROW(db->open(tmp.path.string()));
+  ASSERT_TRUE(db->is_open());
+  auto& chain = core.get_blockchain_storage();
+  ASSERT_TRUE(chain.init(db.release(), cryptonote::TESTNET, true, nullptr, 1));
+  auto* replacement = new cryptonote::HardFork(*chain.m_db, 17, 0);
+  ASSERT_TRUE(replacement->add_fork(17, 0, 0, 1700000000));
+  ASSERT_TRUE(replacement->add_fork(20, 1, 0, 1700000001));
+  ASSERT_TRUE(replacement->add_fork(HF_VERSION_TESTNET_TREASURY_PROOFS,
+                                    2, 0, 1700000002));
+  auto* old = chain.m_hardfork;
+  chain.m_hardfork = replacement;
+  chain.m_db->set_hard_fork(replacement);
+  delete old;
+  replacement->init();
+
+  cryptonote::account_base miner, other, attacker;
+  miner.generate();
+  other.generate();
+  attacker.generate();
+  const auto make = [&](cryptonote::block& block,
+                        const cryptonote::account_base& recipient,
+                        const crypto::hash* parent,
+                        uint64_t expected_height) {
+    cryptonote::difficulty_type difficulty = 0;
+    uint64_t height = 0, reward = 0, seed_height = 0;
+    crypto::hash seed_hash = crypto::null_hash;
+    const bool ok = chain.create_block_template(
+        block, parent, recipient.get_keys().m_account_address,
+        difficulty, height, reward, cryptonote::blobdata{},
+        seed_height, seed_hash);
+    EXPECT_EQ(expected_height, height);
+    EXPECT_EQ(1u, difficulty);
+    return ok;
+  };
+  const auto submit = [&](const cryptonote::block& block,
+                          cryptonote::block_verification_context& bvc) {
+    chain.prepare_handle_incoming_block_no_preprocess(
+        cryptonote::block_to_blob(block).size());
+    const bool ok = chain.add_new_block(block, bvc);
+    EXPECT_TRUE(chain.cleanup_handle_incoming_blocks());
+    return ok;
+  };
+
+  cryptonote::block v20{};
+  ASSERT_TRUE(make(v20, miner, nullptr, 1));
+  cryptonote::block_verification_context a{};
+  ASSERT_TRUE(submit(v20, a));
+  ASSERT_TRUE(a.m_added_to_main_chain);
+  const crypto::hash split = cryptonote::get_block_hash(v20);
+
+  cryptonote::block primary{};
+  ASSERT_TRUE(make(primary, miner, nullptr, 2));
+  ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS, primary.major_version);
+  cryptonote::block_verification_context bvc{};
+  ASSERT_TRUE(submit(primary, bvc));
+  ASSERT_TRUE(bvc.m_added_to_main_chain);
+  const crypto::hash original_tip = cryptonote::get_block_hash(primary);
+
+  cryptonote::block alternative{};
+  ASSERT_TRUE(make(alternative, other, &split, 2));
+  const crypto::hash alt_hash = cryptonote::get_block_hash(alternative);
+  ASSERT_NE(original_tip, alt_hash);
+  cryptonote::block_verification_context alt_bvc{};
+  ASSERT_TRUE(submit(alternative, alt_bvc));
+  EXPECT_FALSE(alt_bvc.m_added_to_main_chain);
+  EXPECT_FALSE(alt_bvc.m_verifivation_failed);
+  ASSERT_EQ(original_tip, chain.get_tail_id());
+
+  cryptonote::block next{};
+  ASSERT_TRUE(make(next, other, &alt_hash, 3));
+  ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS, next.major_version);
+  auto bad = next;
+  auto* gas = boost::get<cryptonote::txout_to_tagged_key>(
+      &bad.miner_tx.vout.at(4).target);
+  ASSERT_NE(nullptr, gas);
+  gas->key = attacker.get_keys().m_account_address.m_spend_public_key;
+  bad.miner_tx.invalidate_hashes();
+  cryptonote::block_verification_context rejected{};
+  EXPECT_FALSE(submit(bad, rejected));
+  EXPECT_TRUE(rejected.m_verifivation_failed);
+  EXPECT_EQ(original_tip, chain.get_tail_id());
+
+  cryptonote::block_verification_context winning{};
+  ASSERT_TRUE(submit(next, winning));
+  EXPECT_TRUE(winning.m_added_to_main_chain);
+  EXPECT_FALSE(winning.m_verifivation_failed);
+  EXPECT_EQ(4u, chain.get_current_blockchain_height());
+  EXPECT_EQ(cryptonote::get_block_hash(next), chain.get_tail_id());
+  EXPECT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS,
+            chain.get_current_hard_fork_version());
+  EXPECT_EQ(cryptonote::TESTNET, chain.m_nettype);
+  ASSERT_TRUE(chain.deinit());
+}
 } // namespace
