@@ -381,4 +381,75 @@ TEST(CryLoTestnetV21AdmissionFoundation, RejectsMalformedProofsInCompleteV21Bloc
     ASSERT_TRUE(chain.deinit());
   }
 }
+
+TEST(CryLoTestnetV21AdmissionFoundation, AcceptsV21FullBlocksWithNonce127And128) {
+  // Both sides of the nonce-length varint boundary must survive real
+  // template construction and full-block admission, not just parsing.
+  for (size_t nonce_size : {size_t{127}, size_t{128}}) {
+    SCOPED_TRACE(::testing::Message() << "nonce bytes " << nonce_size);
+    TemporaryTestnetDB tmp;
+    cryptonote::core core(nullptr);
+    auto db = std::make_unique<cryptonote::BlockchainLMDB>();
+    ASSERT_NO_THROW(db->open(tmp.path.string()));
+    ASSERT_TRUE(db->is_open());
+    cryptonote::Blockchain& chain = core.get_blockchain_storage();
+    ASSERT_TRUE(chain.init(db.release(), cryptonote::TESTNET, true, nullptr, 1));
+    ASSERT_EQ(cryptonote::TESTNET, chain.m_nettype);
+    auto* replacement = new cryptonote::HardFork(*chain.m_db, 17, 0);
+    ASSERT_TRUE(replacement->add_fork(17, 0, 0, 1700000000));
+    ASSERT_TRUE(replacement->add_fork(20, 1, 0, 1700000001));
+    ASSERT_TRUE(replacement->add_fork(HF_VERSION_TESTNET_TREASURY_PROOFS,
+                                      2, 0, 1700000002));
+    auto* previous = chain.m_hardfork;
+    chain.m_hardfork = replacement;
+    chain.m_db->set_hard_fork(replacement);
+    delete previous;
+    replacement->init();
+
+    cryptonote::account_base miner;
+    miner.generate();
+    const auto make_template = [&](cryptonote::block& block,
+                                   uint64_t& height,
+                                   const cryptonote::blobdata& nonce) {
+      cryptonote::difficulty_type difficulty = 0;
+      uint64_t expected_reward = 0, seed_height = 0;
+      crypto::hash seed_hash = crypto::null_hash;
+      const bool result = chain.create_block_template(
+          block, miner.get_keys().m_account_address, difficulty, height,
+          expected_reward, nonce, seed_height, seed_hash);
+      EXPECT_EQ(1u, difficulty);
+      return result;
+    };
+    const auto submit = [&](const cryptonote::block& block) {
+      chain.prepare_handle_incoming_block_no_preprocess(
+          cryptonote::block_to_blob(block).size());
+      cryptonote::block_verification_context bvc{};
+      const bool admitted = chain.add_new_block(block, bvc);
+      EXPECT_TRUE(chain.cleanup_handle_incoming_blocks());
+      EXPECT_TRUE(bvc.m_added_to_main_chain);
+      EXPECT_FALSE(bvc.m_verifivation_failed);
+      return admitted;
+    };
+    cryptonote::block legacy{};
+    uint64_t height = 0;
+    ASSERT_TRUE(make_template(legacy, height, cryptonote::blobdata{}));
+    ASSERT_EQ(1u, height);
+    ASSERT_EQ(20u, legacy.major_version);
+    ASSERT_TRUE(submit(legacy));
+    ASSERT_EQ(2u, chain.get_current_blockchain_height());
+    ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS,
+              chain.get_current_hard_fork_version());
+
+    cryptonote::block candidate{};
+    ASSERT_TRUE(make_template(
+        candidate, height, cryptonote::blobdata(nonce_size, 'N')));
+    ASSERT_EQ(2u, height);
+    ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS, candidate.major_version);
+    std::vector<cryptonote::tx_extra_field> fields;
+    ASSERT_TRUE(cryptonote::parse_tx_extra(candidate.miner_tx.extra, fields));
+    ASSERT_TRUE(submit(candidate));
+    EXPECT_EQ(3u, chain.get_current_blockchain_height());
+    ASSERT_TRUE(chain.deinit());
+  }
+}
 } // namespace
