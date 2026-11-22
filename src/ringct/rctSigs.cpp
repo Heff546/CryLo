@@ -1158,9 +1158,13 @@ namespace rct {
           switch (rct_config.bp_version)
           {
             case 0:
+            case 4:
+              // Legacy BP+ remains the wallet default before HF21.
               rv.type = RCTTypeBulletproofPlus;
               break;
-            case 4:
+            case 5:
+              // Full-commitments require an explicit HF21 wallet choice;
+              // never reinterpret existing bp_version=4 transactions.
               rv.type = RCTTypeBulletproofPlus_FullCommit;
               break;
             case 3:
