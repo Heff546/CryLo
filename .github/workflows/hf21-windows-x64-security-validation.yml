@@ -102,14 +102,20 @@ jobs:
           mingw-w64-x86_64-abseil-cpp 20260817.0
           mingw-w64-x86_64-zeromq 4.3.5
           mingw-w64-x86_64-libsodium 1.0.22
-          mingw-w64-x86_64-libiconv 1.19
+          mingw-w64-x86_64-libiconv 1.19.1
           mingw-w64-x86_64-icu 78.3
           VERSIONS
+          mismatch=0
           while read -r pkg expected; do
             actual="$(pacman -Q "$pkg" | awk '{print $2}' | sed -E 's/-[0-9]+$//')"
-            test "$actual" = "$expected" || { echo "ERROR: pinned $pkg: expected $expected found $actual"; exit 1; }
-            echo "VERIFIED: $pkg $actual"
+            if [ "$actual" != "$expected" ]; then
+              echo "ERROR: pinned $pkg: expected $expected found $actual"
+              mismatch=1
+            else
+              echo "VERIFIED: $pkg $actual"
+            fi
           done < versions.txt
+          test "$mismatch" -eq 0
           protoc --version
           cmake --version
           g++ --version
