@@ -452,4 +452,39 @@ TEST(CryLoTestnetV21AdmissionFoundation, AcceptsV21FullBlocksWithNonce127And128)
     ASSERT_TRUE(chain.deinit());
   }
 }
+
+TEST(CryLoTestnetV21AdmissionFoundation, BulletproofPlusVersionGatesAtHF21) {
+  // Tests only consensus output/type gating. This deliberately does NOT
+  // establish that a transaction has a valid RingCT signature or can
+  // be relayed through a real mempool.
+  cryptonote::transaction tx{};
+  tx.version = 2;
+  cryptonote::account_base recipient;
+  recipient.generate();
+  cryptonote::txout_to_tagged_key target{};
+  target.key = recipient.get_keys().m_account_address.m_spend_public_key;
+  tx.vout.push_back(cryptonote::tx_out{});
+  tx.vout.back().amount = 0;
+  tx.vout.back().target = target;
+
+  cryptonote::tx_verification_context tvc{};
+  tx.rct_signatures.type = rct::RCTTypeBulletproofPlus_FullCommit;
+  EXPECT_FALSE(cryptonote::Blockchain::check_tx_outputs(tx, tvc, 20));
+  EXPECT_TRUE(tvc.m_invalid_output);
+
+  tvc = {};
+  EXPECT_TRUE(cryptonote::Blockchain::check_tx_outputs(tx, tvc, 21));
+  EXPECT_FALSE(tvc.m_invalid_output);
+
+  tx.rct_signatures.type = rct::RCTTypeBulletproofPlus;
+  tvc = {};
+  EXPECT_TRUE(cryptonote::Blockchain::check_tx_outputs(tx, tvc, 20));
+  EXPECT_FALSE(tvc.m_invalid_output);
+  tvc = {};
+  EXPECT_TRUE(cryptonote::Blockchain::check_tx_outputs(tx, tvc, 21));
+  EXPECT_FALSE(tvc.m_invalid_output);
+  tvc = {};
+  EXPECT_FALSE(cryptonote::Blockchain::check_tx_outputs(tx, tvc, 22));
+  EXPECT_TRUE(tvc.m_invalid_output);
+}
 } // namespace
