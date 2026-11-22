@@ -36,6 +36,19 @@ The **next incremental native fixture**, `tests/unit_tests/crylo_testnet_block_v
 
 The upstream `core_tests` generator currently hard-codes `MAINNET` in relevant coinbase-creation paths and cannot by itself certify this **TESTNET-only** consensus change. A Testnet full-block-admission harness with a strictly isolated fork configuration is still required.
 
+## Latest Pi1 inventory and narrow next gate (November 21, 2026)
+
+This is not a general rewrite of Testnet. It fixes only the known **Liquidity and Gas coinbase recipient redirection weakness**, and replaces Dev's historical private-view-key-based check with a public proof **after a future fork**.
+
+- The first candidate passed **8** structural checks, **37** native proof checks, **57** existing parser/hardfork/emission regressions, plus later **9** structural and **47** native production-coinbase-validator checks on SHA `32f3ef87aea285409d360e50f6bddd05e93c0479`. These are overlapping test runs, not 113 unique security invariants.
+- Pi1 original chain contains **2,778 blocks (0–2777)**. An earlier Pi1 ABI-check copy contains **2,958 blocks (0–2957)**. They were inspected from separate byte-for-byte verified copies. Both originals remained stopped and unchanged.
+- Neither Pi1 copy contains corrected history at **2958 or 2959**. Pi2 is not an up-to-date anchor; the user's prior canonical anchor ran on Google VM. Do not promote the Pi1 ABI-test copy to canonical merely from its height.
+- `tests/launch/compare_testnet_lmdb_blocks.py` uses `mdb_dump -s blocks` to compare the shared prefix **read-only**; it reports byte-for-byte content match, not network canonicality. It does not require a daemon.
+- Added six unexecuted nonce/legacy cases to the actual Testnet coinbase-validator suite: nonce lengths 127/128/255 accepted, 256 rejected, signed-nonce tamper rejected, historical v20 Gas destination check remains legacy. These changes **must be compiled and executed** before counting as passes.
+- Do not require Pi2 setup or Mainnet wallets. Google VM authoritative history is only needed for the **final replay/canonical-chain gate**, after local tests complete.
+
+**Single focused next step:** rerun source plus incremental native Testnet validator suites against the current PR head and run the prefix comparison against the two existing Pi1 **audit copies**. Afterwards, retrieve a consistent, stopped Google VM anchor snapshot for 2958+ if present, verify identity against the matching 0–2957 Pi1 chain, and perform real full-block admission/replay. Stop any activation or merge until those results are recorded.
+
 ## Risks and gates still OPEN
 
 **The initial candidate compiled and passed 37 proof-helper native tests, but the new direct-validator fixture has NOT yet been compiled or executed.** Adapted code from another chain domain is not automatically correct. Native C++ compilation on Pi1, public recipient cryptographic validity, adversarial proof coverage, and real full-block tests are mandatory; source-only inspection does not certify the proof.
