@@ -111,3 +111,19 @@ test('the actual Blockchain validator is exercised against an in-memory Testnet 
   assert.ok(file('tests/unit_tests/CMakeLists.txt')
       .includes('crylo_testnet_block_validator.cpp'));
 });
+
+test('nonce boundary and historical chain audit gates remain covered', () => {
+  const native = file('tests/unit_tests/crylo_testnet_block_validator.cpp');
+  for (const caseName of [
+    'CanonicalNonceLength127Accepted',
+    'CanonicalNonceLength128Accepted',
+    'CanonicalNonceMaximum255Accepted',
+    'OversizeNonce256Rejected',
+    'TamperedSignedNonceRejected',
+    'LegacyV20GasRecipientGapPreserved'
+  ]) assert.ok(native.includes(caseName), 'Missing native case: ' + caseName);
+  const audit = file('tests/launch/compare_testnet_lmdb_blocks.py');
+  assert.ok(audit.includes('mdb_dump'));
+  assert.ok(audit.includes('PASS: all'));
+  assert.ok(audit.includes('not canonicality.'));
+});
