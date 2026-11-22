@@ -125,8 +125,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p build
+          canonical_toolchain="$GITHUB_WORKSPACE/contrib/depends/${{ matrix.host }}/share/toolchain.cmake"
+          test -f "$canonical_toolchain"
+          test "$(grep -c '^SET(BUILD_TESTS @build_tests@)' contrib/depends/toolchain.cmake.in)" -eq 1
+          test_toolchain="$PWD/build/hf21-macos-ci-toolchain.cmake"
+          printf 'include("%s")\nset(BUILD_TESTS ON)\n' "$canonical_toolchain" > "$test_toolchain"
+          echo "NOTICE: CI-only wrapper retains canonical release toolchain and enables native tests"
           cmake -S . -B "build/${{ matrix.name }}-hf21" \
-            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/contrib/depends/${{ matrix.host }}/share/toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$test_toolchain" \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TAG=${{ matrix.name }} \
             -DBUILD_TESTS=ON \
@@ -142,7 +149,8 @@ jobs:
           cache="build/${{ matrix.name }}-hf21/CMakeCache.txt"
           grep -Fxq 'STATIC:BOOL=ON' "$cache"
           grep -Fxq 'BUILD_TESTS:BOOL=ON' "$cache"
-          echo "PASS: native test configuration mirrors macOS release"
+          cmake --build "build/${{ matrix.name }}-hf21" --target help | grep -F 'unit_tests'
+          echo "PASS: canonical macOS release configuration with CI-only tests enabled"
 
       - name: Build and run HF21 native admission and RingCT regression
         shell: bash
@@ -151,7 +159,6 @@ jobs:
         run: |
           set -euo pipefail
           build="build/${{ matrix.name }}-hf21"
-          cmake --build "$build" --parallel 2 --target googletest
           cmake --build "$build" --parallel 2 --target unit_tests
           exe="$build/tests/unit_tests/unit_tests"
           test -x "$exe"
