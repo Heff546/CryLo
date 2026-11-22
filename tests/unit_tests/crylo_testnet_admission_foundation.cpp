@@ -46,4 +46,28 @@ TEST(CryLoTestnetV21AdmissionFoundation, RealTestnetGenesisInDisposableLMDB) {
 
   ASSERT_TRUE(chain.deinit());
 }
+
+TEST(CryLoTestnetV21AdmissionFoundation, FutureForkIsLocalAndPreservesCurrentSchedule) {
+  TemporaryTestnetDB tmp;
+  cryptonote::core core(nullptr);
+  auto db = std::make_unique<cryptonote::BlockchainLMDB>();
+  ASSERT_NO_THROW(db->open(tmp.path.string()));
+  ASSERT_TRUE(db->is_open());
+
+  cryptonote::Blockchain &chain = core.get_blockchain_storage();
+  ASSERT_TRUE(chain.init(db.release(), cryptonote::TESTNET, true, nullptr, 1));
+  ASSERT_EQ(cryptonote::TESTNET, chain.m_nettype);
+  ASSERT_EQ(20u, chain.get_ideal_hard_fork_version(2100));
+
+  // Test-only mutation of this in-memory HardFork instance. Nothing changes
+  // the compiled hardfork table, live chain, or production configuration.
+  ASSERT_TRUE(chain.m_hardfork->add_fork(
+      HF_VERSION_TESTNET_TREASURY_PROOFS, 2101, 1, 1739739601));
+  EXPECT_EQ(20u, chain.get_ideal_hard_fork_version(2100));
+  EXPECT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS,
+            chain.get_ideal_hard_fork_version(2101));
+  EXPECT_EQ(cryptonote::TESTNET, chain.m_nettype);
+
+  ASSERT_TRUE(chain.deinit());
+}
 } // namespace
