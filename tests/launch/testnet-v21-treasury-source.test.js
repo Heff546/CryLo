@@ -98,3 +98,16 @@ test('native adversarial proof suite is registered for compilation', () => {
   assert.ok((testfile.match(/TEST_F\(/g) || []).length >= 25);
   assert.ok(testfile.includes('ExistingV20TransactionHasNoRecipientProof'));
 });
+
+test('the actual Blockchain validator is exercised against an in-memory Testnet DB', () => {
+  const native = file('tests/unit_tests/crylo_testnet_block_validator.cpp');
+  assert.ok(native.includes('chain().validate_miner_transaction('));
+  assert.ok(native.includes('chain.m_nettype = cryptonote::TESTNET'));
+  assert.ok(native.includes('cryptonote::BaseTestDB'));
+  assert.ok(native.includes('LegacyV20RecipientGapStillRequiresFutureFork'));
+  assert.ok(native.includes('RedirectedDevelopmentOutputRejected'));
+  assert.ok(native.includes('RedirectedLiquidityOutputRejected'));
+  assert.ok(native.includes('RedirectedGasTreasuryOutputRejected'));
+  assert.ok(file('tests/unit_tests/CMakeLists.txt')
+      .includes('crylo_testnet_block_validator.cpp'));
+});
