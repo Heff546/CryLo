@@ -8,6 +8,9 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <algorithm>
+#include <vector>
+#include "cryptonote_core/crylo_testnet_gas_treasury_proof.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/account.h"
 #include "blockchain_db/lmdb/db_lmdb.h"
@@ -230,6 +233,126 @@ TEST(CryLoTestnetV21AdmissionFoundation, RejectsRedirectedTreasuryOutputsInCompl
     EXPECT_FALSE(accepted.m_verifivation_failed);
     EXPECT_EQ(3u, chain.get_current_blockchain_height());
     EXPECT_EQ(cryptonote::TESTNET, chain.m_nettype);
+    ASSERT_TRUE(chain.deinit());
+  }
+}
+
+TEST(CryLoTestnetV21AdmissionFoundation, RejectsMalformedProofsInCompleteV21Blocks) {
+  constexpr size_t n = cryptonote::CRYLO_TESTNET_TREASURY_PROOF_FIELD_BYTES;
+  // Separate disposable databases ensure no rejected candidate contaminates
+  // the next case. A valid v21 positive control follows every rejection.
+  for (int variant = 0; variant < 9; ++variant) {
+    SCOPED_TRACE(::testing::Message() << "malformed proof variant " << variant);
+    TemporaryTestnetDB tmp;
+    cryptonote::core core(nullptr);
+    auto db = std::make_unique<cryptonote::BlockchainLMDB>();
+    ASSERT_NO_THROW(db->open(tmp.path.string()));
+    ASSERT_TRUE(db->is_open());
+    cryptonote::Blockchain& chain = core.get_blockchain_storage();
+    ASSERT_TRUE(chain.init(db.release(), cryptonote::TESTNET, true, nullptr, 1));
+    ASSERT_EQ(cryptonote::TESTNET, chain.m_nettype);
+
+    auto* replacement = new cryptonote::HardFork(*chain.m_db, 17, 0);
+    ASSERT_TRUE(replacement->add_fork(17, 0, 0, 1700000000));
+    ASSERT_TRUE(replacement->add_fork(20, 1, 0, 1700000001));
+    ASSERT_TRUE(replacement->add_fork(HF_VERSION_TESTNET_TREASURY_PROOFS,
+                                      2, 0, 1700000002));
+    auto* previous = chain.m_hardfork;
+    chain.m_hardfork = replacement;
+    chain.m_db->set_hard_fork(replacement);
+    delete previous;
+    replacement->init();
+
+    cryptonote::account_base miner;
+    miner.generate();
+    const auto make_template = [&](cryptonote::block& block, uint64_t& height) {
+      cryptonote::difficulty_type difficulty = 0;
+      uint64_t expected_reward = 0, seed_height = 0;
+      crypto::hash seed_hash = crypto::null_hash;
+      const bool result = chain.create_block_template(
+          block, miner.get_keys().m_account_address, difficulty, height,
+          expected_reward, cryptonote::blobdata{}, seed_height, seed_hash);
+      EXPECT_EQ(1u, difficulty);
+      return result;
+    };
+    const auto submit = [&](const cryptonote::block& block,
+                            cryptonote::block_verification_context& bvc) {
+      chain.prepare_handle_incoming_block_no_preprocess(
+          cryptonote::block_to_blob(block).size());
+      const bool admitted = chain.add_new_block(block, bvc);
+      EXPECT_TRUE(chain.cleanup_handle_incoming_blocks());
+      return admitted;
+    };
+
+    cryptonote::block legacy{};
+    uint64_t height = 0;
+    ASSERT_TRUE(make_template(legacy, height));
+    ASSERT_EQ(1u, height);
+    ASSERT_EQ(20u, legacy.major_version);
+    cryptonote::block_verification_context first{};
+    ASSERT_TRUE(submit(legacy, first));
+    ASSERT_TRUE(first.m_added_to_main_chain);
+    ASSERT_EQ(2u, chain.get_current_blockchain_height());
+    ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS,
+              chain.get_current_hard_fork_version());
+
+    cryptonote::block valid{};
+    ASSERT_TRUE(make_template(valid, height));
+    ASSERT_EQ(2u, height);
+    ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS, valid.major_version);
+    ASSERT_GE(valid.miner_tx.extra.size(), 3 * n);
+    cryptonote::block invalid = valid;
+    auto& extra = invalid.miner_tx.extra;
+    const size_t start = extra.size() - 3 * n;
+    switch (variant) {
+      case 0: // remove Development proof
+        extra.erase(extra.begin() + start, extra.begin() + start + n);
+        break;
+      case 1: // remove Liquidity proof
+        extra.erase(extra.begin() + start + n, extra.begin() + start + 2 * n);
+        break;
+      case 2: // remove Gas proof
+        extra.resize(extra.size() - n);
+        break;
+      case 3: // duplicate last proof
+        extra.insert(extra.end(), extra.end() - n, extra.end());
+        break;
+      case 4: // swap proof order
+        std::swap_ranges(extra.begin() + start,
+                         extra.begin() + start + n,
+                         extra.begin() + start + n);
+        break;
+      case 5: // corrupt Liquidity signature
+        extra[start + n + 2 + sizeof(crypto::public_key)] ^= 0x01;
+        break;
+      case 6: // corrupt Development shared point
+        extra[start + 2] ^= 0x01;
+        break;
+      case 7: // append unsigned trailing byte
+        extra.push_back(0x00);
+        break;
+      case 8: { // change signed coinbase generation height
+        auto* generation =
+            boost::get<cryptonote::txin_gen>(&invalid.miner_tx.vin.at(0));
+        ASSERT_NE(nullptr, generation);
+        ++generation->height;
+        break;
+      }
+    }
+    invalid.miner_tx.invalidate_hashes();
+    ASSERT_NE(cryptonote::get_block_hash(valid),
+              cryptonote::get_block_hash(invalid));
+    cryptonote::block_verification_context rejected{};
+    EXPECT_FALSE(submit(invalid, rejected));
+    EXPECT_TRUE(rejected.m_verifivation_failed);
+    EXPECT_FALSE(rejected.m_added_to_main_chain);
+    EXPECT_EQ(2u, chain.get_current_blockchain_height());
+
+    cryptonote::block_verification_context accepted{};
+    ASSERT_TRUE(submit(valid, accepted));
+    EXPECT_TRUE(accepted.m_added_to_main_chain);
+    EXPECT_FALSE(accepted.m_verifivation_failed);
+    EXPECT_EQ(3u, chain.get_current_blockchain_height());
     ASSERT_TRUE(chain.deinit());
   }
 }
