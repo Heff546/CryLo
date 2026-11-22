@@ -241,7 +241,7 @@ TEST(CryLoTestnetV21AdmissionFoundation, RejectsMalformedProofsInCompleteV21Bloc
   constexpr size_t n = cryptonote::CRYLO_TESTNET_TREASURY_PROOF_FIELD_BYTES;
   // Separate disposable databases ensure no rejected candidate contaminates
   // the next case. A valid v21 positive control follows every rejection.
-  for (int variant = 0; variant < 9; ++variant) {
+  for (int variant = 0; variant < 15; ++variant) {
     SCOPED_TRACE(::testing::Message() << "malformed proof variant " << variant);
     TemporaryTestnetDB tmp;
     cryptonote::core core(nullptr);
@@ -340,6 +340,29 @@ TEST(CryLoTestnetV21AdmissionFoundation, RejectsMalformedProofsInCompleteV21Bloc
         ++generation->height;
         break;
       }
+      case 9: // alter Development amount, leave other outputs unchanged
+        ++invalid.miner_tx.vout.at(2).amount;
+        break;
+      case 10: // alter Liquidity amount
+        ++invalid.miner_tx.vout.at(3).amount;
+        break;
+      case 11: // alter Gas Treasury amount
+        ++invalid.miner_tx.vout.at(4).amount;
+        break;
+      case 12: { // alter Gas recipient view tag without changing output key
+        auto* target = boost::get<cryptonote::txout_to_tagged_key>(
+            &invalid.miner_tx.vout.at(4).target);
+        ASSERT_NE(nullptr, target);
+        target->view_tag.data ^= 1;
+        break;
+      }
+      case 13: // alter the signed public transaction key in tx.extra
+        ASSERT_GE(extra.size(), 1 + sizeof(crypto::public_key));
+        extra[1] ^= 1;
+        break;
+      case 14: // malformed canonical proof-field length
+        extra[start + n + 1] = 95;
+        break;
     }
     invalid.miner_tx.invalidate_hashes();
     ASSERT_NE(cryptonote::get_block_hash(valid),
