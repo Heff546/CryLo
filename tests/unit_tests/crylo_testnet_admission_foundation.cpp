@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <cstring>
 #include <algorithm>
 #include <vector>
 #include "cryptonote_core/crylo_testnet_gas_treasury_proof.h"
@@ -923,12 +924,12 @@ TEST(CryLoTestnetV21AdmissionFoundation, RejectsSignedFullCommitWithUnindexedRin
   ASSERT_TRUE(chain.deinit());
 }
 
-// Deferred integration test: mined-only test history has not produced a
-// mature 16-member same-denomination ring. Keep this visible as unfinished
-// coverage, but do not fail the proven treasury/wallet regression suite.
-// Reenable only after a realistic indexed-output funding fixture is available.
-TEST(CryLoTestnetV21AdmissionFoundation, DISABLED_AcceptsMatureIndexedFullCommitAndRejectsDoubleSpend) {
-  // Expensive positive integration test. A separate real TESTNET LMDB
+// Positive FullCommit integration regression using a disposable TESTNET LMDB.
+// Controlled HF18 coinbases provide 22 real, indexed, miner-owned outputs.
+// Verify signed mempool admission and conflicting-spend rejection.
+// No fabricated database outputs or production consensus changes.
+TEST(CryLoTestnetV21AdmissionFoundation, AcceptsMatureIndexedFullCommitAndRejectsDoubleSpend) {
+  // Positive integration test. A disposable real TESTNET LMDB
   // produces genuine miner-owned amount-indexed output rings and waits
   // for the 288-block coinbase unlock. No synthetic DB rows, fakechain
   // test_options, or consensus bypasses.
@@ -941,9 +942,9 @@ TEST(CryLoTestnetV21AdmissionFoundation, DISABLED_AcceptsMatureIndexedFullCommit
   auto* fork = new cryptonote::HardFork(*chain.m_db, 17, 0);
   ASSERT_TRUE(fork->add_fork(17, 0, 0, 1700000000));
   ASSERT_TRUE(fork->add_fork(18, 1, 0, 1700000001));
-  ASSERT_TRUE(fork->add_fork(20, 359, 0, 1700000002));
+  ASSERT_TRUE(fork->add_fork(20, 320, 0, 1700000002));
   ASSERT_TRUE(fork->add_fork(HF_VERSION_TESTNET_TREASURY_PROOFS,
-                             360, 0, 1700000003));
+                             321, 0, 1700000003));
   auto* old = chain.m_hardfork;
   chain.m_hardfork = fork;
   chain.m_db->set_hard_fork(fork);
@@ -954,7 +955,7 @@ TEST(CryLoTestnetV21AdmissionFoundation, DISABLED_AcceptsMatureIndexedFullCommit
   miner.generate();
   recipient.generate();
   std::vector<cryptonote::block> early_funding;
-  for (uint64_t expected_height = 1; expected_height <= 360; ++expected_height) {
+  for (uint64_t expected_height = 1; expected_height <= 321; ++expected_height) {
     cryptonote::block candidate{};
     cryptonote::difficulty_type difficulty = 0;
     uint64_t height = 0, reward = 0, seed_height = 0;
@@ -965,7 +966,46 @@ TEST(CryLoTestnetV21AdmissionFoundation, DISABLED_AcceptsMatureIndexedFullCommit
         seed_height, seed_hash)) << "template at " << expected_height;
     ASSERT_EQ(expected_height, height);
     ASSERT_EQ(uint64_t{1}, uint64_t(difficulty));
-    if (expected_height <= 72) early_funding.push_back(candidate);
+    // Test-only valid HF18 coinbase construction. Preserve the total
+    // reward while making 22 genuine miner-owned output-0 denominations
+    // identical. No fabricated blockchain database rows or maturity bypass.
+    if (expected_height <= 22) {
+      ASSERT_EQ(uint8_t{18}, candidate.major_version);
+      ASSERT_GE(candidate.miner_tx.vout.size(), 1u);
+
+      constexpr uint64_t ring_amount = 100000000000ULL;
+      const uint64_t original = candidate.miner_tx.vout[0].amount;
+      ASSERT_GT(original, ring_amount);
+
+      const auto tx_pub =
+          cryptonote::get_tx_pub_key_from_extra(candidate.miner_tx);
+      crypto::key_derivation derivation{};
+      ASSERT_TRUE(crypto::generate_key_derivation(
+          tx_pub, miner.get_keys().m_view_secret_key, derivation));
+
+      const size_t new_index = candidate.miner_tx.vout.size();
+      crypto::public_key extra_pub{};
+      ASSERT_TRUE(crypto::derive_public_key(
+          derivation, new_index,
+          miner.get_keys().m_account_address.m_spend_public_key,
+          extra_pub));
+
+      crypto::view_tag extra_tag{};
+      const bool tagged =
+          candidate.major_version >= HF_VERSION_VIEW_TAGS;
+      if (tagged)
+        crypto::derive_view_tag(derivation, new_index, extra_tag);
+
+      cryptonote::tx_out remainder{};
+      cryptonote::set_tx_out(
+          original - ring_amount, extra_pub, tagged, extra_tag, remainder);
+
+      candidate.miner_tx.vout[0].amount = ring_amount;
+      candidate.miner_tx.vout.push_back(remainder);
+      candidate.miner_tx.invalidate_hashes();
+
+      early_funding.push_back(candidate);
+    }
     chain.prepare_handle_incoming_block_no_preprocess(
         cryptonote::block_to_blob(candidate).size());
     cryptonote::block_verification_context bvc{};
@@ -976,11 +1016,11 @@ TEST(CryLoTestnetV21AdmissionFoundation, DISABLED_AcceptsMatureIndexedFullCommit
   }
   ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS,
             chain.get_current_hard_fork_version());
-  ASSERT_EQ(361u, chain.get_current_blockchain_height());
+  ASSERT_EQ(322u, chain.get_current_blockchain_height());
 
-  // A height-360 chain contains 72+ mature modern miner coinbases,
-  // not merely the 14 available in the old 302-block fixture.
-  // Search all early miner-owned outputs and demand a real 16-member
+  // This controlled HF18 fixture provides 22 real indexed outputs
+  // with the same denomination, matured before HF21 admission.
+  // Search all early miner-owned outputs and demand a real 22-member
   // amount-indexed ring. Never fabricate output rows or skip maturity.
   cryptonote::tx_source_entry source{};
   bool found = false;
@@ -1009,13 +1049,18 @@ TEST(CryLoTestnetV21AdmissionFoundation, DISABLED_AcceptsMatureIndexedFullCommit
       std::vector<uint64_t> indices;
       uint64_t real_index = 0;
       bool real_included = false;
-      const uint64_t count = chain.m_db->get_num_outputs(out.amount);
+      // Version-2 coinbase outputs are indexed in amount bucket zero.
+      // Their real amount is represented by an identity-mask commitment.
+      const uint64_t count = chain.m_db->get_num_outputs(0);
       for (uint64_t index = 0; index < count; ++index) {
-        const auto data = chain.m_db->get_output_key(out.amount, index);
+        const auto data = chain.m_db->get_output_key(0, index);
+        if (std::memcmp(data.commitment.bytes,
+                        rct::zeroCommit(out.amount).bytes, 32) != 0)
+          continue;
         if (data.unlock_time > chain.get_current_blockchain_height())
           continue;
         const auto reference =
-            chain.m_db->get_output_tx_and_index(out.amount, index);
+            chain.m_db->get_output_tx_and_index(0, index);
         if (reference.first ==
                 cryptonote::get_transaction_hash(funding.miner_tx) &&
             reference.second == output_index) {
@@ -1029,32 +1074,34 @@ TEST(CryLoTestnetV21AdmissionFoundation, DISABLED_AcceptsMatureIndexedFullCommit
         best_mature_ring_size = indices.size();
         best_amount = out.amount;
       }
-      if (indices.size() < 16) continue;
+      if (indices.size() < 22) continue;
       std::vector<uint64_t> selected{real_index};
       for (const uint64_t index : indices)
-        if (index != real_index && selected.size() < 16)
+        if (index != real_index && selected.size() < 22)
           selected.push_back(index);
-      if (selected.size() != 16) continue;
+      if (selected.size() != 22) continue;
       std::sort(selected.begin(), selected.end());
       source.amount = out.amount;
       source.real_out_tx_key = funding_pub;
       source.real_output_in_tx_index = output_index;
-      source.rct = false;
+      source.rct = true;
       source.mask = rct::identity();
       for (size_t n = 0; n < selected.size(); ++n) {
         const auto data =
-            chain.m_db->get_output_key(out.amount, selected[n]);
+            chain.m_db->get_output_key(0, selected[n]);
+        ASSERT_EQ(data.commitment, rct::zeroCommit(out.amount));
         source.push_output(selected[n], data.pubkey, out.amount);
         if (selected[n] == real_index) source.real_output = n;
       }
       found = true;
     }
   }
+
   if (!found)
     MINFO("CRYLO_V21_RING_DIAGNOSTIC best_mature_ring="
           << best_mature_ring_size << " amount=" << best_amount
           << " funding_candidates=" << early_funding.size());
-  ASSERT_TRUE(found) << "No mature 16-output same-denomination miner ring "
+  ASSERT_TRUE(found) << "No mature 22-output same-denomination miner ring "
                      << "in the actual v18-to-v21 LMDB; do not fake inputs";
 
   const auto construct = [&](cryptonote::transaction& tx) {
@@ -1083,8 +1130,9 @@ TEST(CryLoTestnetV21AdmissionFoundation, DISABLED_AcceptsMatureIndexedFullCommit
   cryptonote::tx_memory_pool pool(chain);
   ASSERT_TRUE(pool.init());
   cryptonote::tx_verification_context accepted{};
-  ASSERT_TRUE(pool.add_tx(first, accepted, cryptonote::relay_method::local,
-                          false, HF_VERSION_TESTNET_TREASURY_PROOFS));
+  ASSERT_TRUE(pool.add_tx(
+      first, accepted, cryptonote::relay_method::local,
+      false, HF_VERSION_TESTNET_TREASURY_PROOFS));
   ASSERT_FALSE(accepted.m_verifivation_failed);
   ASSERT_TRUE(accepted.m_added_to_pool);
   ASSERT_EQ(1u, pool.get_transactions_count(true));
