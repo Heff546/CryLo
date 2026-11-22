@@ -12207,6 +12207,22 @@ void wallet2::cold_sign_tx(const std::vector<pending_tx>& ptx_vector, signed_tx_
       use_fork_rules(HF_VERSION_SMALLER_BP, -10) ? 2 : 1;
   aux_data.hard_fork = get_current_hard_fork();
   dev_cold->tx_sign(&wallet_shim, txs, exported_txs, aux_data);
+  // A device can accept the signing request yet return a transaction type
+  // unsupported at this fork. Fail closed before exposing or relaying the
+  // signed set; do not silently downgrade HF21 FullCommit to legacy BP+.
+  CHECK_AND_ASSERT_THROW_MES(exported_txs.ptx.size() == txs.txes.size(),
+      "Cold signer returned an unexpected number of transactions");
+  if (aux_data.bp_version == 5)
+  {
+    for (const auto &signed_ptx : exported_txs.ptx)
+    {
+      CHECK_AND_ASSERT_THROW_MES(
+          signed_ptx.tx.version == 2 &&
+          signed_ptx.tx.rct_signatures.type ==
+              rct::RCTTypeBulletproofPlus_FullCommit,
+          "Cold signer did not return an HF21 FullCommit transaction");
+    }
+  }
   tx_device_aux = aux_data.tx_device_aux;
 
   MDEBUG("Signed tx data from hw: " << exported_txs.ptx.size() << " transactions");
