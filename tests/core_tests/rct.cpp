@@ -95,6 +95,35 @@ bool gen_rct_tx_validation_base::generate_with_full(std::vector<test_event_entry
     sources.resize(1);
     tx_source_entry& src = sources.back();
 
+    // CryLo treasury outputs and emission differ from the historical
+    // Monero fixture assumptions. Report actual coinbase ownership and
+    // amounts before attempting the original hard-coded spend.
+    {
+      const auto& coinbase = blocks[n].miner_tx;
+      const crypto::public_key tx_pub =
+          cryptonote::get_tx_pub_key_from_extra(coinbase);
+      crypto::key_derivation derivation{};
+      CHECK_AND_ASSERT_MES(crypto::generate_key_derivation(
+          tx_pub, miner_accounts[n].get_keys().m_view_secret_key,
+          derivation), false, "failed to derive test miner coinbase ownership");
+      for (size_t output_index = 0; output_index < coinbase.vout.size(); ++output_index)
+      {
+        crypto::public_key derived{};
+        crypto::public_key actual{};
+        const bool derived_ok = crypto::derive_public_key(
+            derivation, output_index,
+            miner_accounts[n].get_keys().m_account_address.m_spend_public_key,
+            derived);
+        const bool actual_ok = cryptonote::get_output_public_key(
+            coinbase.vout[output_index], actual);
+        MINFO("CRYLO_RCT_FIXTURE_OUTPUT miner=" << n
+            << " index=" << output_index
+            << " amount=" << coinbase.vout[output_index].amount
+            << " owned_by_miner="
+            << (derived_ok && actual_ok && derived == actual));
+      }
+    }
+
     const size_t index_in_tx = 5;
     src.amount = 30000000000000;
     for (int m = 0; m < 4; ++m) {
