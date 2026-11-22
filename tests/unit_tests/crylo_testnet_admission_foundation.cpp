@@ -314,9 +314,11 @@ TEST(CryLoTestnetV21AdmissionFoundation, RejectsMalformedProofsInCompleteV21Bloc
       case 2: // remove Gas proof
         extra.resize(extra.size() - n);
         break;
-      case 3: // duplicate last proof
-        extra.insert(extra.end(), extra.end() - n, extra.end());
+      case 3: { // duplicate last proof
+        const std::vector<uint8_t> duplicate(extra.end() - n, extra.end());
+        extra.insert(extra.end(), duplicate.begin(), duplicate.end());
         break;
+      }
       case 4: // swap proof order
         std::swap_ranges(extra.begin() + start,
                          extra.begin() + start + n,
