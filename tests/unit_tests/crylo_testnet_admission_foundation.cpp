@@ -1,13 +1,15 @@
 // Copyright (c) 2026 CryLo contributors
 // GPL-3.0-or-later
 //
-// Isolated precursor to Testnet v21 treasury full-block admission tests.
-// Uses a fresh disposable LMDB database and the real Testnet genesis.
-// Does NOT simulate v21 or certify treasury full-block acceptance.
+// Testnet treasury full-block admission tests on disposable LMDB databases.
+// No live network, persisted wallet data, or production fork schedule changes.
 #include "gtest/gtest.h"
 #include <boost/filesystem.hpp>
 #include <memory>
 #include <string>
+#include <cstdint>
+#include "cryptonote_basic/cryptonote_format_utils.h"
+#include "cryptonote_basic/account.h"
 #include "blockchain_db/lmdb/db_lmdb.h"
 #define IN_UNIT_TESTS
 #include "cryptonote_core/cryptonote_core.h"
@@ -135,5 +137,100 @@ TEST(CryLoTestnetV21AdmissionFoundation, AcceptsCompleteV20ThenV21Blocks) {
   }
 
   ASSERT_TRUE(chain.deinit());
+}
+
+TEST(CryLoTestnetV21AdmissionFoundation, RejectsRedirectedTreasuryOutputsInCompleteV21Blocks) {
+  // Each recipient attack gets a fresh chain. An invalid block must be
+  // rejected AND the original valid v21 candidate must still be accepted.
+  for (const size_t recipient_index : {size_t{2}, size_t{3}, size_t{4}}) {
+    SCOPED_TRACE(::testing::Message() << "recipient index " << recipient_index);
+    TemporaryTestnetDB tmp;
+    cryptonote::core core(nullptr);
+    auto db = std::make_unique<cryptonote::BlockchainLMDB>();
+    ASSERT_NO_THROW(db->open(tmp.path.string()));
+    ASSERT_TRUE(db->is_open());
+
+    cryptonote::Blockchain &chain = core.get_blockchain_storage();
+    ASSERT_TRUE(chain.init(db.release(), cryptonote::TESTNET, true, nullptr, 1));
+    ASSERT_EQ(cryptonote::TESTNET, chain.m_nettype);
+
+    auto* replacement = new cryptonote::HardFork(*chain.m_db, 17, 0);
+    ASSERT_TRUE(replacement->add_fork(17, 0, 0, 1700000000));
+    ASSERT_TRUE(replacement->add_fork(20, 1, 0, 1700000001));
+    ASSERT_TRUE(replacement->add_fork(HF_VERSION_TESTNET_TREASURY_PROOFS,
+                                      2, 0, 1700000002));
+    auto* previous = chain.m_hardfork;
+    chain.m_hardfork = replacement;
+    chain.m_db->set_hard_fork(replacement);
+    delete previous;
+    replacement->init();
+
+    cryptonote::account_base miner;
+    miner.generate();
+    const auto make_template = [&](cryptonote::block& block,
+                                   uint64_t& height) {
+      cryptonote::difficulty_type difficulty = 0;
+      uint64_t expected_reward = 0, seed_height = 0;
+      crypto::hash seed_hash = crypto::null_hash;
+      const bool result = chain.create_block_template(
+          block, miner.get_keys().m_account_address, difficulty, height,
+          expected_reward, cryptonote::blobdata{}, seed_height, seed_hash);
+      EXPECT_EQ(1u, difficulty);
+      return result;
+    };
+    const auto submit = [&](const cryptonote::block& block,
+                            cryptonote::block_verification_context& bvc) {
+      const size_t bytes = cryptonote::block_to_blob(block).size();
+      chain.prepare_handle_incoming_block_no_preprocess(bytes);
+      const bool admitted = chain.add_new_block(block, bvc);
+      EXPECT_TRUE(chain.cleanup_handle_incoming_blocks());
+      return admitted;
+    };
+
+    cryptonote::block legacy{};
+    uint64_t height = 0;
+    ASSERT_TRUE(make_template(legacy, height));
+    ASSERT_EQ(1u, height);
+    ASSERT_EQ(20u, legacy.major_version);
+    cryptonote::block_verification_context bvc20{};
+    ASSERT_TRUE(submit(legacy, bvc20));
+    ASSERT_TRUE(bvc20.m_added_to_main_chain);
+    ASSERT_EQ(2u, chain.get_current_blockchain_height());
+    ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS,
+              chain.get_current_hard_fork_version());
+
+    cryptonote::block legitimate{};
+    ASSERT_TRUE(make_template(legitimate, height));
+    ASSERT_EQ(2u, height);
+    ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS, legitimate.major_version);
+    ASSERT_EQ(5u, legitimate.miner_tx.vout.size());
+
+    cryptonote::block redirected = legitimate;
+    cryptonote::account_base attacker;
+    attacker.generate();
+    auto* target = boost::get<cryptonote::txout_to_tagged_key>(
+        &redirected.miner_tx.vout.at(recipient_index).target);
+    ASSERT_NE(nullptr, target);
+    target->key = attacker.get_keys().m_account_address.m_spend_public_key;
+    redirected.miner_tx.invalidate_hashes();
+    ASSERT_NE(cryptonote::get_block_hash(legitimate),
+              cryptonote::get_block_hash(redirected));
+
+    cryptonote::block_verification_context rejected{};
+    EXPECT_FALSE(submit(redirected, rejected));
+    EXPECT_TRUE(rejected.m_verifivation_failed);
+    EXPECT_FALSE(rejected.m_added_to_main_chain);
+    EXPECT_EQ(2u, chain.get_current_blockchain_height());
+
+    // Positive control on the same chain: proving rejection is not merely
+    // a stale hardfork version, broken PoW, or failed LMDB write transaction.
+    cryptonote::block_verification_context accepted{};
+    ASSERT_TRUE(submit(legitimate, accepted));
+    EXPECT_TRUE(accepted.m_added_to_main_chain);
+    EXPECT_FALSE(accepted.m_verifivation_failed);
+    EXPECT_EQ(3u, chain.get_current_blockchain_height());
+    EXPECT_EQ(cryptonote::TESTNET, chain.m_nettype);
+    ASSERT_TRUE(chain.deinit());
+  }
 }
 } // namespace
