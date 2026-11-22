@@ -524,7 +524,7 @@ static rct::rctSig make_sample_rct_sig(int n_inputs, const uint64_t input_amount
     return genRct(rct::zero(), sc, pc, destinations, amounts, amount_keys, 3, rct_config, hw::get_device("default"));
 }
 
-static rct::rctSig make_sample_simple_rct_sig(int n_inputs, const uint64_t input_amounts[], int n_outputs, const uint64_t output_amounts[], uint64_t fee)
+static rct::rctSig make_sample_simple_rct_sig(int n_inputs, const uint64_t input_amounts[], int n_outputs, const uint64_t output_amounts[], uint64_t fee, uint8_t bp_version = 0)
 {
     ctkeyV sc, pc;
     ctkey sctmp, pctmp;
@@ -547,9 +547,24 @@ static rct::rctSig make_sample_simple_rct_sig(int n_inputs, const uint64_t input
         destinations.push_back(Pk);
     }
 
-    const rct::RCTConfig rct_config { RangeProofBorromean, 0 };
+    const rct::RCTConfig rct_config {
+        bp_version == 0 ? RangeProofBorromean : RangeProofPaddedBulletproof,
+        bp_version
+    };
     return genRctSimple(rct::zero(), sc, pc, destinations, inamounts, outamounts, amount_keys, fee, 3, rct_config, hw::get_device("default"));
 }
+
+TEST(ringct, CryLoHF21FullCommitSignedProofGenerationAndVerification)
+{
+    const uint64_t inputs[] = {5000};
+    const uint64_t outputs[] = {3000, 1999};
+
+    const rctSig legacy = make_sample_simple_rct_sig(1, inputs, 2, outputs, 1, 4);
+    ASSERT_EQ(RCTTypeBulletproofPlus_FullCommit, legacy.type);
+    ASSERT_EQ(1u, legacy.p.bulletproofs_plus.size());
+    ASSERT_TRUE(verRctSimple(legacy));
+}
+
 
 static bool range_proof_test(bool expected_valid,
     int n_inputs, const uint64_t input_amounts[], int n_outputs, const uint64_t output_amounts[], bool last_is_fee, bool simple)
