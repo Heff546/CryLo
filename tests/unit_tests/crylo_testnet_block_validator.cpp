@@ -64,7 +64,9 @@ namespace
       return core_.get_blockchain_storage();
     }
 
-    bool construct(uint8_t version = kFutureVersion)
+    bool construct(
+        uint8_t version = kFutureVersion,
+        const cryptonote::blobdata& extra_nonce = cryptonote::blobdata{})
     {
       block_ = cryptonote::block{};
       block_.major_version = version;
@@ -79,7 +81,7 @@ namespace
           0,
           miner_.get_keys().m_account_address,
           block_.miner_tx,
-          cryptonote::blobdata{},
+          extra_nonce,
           5,
           version);
     }
@@ -197,5 +199,63 @@ TEST_F(CryLoTestnetV21BlockValidator, LegacyV20RecipientGapStillRequiresFutureFo
   replace_recipient(3);
   // This is the documented historical V4 weakness. Changing this
   // assertion would silently rewrite the meaning of already-mined blocks.
+  EXPECT_TRUE(validate(kLegacyVersion));
+}
+
+TEST_F(CryLoTestnetV21BlockValidator, CanonicalNonceLength127Accepted)
+{
+  const cryptonote::blobdata nonce(127, 'N');
+  ASSERT_TRUE(construct(kFutureVersion, nonce));
+  std::vector<cryptonote::tx_extra_field> fields;
+  ASSERT_TRUE(cryptonote::parse_tx_extra(block_.miner_tx.extra, fields));
+  EXPECT_TRUE(validate());
+}
+
+TEST_F(CryLoTestnetV21BlockValidator, CanonicalNonceLength128Accepted)
+{
+  const cryptonote::blobdata nonce(128, 'N');
+  ASSERT_TRUE(construct(kFutureVersion, nonce));
+  std::vector<cryptonote::tx_extra_field> fields;
+  ASSERT_TRUE(cryptonote::parse_tx_extra(block_.miner_tx.extra, fields));
+  EXPECT_TRUE(validate());
+}
+
+TEST_F(CryLoTestnetV21BlockValidator, CanonicalNonceMaximum255Accepted)
+{
+  const cryptonote::blobdata nonce(TX_EXTRA_NONCE_MAX_COUNT, 'N');
+  ASSERT_TRUE(construct(kFutureVersion, nonce));
+  std::vector<cryptonote::tx_extra_field> fields;
+  ASSERT_TRUE(cryptonote::parse_tx_extra(block_.miner_tx.extra, fields));
+  EXPECT_TRUE(validate());
+}
+
+TEST_F(CryLoTestnetV21BlockValidator, OversizeNonce256Rejected)
+{
+  const cryptonote::blobdata nonce(TX_EXTRA_NONCE_MAX_COUNT + 1, 'N');
+  EXPECT_FALSE(construct(kFutureVersion, nonce));
+}
+
+TEST_F(CryLoTestnetV21BlockValidator, TamperedSignedNonceRejected)
+{
+  const cryptonote::blobdata nonce(128, 'N');
+  ASSERT_TRUE(construct(kFutureVersion, nonce));
+  ASSERT_TRUE(validate());
+  // A version-21 nonce is canonically serialized immediately after
+  // the 1-byte pubkey tag and 32-byte transaction public key.
+  const size_t nonce_tag_pos = 1 + sizeof(crypto::public_key);
+  ASSERT_GT(block_.miner_tx.extra.size(), nonce_tag_pos + 3);
+  ASSERT_EQ(TX_EXTRA_NONCE, block_.miner_tx.extra[nonce_tag_pos]);
+  const size_t payload_pos = nonce_tag_pos + 3; // 128 uses two-byte varint
+  ASSERT_EQ('N', block_.miner_tx.extra[payload_pos]);
+  block_.miner_tx.extra[payload_pos] = 'M';
+  block_.miner_tx.invalidate_hashes();
+  EXPECT_FALSE(validate());
+}
+
+TEST_F(CryLoTestnetV21BlockValidator, LegacyV20GasRecipientGapPreserved)
+{
+  ASSERT_TRUE(construct(kLegacyVersion));
+  replace_recipient(4);
+  // The v20 historical rule never authenticated this destination.
   EXPECT_TRUE(validate(kLegacyVersion));
 }
