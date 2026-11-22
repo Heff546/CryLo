@@ -39,6 +39,10 @@
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "tx_pool.h"
 #include "blockchain.h"
+// Unreleased Testnet v21 recipient-proof verification; V4 history unchanged.
+#include "crylo_testnet_gas_treasury_proof.h"
+#include "crylo_testnet_liquidity_proof.h"
+#include "crylo_testnet_dev_fund_proof.h"
 #include "blockchain_db/blockchain_db.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "cryptonote_basic/events.h"
@@ -1595,6 +1599,52 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     if (b.miner_tx.vout[2].amount != dev_fund_expected) return false;
     if (b.miner_tx.vout[3].amount != liquidity_fund_expected) return false;
     if (b.miner_tx.vout[4].amount != gas_treasury_expected) return false;
+    // TESTNET v21+ is NOT scheduled in the active V4 hardfork table.
+    // Preserve the historical private-view-key rule for v20 and earlier.
+    // Future v21 uses PUBLIC proofs for all three output recipients.
+    if (m_nettype == TESTNET &&
+        version >= HF_VERSION_TESTNET_TREASURY_PROOFS)
+    {
+      const auto *generation = !b.miner_tx.vin.empty() ?
+          boost::get<txin_gen>(&b.miner_tx.vin[0]) : nullptr;
+      crypto::public_key dev_spend_pkey, dev_view_pkey;
+      crypto::public_key liquidity_spend_pkey, liquidity_view_pkey;
+      crypto::public_key gas_spend_pkey, gas_view_pkey;
+      if (!generation ||
+          !epee::string_tools::hex_to_pod(
+              CryLo_DEV_FUND_SPENDKEY, dev_spend_pkey) ||
+          !epee::string_tools::hex_to_pod(
+              CryLo_DEV_FUND_VIEWKEY, dev_view_pkey) ||
+          !epee::string_tools::hex_to_pod(
+              CryLo_LIQUIDITY_FUND_SPENDKEY, liquidity_spend_pkey) ||
+          !epee::string_tools::hex_to_pod(
+              CryLo_LIQUIDITY_FUND_VIEWKEY, liquidity_view_pkey) ||
+          !epee::string_tools::hex_to_pod(
+              CryLo_GAS_TREASURY_SPENDKEY, gas_spend_pkey) ||
+          !epee::string_tools::hex_to_pod(
+              CryLo_GAS_TREASURY_VIEWKEY, gas_view_pkey) ||
+          dev_spend_pkey == crypto::null_pkey ||
+          dev_view_pkey == crypto::null_pkey ||
+          liquidity_spend_pkey == crypto::null_pkey ||
+          liquidity_view_pkey == crypto::null_pkey ||
+          gas_spend_pkey == crypto::null_pkey ||
+          gas_view_pkey == crypto::null_pkey ||
+          !verify_crylo_testnet_dev_fund_proof(
+              b.miner_tx, generation->height,
+              dev_view_pkey, dev_spend_pkey, 2) ||
+          !verify_crylo_testnet_liquidity_proof(
+              b.miner_tx, generation->height,
+              liquidity_view_pkey, liquidity_spend_pkey, 3) ||
+          !verify_crylo_testnet_treasury_proof(
+              b.miner_tx, generation->height,
+              gas_view_pkey, gas_spend_pkey, 4))
+      {
+        MERROR_VER("Testnet v21 treasury recipient proof missing or invalid");
+        return false;
+      }
+    }
+    else
+    {
     // Verify dev fund output key is derived from the correct dev fund address
     crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(b.miner_tx);
     if (tx_pub_key == crypto::null_pkey)
@@ -1646,6 +1696,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
       MERROR_VER("Dev fund output key MISMATCH: block does NOT pay the dev fund address. Rejecting.");
       return false;
     }
+    } // legacy pre-v21 Development recipient verification
 
     uint64_t dev_fund_actual = b.miner_tx.vout[2].amount;
 
