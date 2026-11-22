@@ -218,10 +218,10 @@ jobs:
               errors="replace"
           )
 
-          names = sorted(set(
-              re.findall(r"DLL Name:\\s*(\\S+)", output),
+          names = sorted(
+              set(re.findall(r"DLL Name:\\s*(\\S+)", output)),
               key=str.lower
-          ))
+          )
 
           kernel = ctypes.WinDLL("kernel32", use_last_error=True)
           kernel.LoadLibraryW.argtypes = [ctypes.c_wchar_p]
