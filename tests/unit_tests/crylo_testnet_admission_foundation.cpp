@@ -43,7 +43,7 @@ struct TemporaryTestnetDB {
 TEST(CryLoTestnetV21AdmissionFoundation, RingCTTypeAdmissionAcrossHF20HF21HF22) {
   cryptonote::transaction tx{};
   tx.version = 2;
-  const auto check = [&tx](uint8_t hf, rct::RCTType type) {
+  const auto check = [&tx](uint8_t hf, uint8_t type) {
     tx.rct_signatures.type = type;
     cryptonote::tx_verification_context tvc{};
     const bool permitted = cryptonote::Blockchain::check_tx_outputs(tx, tvc, hf);
