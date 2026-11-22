@@ -71,4 +71,60 @@ TEST(CryLoTestnetV21AdmissionFoundation, FutureForkIsLocalAndPreservesCurrentSch
 
   ASSERT_TRUE(chain.deinit());
 }
+
+TEST(CryLoTestnetV21AdmissionFoundation, AcceptsCompleteV20ThenV21Blocks) {
+  TemporaryTestnetDB tmp;
+  cryptonote::core core(nullptr);
+  auto db = std::make_unique<cryptonote::BlockchainLMDB>();
+  ASSERT_NO_THROW(db->open(tmp.path.string()));
+  ASSERT_TRUE(db->is_open());
+
+  cryptonote::Blockchain &chain = core.get_blockchain_storage();
+  ASSERT_TRUE(chain.init(db.release(), cryptonote::TESTNET, true, nullptr,
+                         1 /* fixed PoW difficulty, isolated test only */));
+  ASSERT_EQ(cryptonote::TESTNET, chain.m_nettype);
+  ASSERT_EQ(1u, chain.get_current_blockchain_height());
+
+  // Replace only this disposable chain's fork object. The actual Testnet
+  // schedule and all production binaries remain unchanged. The 0% threshold
+  // eliminates test-only activation votes; v20 starts at 1 and v21 at 2.
+  auto* replacement = new cryptonote::HardFork(*chain.m_db, 17, 0);
+  ASSERT_TRUE(replacement->add_fork(17, 0, 0, 1700000000));
+  ASSERT_TRUE(replacement->add_fork(20, 1, 0, 1700000001));
+  ASSERT_TRUE(replacement->add_fork(HF_VERSION_TESTNET_TREASURY_PROOFS,
+                                    2, 0, 1700000002));
+  auto* previous = chain.m_hardfork;
+  chain.m_hardfork = replacement;
+  chain.m_db->set_hard_fork(replacement);
+  delete previous;
+  replacement->init();
+
+  ASSERT_EQ(20u, chain.get_current_hard_fork_version());
+  ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS,
+            chain.get_ideal_hard_fork_version(2));
+
+  cryptonote::account_base miner;
+  miner.generate();
+  for (const uint8_t version : {uint8_t{20}, uint8_t{HF_VERSION_TESTNET_TREASURY_PROOFS}}) {
+    cryptonote::block candidate{};
+    cryptonote::difficulty_type difficulty = 0;
+    uint64_t height = 0, expected_reward = 0, seed_height = 0;
+    crypto::hash seed_hash = crypto::null_hash;
+    ASSERT_TRUE(chain.create_block_template(
+        candidate, miner.get_keys().m_account_address, difficulty,
+        height, expected_reward, cryptonote::blobdata{},
+        seed_height, seed_hash));
+    ASSERT_EQ(version == 20 ? 1u : 2u, height);
+    ASSERT_EQ(version, candidate.major_version);
+    ASSERT_EQ(1u, difficulty);
+    cryptonote::block_verification_context bvc{};
+    ASSERT_TRUE(chain.add_new_block(candidate, bvc));
+    EXPECT_TRUE(bvc.m_added_to_main_chain);
+    EXPECT_FALSE(bvc.m_verifivation_failed);
+    EXPECT_EQ(height + 1, chain.get_current_blockchain_height());
+    EXPECT_EQ(cryptonote::TESTNET, chain.m_nettype);
+  }
+
+  ASSERT_TRUE(chain.deinit());
+}
 } // namespace
