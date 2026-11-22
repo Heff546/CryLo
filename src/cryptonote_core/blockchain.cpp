@@ -2000,8 +2000,11 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
    */
   //make blocks coin-base tx looks close to real coinbase tx to get truthful blob weight
   uint8_t hf_version = b.major_version;
+  // Future Testnet v21+ public signatures must cover final nonce/padding.
+  // V4 and other networks retain their pre-fork miner-template behavior.
+  blobdata consensus_extra_nonce = ex_nonce;
   size_t max_outs = hf_version >= HF_VERSION_VESTING ? 5 : (hf_version >= 4 ? 1 : 11);
-  bool r = construct_miner_tx(this, m_nettype, height, median_weight, already_generated_coins, txs_weight, fee, miner_address, b.miner_tx, ex_nonce, max_outs, hf_version);
+  bool r = construct_miner_tx(this, m_nettype, height, median_weight, already_generated_coins, txs_weight, fee, miner_address, b.miner_tx, consensus_extra_nonce, max_outs, hf_version);
   CHECK_AND_ASSERT_MES(r, false, "Failed to construct miner tx, first chance");
   size_t cumulative_weight = txs_weight + get_transaction_weight(b.miner_tx);
 #if defined(DEBUG_CREATE_BLOCK_TEMPLATE)
@@ -2010,7 +2013,7 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
 #endif
   for (size_t try_count = 0; try_count != 10; ++try_count)
   {
-    r = construct_miner_tx(this, m_nettype, height, median_weight, already_generated_coins, cumulative_weight, fee, miner_address, b.miner_tx, ex_nonce, max_outs, hf_version);
+    r = construct_miner_tx(this, m_nettype, height, median_weight, already_generated_coins, cumulative_weight, fee, miner_address, b.miner_tx, consensus_extra_nonce, max_outs, hf_version);
 
     CHECK_AND_ASSERT_MES(r, false, "Failed to construct miner tx, second chance");
     size_t coinbase_weight = get_transaction_weight(b.miner_tx);
@@ -2032,6 +2035,32 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
           ", cumulative weight " << txs_weight + coinbase_weight <<
           " is less than before, adding " << delta << " zero bytes");
 #endif
+      if (m_nettype == TESTNET && height > 0 &&
+          hf_version >= HF_VERSION_TESTNET_TREASURY_PROOFS)
+      {
+        // Do not append raw padding after signed proof fields. Increase
+        // the nonce and rebuild the whole coinbase to re-sign all proofs.
+        const size_t old_len = consensus_extra_nonce.size();
+        const size_t overhead = old_len == 0 ? 2 : 0;
+        const size_t added = std::max<size_t>(
+            1, delta > overhead ? delta - overhead : 1);
+        if (old_len > TX_EXTRA_NONCE_MAX_COUNT ||
+            added > TX_EXTRA_NONCE_MAX_COUNT - old_len)
+        {
+          MERROR("Future Testnet v21 coinbase nonce padding exceeds limit");
+          return false;
+        }
+        const size_t new_len = old_len + added;
+        const size_t old_field_size =
+            old_len == 0 ? 0 : old_len + 2 + (old_len >= 128 ? 1 : 0);
+        const size_t new_field_size =
+            new_len + 2 + (new_len >= 128 ? 1 : 0);
+        const size_t weight_added = new_field_size - old_field_size;
+        consensus_extra_nonce.append(added, '\0');
+        if (weight_added > delta)
+          cumulative_weight += weight_added - delta;
+        continue;
+      }
       b.miner_tx.extra.insert(b.miner_tx.extra.end(), delta, 0);
       //here  could be 1 byte difference, because of extra field counter is varint, and it can become from 1-byte len to 2-bytes len.
       if (cumulative_weight != txs_weight + get_transaction_weight(b.miner_tx))
