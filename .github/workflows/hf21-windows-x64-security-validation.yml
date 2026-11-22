@@ -201,116 +201,57 @@ jobs:
 
           cd "$1"
 
-          echo "===== ISOLATED OPENSSL CONST-CORRECTNESS TRIAL ====="
-          python - <<'PATCH'
-          from pathlib import Path
+          echo "===== VERIFY EXACT HF21 SOURCE ====="
+          test "$(git rev-parse HEAD)" = \
+            "04764f9221481095f6565e7a01761086fceff507"
+          git diff --quiet
+          git diff --cached --quiet
+          echo "PASS: No temporary OpenSSL source overlay"
 
-          p = Path("contrib/epee/src/net_ssl.cpp")
-          s = p.read_text()
-
-          old = "X509_NAME *name = X509_get_subject_name(cert);"
-          new = "const X509_NAME *name = X509_get_subject_name(cert);"
-
-          assert s.count(old) == 2, "Unexpected OpenSSL source"
-          p.write_text(s.replace(old, new))
-
-          print("Applied exactly two const-correctness changes")
-          PATCH
-
-          test "$(git diff --name-only)" = "contrib/epee/src/net_ssl.cpp"
-          git diff --check
-          git diff -- contrib/epee/src/net_ssl.cpp
-
-          echo "NOTICE: Windows trial uses a two-line source overlay."
-          echo "NOTICE: HF21 upstream source remains unchanged."
-
-          echo "===== EARLY LIBUNBOUND DEPENDENCY CHECK ====="
-          test -f /mingw64/bin/libunbound-8.dll
-
-          echo "===== LIBUNBOUND IMPORT TABLE ====="
-          objdump -p /mingw64/bin/libunbound-8.dll |
-            grep 'DLL Name:' || true
-
-          echo "===== LIBUNBOUND DEPENDENCY RESOLUTION ====="
-          ldd /mingw64/bin/libunbound-8.dll || true
-
-          python - <<'UNBOUNDPROBE'
-          import ctypes
-          import subprocess
-          import sys
-
-          dll = "/mingw64/bin/libunbound-8.dll"
-          output = subprocess.check_output(
-              ["objdump", "-p", dll],
-              text=True,
-              errors="replace"
-          )
-
-          names = sorted({
-              line.split("DLL Name:", 1)[1].strip()
-              for line in output.splitlines()
-              if "DLL Name:" in line
-          }, key=str.lower)
-
-          if not names:
-              raise RuntimeError("No libunbound imports detected")
-
-          kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-          kernel.LoadLibraryW.argtypes = [ctypes.c_wchar_p]
-          kernel.LoadLibraryW.restype = ctypes.c_void_p
-          kernel.FreeLibrary.argtypes = [ctypes.c_void_p]
-          kernel.FreeLibrary.restype = ctypes.c_int
-
-          failures = []
-          print(f"libunbound imports: {len(names)}", flush=True)
-
-          for name in names:
-              handle = kernel.LoadLibraryW(name)
-              if handle:
-                  print(f"LOAD OK: {name}", flush=True)
-                  kernel.FreeLibrary(handle)
-              else:
-                  error = ctypes.get_last_error()
-                  print(f"LOAD FAILED: {name}, Win32={error}",
-                        flush=True)
-                  failures.append((name, error))
-
-          handle = kernel.LoadLibraryW(
-              "C:\\msys64\\mingw64\\bin\\libunbound-8.dll"
-          )
-          if handle:
-              print("PASS: libunbound loaded successfully", flush=True)
-              kernel.FreeLibrary(handle)
-          else:
-              error = ctypes.get_last_error()
-              print(f"FAIL: libunbound Win32={error}", flush=True)
-              failures.append(("libunbound-8.dll", error))
-
-          if failures:
-              print("BLOCKED: DLL dependencies require review",
-                    flush=True)
-              sys.exit(1)
-          UNBOUNDPROBE
-
-          command -v ninja
+          echo "===== CANONICAL WINDOWS NATIVE CONFIGURATION ====="
+          command -v cmake
+          command -v make
           command -v gcc
           command -v g++
-          ninja --version
+
+          test -f build/windows-deps/openssl-3.5.9/lib/libcrypto.a
+          test -f build/windows-deps/openssl-3.5.9/lib/libssl.a
+
+          OPENSSL_ROOT="$(cygpath -m \
+            "$PWD/build/windows-deps/openssl-3.5.9")"
+          MSYS2_ROOT_WIN="$(cd / && pwd -W)"
 
           cmake -S . -B build/hf21-windows-test \
-            -G "Ninja" \
-            -DCMAKE_C_COMPILER=/mingw64/bin/gcc.exe \
-            -DCMAKE_CXX_COMPILER=/mingw64/bin/g++.exe \
+            -G "MSYS Makefiles" \
+            -DSTATIC=ON \
+            -DARCH=x86-64 \
+            -DBUILD_64=ON \
             -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TAG=win-x64 \
             -DBUILD_TESTS=ON \
-            -DSTATIC=OFF \
-            -DARCH=default \
-            -DARCH_ID=x86_64
+            -DBUILD_DOCUMENTATION=OFF \
+            -DBUILD_DEBUG_UTILITIES=OFF \
+            -DUSE_DEVICE_TREZOR=ON \
+            -DUSE_DEVICE_TREZOR_LIBUSB=ON \
+            -DTREZOR_DEBUG=OFF \
+            -DBUILD_GUI_DEPS=OFF \
+            -DCRYLO_WINDOWS_OPENSSL_ROOT="$OPENSSL_ROOT" \
+            -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT" \
+            -DOPENSSL_USE_STATIC_LIBS=TRUE \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/64-bit-toolchain.cmake" \
+            -DMSYS2_FOLDER="$MSYS2_ROOT_WIN"
 
-          echo "===== VERIFY RANDOMX X64 JIT SOURCES ====="
-          grep -Fq 'src/jit_compiler_x86.cpp'             build/hf21-windows-test/build.ninja
-          grep -Fq 'src/jit_compiler_x86_static.S'             build/hf21-windows-test/build.ninja
-          echo "PASS: Both RandomX x64 JIT sources selected"
+          echo "===== VERIFY RELEASE CONFIGURATION ====="
+          CACHE="build/hf21-windows-test/CMakeCache.txt"
+          grep -Fxq 'STATIC:BOOL=ON' "$CACHE"
+          grep -Fxq 'BUILD_TESTS:BOOL=ON' "$CACHE"
+          grep -Fxq 'ARCH:STRING=x86-64' "$CACHE" || \
+            grep -Fxq 'ARCH:UNINITIALIZED=x86-64' "$CACHE"
+          grep -Fq 'openssl-3.5.9' "$CACHE"
+
+          echo "PASS: Static Windows release configuration"
+          echo "PASS: Pinned OpenSSL 3.5.9 selected"
+          echo "PASS: HF21 native tests enabled"
 
           echo "===== BUILD BUNDLED GOOGLE TEST FIRST ====="
           cmake --build build/hf21-windows-test \
@@ -322,6 +263,18 @@ jobs:
 
           testbin="build/hf21-windows-test/tests/unit_tests/unit_tests.exe"
           test -f "$testbin"
+
+          echo "===== VERIFY STATIC RELEASE DLL POLICY ====="
+          imports="$(objdump -p "$testbin" | grep 'DLL Name:' || true)"
+          printf '%s\\n' "$imports"
+
+          if printf '%s\\n' "$imports" | \
+            grep -Ei 'DLL Name: (libunbound|libcrypto|libssl)'; then
+            echo "ERROR: Dynamic Unbound/OpenSSL dependency detected"
+            exit 1
+          fi
+
+          echo "PASS: No dynamic Unbound or OpenSSL imports"
 
           echo "===== WINDOWS EXECUTABLE DEPENDENCY DIAGNOSTICS ====="
           command -v objdump
