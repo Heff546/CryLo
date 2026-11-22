@@ -13,6 +13,7 @@
 #include "cryptonote_core/cryptonote_core.h"
 #undef IN_UNIT_TESTS
 #include "cryptonote_config.h"
+#include "cryptonote_basic/hardfork.h"
 
 namespace {
 struct TemporaryTestnetDB {
