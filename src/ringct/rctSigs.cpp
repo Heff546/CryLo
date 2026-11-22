@@ -1158,8 +1158,10 @@ namespace rct {
           switch (rct_config.bp_version)
           {
             case 0:
+              rv.type = RCTTypeBulletproofPlus;
+              break;
             case 4:
-              rv.type = (rv.type == rct::RCTTypeBulletproofPlus_FullCommit) ? rct::RCTTypeBulletproofPlus_FullCommit : rct::RCTTypeBulletproofPlus;
+              rv.type = RCTTypeBulletproofPlus_FullCommit;
               break;
             case 3:
               rv.type = RCTTypeCLSAG;
