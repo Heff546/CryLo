@@ -39,6 +39,9 @@
 #include "ringct/rctOps.h"
 #include "device/device.hpp"
 #include "string_tools.h"
+#include "cryptonote_core/cryptonote_tx_utils.h"
+#include "cryptonote_basic/account.h"
+#include "cryptonote_basic/cryptonote_format_utils.h"
 
 using namespace std;
 using namespace crypto;
@@ -570,6 +573,86 @@ TEST(ringct, CryLoHF21FullCommitSignedProofGenerationAndVerification)
     ASSERT_TRUE(verRctSimple(full));
 }
 
+
+
+TEST(ringct, CryLoHF21ConstructsSerializedSignedWalletTransaction)
+{
+    // This is a self-contained synthetic source ring: full transaction
+    // construction, serialized parsing and cryptographic signature checks.
+    // It does NOT demonstrate database-backed mempool admission because
+    // these source outputs are not present in the blockchain LMDB.
+    cryptonote::account_base sender, recipient;
+    sender.generate();
+    recipient.generate();
+    const cryptonote::keypair funding_tx_key =
+        cryptonote::keypair::generate(hw::get_device("default"));
+
+    crypto::key_derivation derivation{};
+    ASSERT_TRUE(crypto::generate_key_derivation(
+        sender.get_keys().m_account_address.m_view_public_key,
+        funding_tx_key.sec, derivation));
+    crypto::public_key owned_output{};
+    ASSERT_TRUE(crypto::derive_public_key(
+        derivation, 0,
+        sender.get_keys().m_account_address.m_spend_public_key,
+        owned_output));
+
+    for (const uint8_t bp_version : {uint8_t{4}, uint8_t{5}})
+    {
+        SCOPED_TRACE(::testing::Message() << "bp_version=" << unsigned(bp_version));
+        cryptonote::tx_source_entry source{};
+        source.amount = 5000000;
+        source.real_output = 5;
+        source.real_out_tx_key = funding_tx_key.pub;
+        source.real_output_in_tx_index = 0;
+        source.rct = false;
+        source.mask = rct::identity();
+        for (size_t i = 0; i < 16; ++i)
+        {
+            const auto decoy = cryptonote::keypair::generate(hw::get_device("default"));
+            source.push_output(i, i == source.real_output ? owned_output : decoy.pub,
+                               source.amount);
+        }
+
+        std::vector<cryptonote::tx_source_entry> sources{source};
+        std::vector<cryptonote::tx_destination_entry> destinations;
+        destinations.emplace_back(
+            3000000, recipient.get_keys().m_account_address, false);
+        destinations.emplace_back(
+            1990000, sender.get_keys().m_account_address, false);
+        std::unordered_map<crypto::public_key, cryptonote::subaddress_index>
+            subaddresses;
+        subaddresses[sender.get_keys().m_account_address.m_spend_public_key] =
+            {0, 0};
+
+        cryptonote::transaction tx{};
+        crypto::secret_key tx_key{};
+        std::vector<crypto::secret_key> additional_tx_keys;
+        const rct::RCTConfig config{rct::RangeProofPaddedBulletproof, bp_version};
+        ASSERT_TRUE(cryptonote::construct_tx_and_get_tx_key(
+            sender.get_keys(), subaddresses, sources, destinations,
+            sender.get_keys().m_account_address, std::vector<uint8_t>{},
+            tx, tx_key, additional_tx_keys,
+            true, config, true /* view tags */));
+        EXPECT_EQ(2u, tx.version);
+        EXPECT_EQ(2u, tx.vout.size());
+        EXPECT_EQ(bp_version == 5
+                      ? rct::RCTTypeBulletproofPlus_FullCommit
+                      : rct::RCTTypeBulletproofPlus,
+                  tx.rct_signatures.type);
+        ASSERT_TRUE(rct::verRctSimple(tx.rct_signatures));
+
+        cryptonote::blobdata blob;
+        ASSERT_TRUE(cryptonote::t_serializable_object_to_blob(tx, blob));
+        cryptonote::transaction reparsed{};
+        crypto::hash parsed_id{};
+        ASSERT_TRUE(cryptonote::parse_and_validate_tx_from_blob(
+            blob, reparsed, parsed_id));
+        EXPECT_EQ(cryptonote::get_transaction_hash(tx), parsed_id);
+        EXPECT_EQ(tx.rct_signatures.type, reparsed.rct_signatures.type);
+        EXPECT_TRUE(rct::verRctSimple(reparsed.rct_signatures));
+    }
+}
 
 static bool range_proof_test(bool expected_valid,
     int n_inputs, const uint64_t input_amounts[], int n_outputs, const uint64_t output_amounts[], bool last_is_fee, bool simple)
