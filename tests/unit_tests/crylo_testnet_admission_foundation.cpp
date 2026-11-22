@@ -118,7 +118,16 @@ TEST(CryLoTestnetV21AdmissionFoundation, AcceptsCompleteV20ThenV21Blocks) {
     ASSERT_EQ(version, candidate.major_version);
     ASSERT_EQ(1u, difficulty);
     cryptonote::block_verification_context bvc{};
-    ASSERT_TRUE(chain.add_new_block(candidate, bvc));
+    // Direct Blockchain::add_new_block() does NOT start a write batch.
+    // The production incoming-block path prepares an LMDB transaction
+    // before admission and commits/aborts it in cleanup. Omitting this
+    // caused SIGSEGV in BlockchainLMDB::add_transaction_data.
+    const size_t block_bytes = cryptonote::block_to_blob(candidate).size();
+    chain.prepare_handle_incoming_block_no_preprocess(block_bytes);
+    const bool admitted = chain.add_new_block(candidate, bvc);
+    const bool cleaned = chain.cleanup_handle_incoming_blocks();
+    ASSERT_TRUE(cleaned) << "LMDB write-batch cleanup failed";
+    ASSERT_TRUE(admitted) << "Full block admission returned false";
     EXPECT_TRUE(bvc.m_added_to_main_chain);
     EXPECT_FALSE(bvc.m_verifivation_failed);
     EXPECT_EQ(height + 1, chain.get_current_blockchain_height());
