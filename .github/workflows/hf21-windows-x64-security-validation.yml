@@ -196,8 +196,40 @@ jobs:
           testbin="build/hf21-windows-test/tests/unit_tests/unit_tests.exe"
           test -f "$testbin"
 
-          "$testbin" \
-            --gtest_filter='CryLoTestnetV21AdmissionFoundation.*:ringct.CryLoHF21*'
+          echo "===== WINDOWS EXECUTABLE DEPENDENCY DIAGNOSTICS ====="
+          command -v objdump
+          objdump -p "$testbin" | grep 'DLL Name:' || true
+
+          if command -v ldd >/dev/null 2>&1; then
+            ldd "$testbin" || true
+          fi
+
+          echo "===== LAUNCH HF21 TESTS WITH EXIT DIAGNOSTICS ====="
+          python - "$testbin" <<'RUNTEST'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          exe = Path(sys.argv[1]).resolve()
+          print(f"Executable: {exe}", flush=True)
+          print(f"Exists: {exe.is_file()}", flush=True)
+          print(f"Size: {exe.stat().st_size}", flush=True)
+
+          try:
+              result = subprocess.run(
+                  [str(exe),
+                   "--gtest_filter=CryLoTestnetV21AdmissionFoundation.*:ringct.CryLoHF21*"],
+                  timeout=300,
+              )
+              code = result.returncode
+              print(f"Native exit code: {code}", flush=True)
+              print(f"Native exit hex: 0x{code & 0xffffffff:08X}", flush=True)
+              sys.exit(0 if code == 0 else 1)
+          except Exception as exc:
+              print(f"Executable launch exception: {type(exc).__name__}: {exc}",
+                    flush=True)
+              sys.exit(1)
+          RUNTEST
 
           echo "PASS: Windows x64 HF21 native consensus and wallet tests"
           echo "No Electron packaging, release, signing or activation."
