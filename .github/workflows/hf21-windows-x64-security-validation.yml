@@ -1,0 +1,118 @@
+name: CryLo HF21 Windows x64 native security validation
+
+on:
+  push:
+    branches:
+      - security/hf21-linux-x64-validation-20261122
+    paths:
+      - .github/workflows/hf21-windows-x64-security-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  hf21-windows-x64:
+    name: HF21 Windows native consensus and wallet tests
+    runs-on: windows-2022
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout exact HF21 candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 04764f9221481095f6565e7a01761086fceff507
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify exact source
+        shell: cmd
+        run: |
+          git rev-parse HEAD
+          if errorlevel 1 exit /b 1
+          git diff --quiet 04764f9221481095f6565e7a01761086fceff507
+          if errorlevel 1 exit /b 1
+          echo PASS: exact HF21 security candidate
+
+      - name: Prepare MSYS2
+        shell: cmd
+        run: |
+          if not exist C:\msys64\usr\bin\bash.exe exit /b 1
+          C:\msys64\usr\bin\bash.exe -lc "true"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          if errorlevel 1 exit /b 1
+
+      - name: Install MinGW native dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/hf21-windows-deps.sh"
+          cat > "$script" <<'SH'
+          set -euo pipefail
+          export MSYSTEM=MINGW64
+          export PATH="/mingw64/bin:/usr/bin"
+          pacman -S --needed --noconfirm \
+            mingw-w64-x86_64-toolchain \
+            mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-pkgconf \
+            mingw-w64-x86_64-boost \
+            mingw-w64-x86_64-openssl \
+            mingw-w64-x86_64-protobuf \
+            mingw-w64-x86_64-abseil-cpp \
+            mingw-w64-x86_64-zeromq \
+            mingw-w64-x86_64-libsodium \
+            mingw-w64-x86_64-zstd \
+            mingw-w64-x86_64-zlib \
+            mingw-w64-x86_64-icu \
+            mingw-w64-x86_64-libiconv \
+            mingw-w64-x86_64-readline \
+            mingw-w64-x86_64-ncurses \
+            mingw-w64-x86_64-miniupnpc \
+            mingw-w64-x86_64-hidapi \
+            mingw-w64-x86_64-libusb \
+            mingw-w64-x86_64-unbound \
+            mingw-w64-x86_64-ldns \
+            make python perl patch
+          protoc --version
+          cmake --version
+          g++ --version
+          SH
+          C:/msys64/usr/bin/bash.exe -lc \
+            "bash '$(cygpath -u "$script")'"
+
+      - name: Configure compile and run native HF21 tests
+        shell: bash
+        env:
+          MONERO_RANDOMX_UMASK: "1"
+        run: |
+          set -euo pipefail
+          script="$RUNNER_TEMP/hf21-windows-test.sh"
+          cat > "$script" <<'SH'
+          set -euo pipefail
+          export MSYSTEM=MINGW64
+          export PATH="/mingw64/bin:/usr/bin"
+          export MONERO_RANDOMX_UMASK=1
+
+          cd "$1"
+
+          cmake -S . -B build/hf21-windows-test \
+            -G "MinGW Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=ON \
+            -DSTATIC=OFF \
+            -DARCH=default
+
+          cmake --build build/hf21-windows-test \
+            --target unit_tests --parallel 2
+
+          testbin="build/hf21-windows-test/tests/unit_tests/unit_tests.exe"
+          test -f "$testbin"
+
+          "$testbin" \
+            --gtest_filter='CryLoTestnetV21AdmissionFoundation.*:ringct.CryLoHF21*'
+
+          echo "PASS: Windows x64 HF21 native consensus and wallet tests"
+          echo "No Electron packaging, release, signing or activation."
+          SH
+          C:/msys64/usr/bin/bash.exe -lc \
+            "bash '$(cygpath -u "$script")' '$(cygpath -u "$GITHUB_WORKSPACE")'"
