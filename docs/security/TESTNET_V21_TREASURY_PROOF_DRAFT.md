@@ -22,6 +22,12 @@ The goal is to correct the confirmed Testnet V4 recipient-authentication gap wit
 - **37** in-memory/adversarial C++ test cases from the existing isolated three-proof candidate, adapted to Testnet keys and domains, including a version-20 no-proof compatibility case. **Eight** source-level Node assertions also check that v21 remains unscheduled.
 - Coin allocation, chain identity, genesis, V4 hardfork schedule, actual wallet data and signed Testnet.27 packages remain unchanged.
 
+## Important existing v21 interaction — Bulletproof Plus
+
+`src/cryptonote_config.h` already defines `HF_VERSION_BP_PLUS_FULL_COMMIT = 21`. The active `blockchain.cpp` enables additional RingCT verification and cache behavior when the network reaches v21. **A Testnet fork to v21 therefore changes more than treasury proofs**, even if the treasury patch itself is correct. The whole transition must be assessed for transaction compatibility, wallet creation, mempool handling, wallet serialization and cross-platform consensus before activation. Do not assume that choosing v21 is a treasury-only upgrade. If necessary, revise the planned fork version and test the prior version's effects explicitly.
+
+The generic `tx_extra` parser is also extended on this draft branch. Before merging, verify that recognizing proof tags does not alter pre-v21 transaction acceptance or historical block replay. That is why this is an isolated review candidate, not active Testnet code.
+
 ## Risks and gates still OPEN
 
 **This code has NOT yet been compiled or executed.** Adapted code from another chain domain is not automatically correct. Native C++ compilation on Pi1, public recipient cryptographic validity, adversarial proof coverage, and real full-block tests are mandatory; source-only inspection does not certify the proof.
