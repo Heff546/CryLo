@@ -47,6 +47,8 @@ This is not a general rewrite of Testnet. It fixes only the known **Liquidity an
 - Added six unexecuted nonce/legacy cases to the actual Testnet coinbase-validator suite: nonce lengths 127/128/255 accepted, 256 rejected, signed-nonce tamper rejected, historical v20 Gas destination check remains legacy. These changes **must be compiled and executed** before counting as passes.
 - Do not require Pi2 setup or Mainnet wallets. Google VM authoritative history is only needed for the **final replay/canonical-chain gate**, after local tests complete.
 
+**Repeatable Pi1 gate:** `tests/launch/run_testnet_treasury_pi1_gate.sh` now orchestrates source checks, incremental native build, treasury production-validator/crypto cases, the prior parser/hardfork/emission regression suite, and saved-chain byte-for-byte prefix comparison in one command. The script uses only `~/CryLo-Testing/` worktrees and copies, writes results to `/tmp/crylo-testnet-v21-gate`, and never starts a daemon. It must be executed on Pi1 **after fetching the latest PR branch**; no results have been claimed for the new code yet.
+
 **Single focused next step:** rerun source plus incremental native Testnet validator suites against the current PR head and run the prefix comparison against the two existing Pi1 **audit copies**. Afterwards, retrieve a consistent, stopped Google VM anchor snapshot for 2958+ if present, verify identity against the matching 0–2957 Pi1 chain, and perform real full-block admission/replay. Stop any activation or merge until those results are recorded.
 
 ## Risks and gates still OPEN
