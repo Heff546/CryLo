@@ -1,0 +1,166 @@
+name: CryLo HF21 macOS native security validation
+
+on:
+  push:
+    branches:
+      - security/hf21-linux-x64-validation-20261122
+    paths:
+      - .github/workflows/hf21-macos-native-security-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  hf21-macos:
+    name: HF21 native security — ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: mac-x64
+            runner: macos-15-intel
+            machine: x86_64
+            host: x86_64-apple-darwin11
+            arch: x86-64
+          - name: mac-arm64
+            runner: macos-15
+            machine: arm64
+            host: aarch64-apple-darwin11
+            arch: armv8-a
+
+    steps:
+      - name: Checkout immutable HF21 security candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 04764f9221481095f6565e7a01761086fceff507
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify exact HF21 source and macOS architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "04764f9221481095f6565e7a01761086fceff507"
+          test "$(uname -m)" = "${{ matrix.machine }}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          sw_vers
+          xcrun --find clang
+          echo "PASS: immutable HF21 source on ${{ matrix.name }}"
+
+      - name: Provision host-only build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+          packages=()
+          command -v cmake >/dev/null 2>&1 || packages+=(cmake)
+          command -v pkg-config >/dev/null 2>&1 || packages+=(pkgconf)
+          command -v autoconf >/dev/null 2>&1 || packages+=(autoconf)
+          command -v automake >/dev/null 2>&1 || packages+=(automake)
+          command -v glibtoolize >/dev/null 2>&1 || packages+=(libtool)
+          if [ "${#packages[@]}" -gt 0 ]; then
+            brew install "${packages[@]}"
+          fi
+          for tool in git cmake make python3 perl pkg-config autoconf automake glibtoolize; do
+            command -v "$tool"
+          done
+
+      - name: Verify existing release compiler and deployment target
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          test -d "$SDKROOT"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          printf 'int main(void) { return 0; }\n' > "$tmp/probe.c"
+          if [ "${{ matrix.machine }}" = "arm64" ]; then
+            xcrun clang -arch arm64 -mmacosx-version-min=11.0 -isysroot "$SDKROOT" \
+              "$tmp/probe.c" -o "$tmp/probe"
+          else
+            xcrun clang -mmacosx-version-min=10.8 -isysroot "$SDKROOT" \
+              "$tmp/probe.c" -o "$tmp/probe"
+          fi
+          test "$(lipo -archs "$tmp/probe")" = "${{ matrix.machine }}"
+          "$tmp/probe"
+          echo "PASS: canonical release architecture/deployment probe"
+
+      - name: Build canonical hash-pinned macOS dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          prefix="$GITHUB_WORKSPACE/contrib/depends/${{ matrix.host }}"
+          mkdir -p "$prefix/include" "$prefix/lib"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          printf 'int main(void) { return 0; }\n' > "$tmp/conftest.c"
+          if [ "${{ matrix.machine }}" = "arm64" ]; then
+            xcrun clang -arch arm64 -mmacosx-version-min=11.0 -pipe -O1 \
+              -I"$prefix/include" -L"$prefix/lib" "$tmp/conftest.c" -o "$tmp/conftest"
+          else
+            xcrun clang -mmacosx-version-min=10.8 -pipe -O1 \
+              -I"$prefix/include" -L"$prefix/lib" "$tmp/conftest.c" -o "$tmp/conftest"
+          fi
+          "$tmp/conftest"
+          echo "===== EXACT RELEASE DEPENDS RECIPES ====="
+          grep -E '^\$\(package\)_version=' \
+            contrib/depends/packages/{boost,openssl,zeromq,unbound,libusb,hidapi,protobuf,abseil,sodium}.mk
+          echo "===== BUILD DEPENDS ====="
+          if ! make -C contrib/depends HOST=${{ matrix.host }} -j2; then
+            echo "===== DEPENDS FAILURE DIAGNOSTICS ====="
+            find contrib/depends/work/build -path '*/libiconv/*/config.log' \
+              -type f -print -exec tail -70 {} \; || true
+            exit 1
+          fi
+          test -f "$prefix/share/toolchain.cmake"
+          for component in chrono filesystem program_options thread date_time regex serialization locale; do
+            test -s "$prefix/lib/libboost_$component.a"
+          done
+          echo "PASS: canonical hash-pinned ${{ matrix.name }} dependencies"
+
+      - name: Configure native HF21 tests with release settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B "build/${{ matrix.name }}-hf21" \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/contrib/depends/${{ matrix.host }}/share/toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TAG=${{ matrix.name }} \
+            -DBUILD_TESTS=ON \
+            -DBUILD_DOCUMENTATION=OFF \
+            -DBUILD_DEBUG_UTILITIES=OFF \
+            -DBUILD_GUI_DEPS=OFF \
+            -DSTATIC=ON \
+            -DUSE_DEVICE_TREZOR=ON \
+            -DUSE_DEVICE_TREZOR_LIBUSB=ON \
+            -DTREZOR_DEBUG=OFF \
+            -DBUILD_64=ON \
+            -DARCH=${{ matrix.arch }}
+          cache="build/${{ matrix.name }}-hf21/CMakeCache.txt"
+          grep -Fxq 'STATIC:BOOL=ON' "$cache"
+          grep -Fxq 'BUILD_TESTS:BOOL=ON' "$cache"
+          echo "PASS: native test configuration mirrors macOS release"
+
+      - name: Build and run HF21 native admission and RingCT regression
+        shell: bash
+        env:
+          MONERO_RANDOMX_UMASK: '1'
+        run: |
+          set -euo pipefail
+          build="build/${{ matrix.name }}-hf21"
+          cmake --build "$build" --parallel 2 --target googletest
+          cmake --build "$build" --parallel 2 --target unit_tests
+          exe="$build/tests/unit_tests/unit_tests"
+          test -x "$exe"
+          test "$(lipo -archs "$exe")" = "${{ matrix.machine }}"
+          file "$exe"
+          otool -L "$exe"
+          "$exe" '--gtest_filter=CryLoTestnetV21AdmissionFoundation.*:ringct.CryLoHF21*'
+          test "$(git rev-parse HEAD)" = "04764f9221481095f6565e7a01761086fceff507"
+          git diff --quiet
+          git diff --cached --quiet
+          echo "PASS: ${{ matrix.name }} HF21 native admission and RingCT regression"
+          echo "No Electron packaging, release signing, publishing, activation, or live node access."
