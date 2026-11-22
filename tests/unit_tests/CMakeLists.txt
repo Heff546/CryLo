@@ -90,6 +90,7 @@ set(unit_tests_sources
   tx_proof.cpp
   crylo_testnet_treasury_proof.cpp
   crylo_testnet_block_validator.cpp
+  crylo_testnet_admission_foundation.cpp
   hardfork.cpp
   unbound.cpp
   uri.cpp
