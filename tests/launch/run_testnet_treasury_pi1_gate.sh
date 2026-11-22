@@ -68,15 +68,15 @@ if ! "${TEST_BINS[0]}" --gtest_filter="$REG" \
 fi
 tail -11 "$LOGDIR/regressions.log"
 
-echo "===== SAVED V4 HISTORY PREFIX COMPARISON ====="
-SHORT="$AUDIT/original-v4/testnet/lmdb"
-LONG="$AUDIT/prior-abi/testnet/lmdb"
-if [[ ! -f "$SHORT/data.mdb" || ! -f "$LONG/data.mdb" ]]; then
-  echo "FAIL: audited LMDB copies are absent. Originals WILL NOT be touched."
+echo "===== SAVED V4 VS LIVE ANCHOR CHECKPOINTS ====="
+SNAPSHOT="$AUDIT/prior-abi/testnet/lmdb"
+if [[ ! -f "$SNAPSHOT/data.mdb" ]]; then
+  echo "FAIL: audited prior-ABI LMDB copy is absent."
+  echo "Original live databases WILL NOT be touched."
   exit 1
 fi
-if ! python3 "$REVIEW/tests/launch/compare_testnet_lmdb_blocks.py" \
-  "$SHORT" "$LONG" > "$LOGDIR/history.log" 2>&1; then
+if ! python3 "$REVIEW/tests/launch/verify_testnet_anchor_checkpoints.py" \
+  "$SNAPSHOT" > "$LOGDIR/history.log" 2>&1; then
   tail -70 "$LOGDIR/history.log"
   exit 1
 fi
@@ -85,9 +85,9 @@ cat "$LOGDIR/history.log"
 echo "===== FINAL SOURCE STATUS ====="
 git -C "$REVIEW" status --short
 echo "===== COMPLETE ====="
-echo "SUCCESS: candidate tests and local V4 prefix audit passed."
+echo "SUCCESS: candidate tests and three verified anchor checkpoints passed."
 echo "Candidate SHA: $REV"
 echo "Evidence logs: $LOGDIR"
-echo "HOLD: 2958+ canonical Google VM history and full add_new_block tests."
-echo "HOLD: v21 Bulletproof Plus interaction and five-platform release checks."
+echo "HOLD: live anchor ends at 2957; no authoritative 2958+ to replay."
+echo "HOLD: full add_new_block fork-boundary, v21 BP+ interaction and release checks."
 echo "NO HARD FORK ACTIVATION; PR #30 REMAINS DRAFT."
