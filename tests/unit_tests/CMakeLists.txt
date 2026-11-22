@@ -89,6 +89,7 @@ set(unit_tests_sources
   threadpool.cpp
   tx_proof.cpp
   crylo_testnet_treasury_proof.cpp
+  crylo_testnet_block_validator.cpp
   hardfork.cpp
   unbound.cpp
   uri.cpp
