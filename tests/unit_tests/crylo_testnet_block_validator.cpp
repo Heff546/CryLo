@@ -8,6 +8,7 @@
 
 #include "gtest/gtest.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -16,6 +17,7 @@
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
+#include "cryptonote_core/crylo_testnet_gas_treasury_proof.h"
 #include "blockchain_db/testdb.h"
 
 // Blockchain deliberately exposes its internals only to native unit tests;
