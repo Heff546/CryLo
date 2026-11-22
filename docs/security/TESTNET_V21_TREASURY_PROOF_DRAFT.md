@@ -28,12 +28,20 @@ The goal is to correct the confirmed Testnet V4 recipient-authentication gap wit
 
 The generic `tx_extra` parser is also extended on this draft branch. Before merging, verify that recognizing proof tags does not alter pre-v21 transaction acceptance or historical block replay. That is why this is an isolated review candidate, not active Testnet code.
 
+## Pi1 native validation already completed
+
+On November 21, 2026, the operator compiled this candidate on Pi1 Linux ARM64 and reported **37/37** new native proof-helper tests passed, **8/8** source checks passed, and **57/57** existing transaction-extra/hardfork/reward regressions passed. These results are recorded in draft PR #30. They are valid only for the tested commit, not for changes made after that run.
+
+The **next incremental native fixture**, `tests/unit_tests/crylo_testnet_block_validator.cpp`, directly exercises the production `Blockchain::prevalidate_miner_transaction` and `Blockchain::validate_miner_transaction` with `m_nettype=TESTNET` and a dummy, in-memory `BaseTestDB`. It asserts v21 acceptance/rejection and preserves the pre-v21 amount-only Liquidity/Gas behavior. The fixture does **not** invoke `add_new_block`, PoW, P2P, or a real chain database. Its 10 cases still need compilation and execution on Pi1; do not claim they passed until tested.
+
+The upstream `core_tests` generator currently hard-codes `MAINNET` in relevant coinbase-creation paths and cannot by itself certify this **TESTNET-only** consensus change. A Testnet full-block-admission harness with a strictly isolated fork configuration is still required.
+
 ## Risks and gates still OPEN
 
-**This code has NOT yet been compiled or executed.** Adapted code from another chain domain is not automatically correct. Native C++ compilation on Pi1, public recipient cryptographic validity, adversarial proof coverage, and real full-block tests are mandatory; source-only inspection does not certify the proof.
+**The initial candidate compiled and passed 37 proof-helper native tests, but the new direct-validator fixture has NOT yet been compiled or executed.** Adapted code from another chain domain is not automatically correct. Native C++ compilation on Pi1, public recipient cryptographic validity, adversarial proof coverage, and real full-block tests are mandatory; source-only inspection does not certify the proof.
 
 Before activation or merging:
-1. Compile `unit_tests` on Pi1 ARM64. Run the isolated native `CryLoTestnetV21TreasuryProof.*` and `CryLoLegacyV4TreasuryProof.*` tests. Do not suppress failures.
+1. Recompile `unit_tests` on Pi1 ARM64 after adding the direct-validator fixture. Run the isolated native `CryLoTestnetV21TreasuryProof.*` and `CryLoLegacyV4TreasuryProof.*` tests, plus the new `CryLoTestnetV21BlockValidator.*` suite. Do not suppress failures.
 2. Test the actual **Testnet** block-admission path with valid v20 blocks immediately before activation and v21 valid/redirected Development, Liquidity and Gas blocks immediately after. Include missing, duplicate, reordered, malformed points/signatures, wrong heights, output keys, fees and extra nonce lengths **127/128**; deliberately trigger the template weight-padding branch. A helper-only unit test is insufficient.
 3. Obtain **canonical** Testnet V4 history that includes height 2958/2959 and replay it against a **consistent, isolated read-only snapshot** through at least the planned new activation boundary. Prior Pi1 local source stopped at height 2777; that did not prove the correction boundary.
 4. Validate reorgs/alternative branches, independent-node synchronization, identical consensus on Linux ARM64, x64, Windows and both macOS architectures; review parser behavior on all historical tx.extra formats.
