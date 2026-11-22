@@ -152,6 +152,11 @@ jobs:
             -DSTATIC=OFF \
             -DARCH=default
 
+          echo "===== BUILD BUNDLED GOOGLE TEST FIRST ====="
+          cmake --build build/hf21-windows-test \
+            --target googletest --parallel 2
+
+          echo "===== BUILD HF21 NATIVE UNIT TESTS ====="
           cmake --build build/hf21-windows-test \
             --target unit_tests --parallel 2
 
