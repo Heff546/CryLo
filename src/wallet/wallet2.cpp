@@ -12197,7 +12197,14 @@ void wallet2::cold_sign_tx(const std::vector<pending_tx>& ptx_vector, signed_tx_
   hw::wallet_shim wallet_shim;
   setup_shim(&wallet_shim, this);
   aux_data.tx_recipients = dsts_info;
-  aux_data.bp_version = (use_fork_rules(HF_VERSION_BULLETPROOF_PLUS, -10) ? 4 : use_fork_rules(HF_VERSION_CLSAG, -10) ? 3 : use_fork_rules(HF_VERSION_SMALLER_BP, -10) ? 2 : 1);
+  // Match the wallet's normal HF21 RingCT construction. Cold signing must
+  // never request legacy BP+ (4) when a FullCommit (5) transaction is
+  // required. Device/firmware support for bp_version 5 remains a separate
+  // compatibility gate; the device must reject unsupported versions.
+  aux_data.bp_version = use_fork_rules(HF_VERSION_BP_PLUS_FULL_COMMIT, 0) ? 5 :
+      use_fork_rules(HF_VERSION_BULLETPROOF_PLUS, -10) ? 4 :
+      use_fork_rules(HF_VERSION_CLSAG, -10) ? 3 :
+      use_fork_rules(HF_VERSION_SMALLER_BP, -10) ? 2 : 1;
   aux_data.hard_fork = get_current_hard_fork();
   dev_cold->tx_sign(&wallet_shim, txs, exported_txs, aux_data);
   tx_device_aux = aux_data.tx_device_aux;
