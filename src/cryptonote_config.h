@@ -231,6 +231,10 @@
 #define HF_VERSION_BULLETPROOF_PLUS             18
 #define HF_VERSION_BLOCK_HEADER_MINER_SIG       255  // CryLo CHAIN: disabled, not implemented
 #define HF_VERSION_VIEW_TAGS                    20
+// UNRELEASED Testnet treasury recipient proofs; the active Testnet hardfork
+// table intentionally ends at v20. Do not schedule v21 before native replay,
+// separate-node consensus, and miner-template checks are complete.
+#define HF_VERSION_TESTNET_TREASURY_PROOFS      21
 #define HF_VERSION_2021_SCALING                 20
 #define HF_VERSION_BP_PLUS_FULL_COMMIT          21
 
