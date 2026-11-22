@@ -886,4 +886,161 @@ TEST(CryLoTestnetV21AdmissionFoundation, RejectsSignedFullCommitWithUnindexedRin
   ASSERT_TRUE(real_pool.deinit());
   ASSERT_TRUE(chain.deinit());
 }
+
+TEST(CryLoTestnetV21AdmissionFoundation, AcceptsMatureIndexedFullCommitAndRejectsDoubleSpend) {
+  // Expensive positive integration test. A separate real TESTNET LMDB
+  // produces genuine miner-owned amount-indexed output rings and waits
+  // for the 288-block coinbase unlock. No synthetic DB rows, fakechain
+  // test_options, or consensus bypasses.
+  TemporaryTestnetDB tmp;
+  cryptonote::core core(nullptr);
+  auto db = std::make_unique<cryptonote::BlockchainLMDB>();
+  ASSERT_NO_THROW(db->open(tmp.path.string()));
+  auto& chain = core.get_blockchain_storage();
+  ASSERT_TRUE(chain.init(db.release(), cryptonote::TESTNET, true, nullptr, 1));
+  auto* fork = new cryptonote::HardFork(*chain.m_db, 17, 0);
+  ASSERT_TRUE(fork->add_fork(17, 0, 0, 1700000000));
+  ASSERT_TRUE(fork->add_fork(18, 1, 0, 1700000001));
+  ASSERT_TRUE(fork->add_fork(20, 301, 0, 1700000002));
+  ASSERT_TRUE(fork->add_fork(HF_VERSION_TESTNET_TREASURY_PROOFS,
+                             302, 0, 1700000003));
+  auto* old = chain.m_hardfork;
+  chain.m_hardfork = fork;
+  chain.m_db->set_hard_fork(fork);
+  delete old;
+  fork->init();
+
+  cryptonote::account_base miner, recipient;
+  miner.generate();
+  recipient.generate();
+  cryptonote::block funding{};
+  for (uint64_t expected_height = 1; expected_height <= 302; ++expected_height) {
+    cryptonote::block candidate{};
+    cryptonote::difficulty_type difficulty = 0;
+    uint64_t height = 0, reward = 0, seed_height = 0;
+    crypto::hash seed_hash = crypto::null_hash;
+    ASSERT_TRUE(chain.create_block_template(
+        candidate, miner.get_keys().m_account_address,
+        difficulty, height, reward, cryptonote::blobdata{},
+        seed_height, seed_hash)) << "template at " << expected_height;
+    ASSERT_EQ(expected_height, height);
+    ASSERT_EQ(uint64_t{1}, uint64_t(difficulty));
+    if (expected_height == 1) funding = candidate;
+    chain.prepare_handle_incoming_block_no_preprocess(
+        cryptonote::block_to_blob(candidate).size());
+    cryptonote::block_verification_context bvc{};
+    const bool admitted = chain.add_new_block(candidate, bvc);
+    ASSERT_TRUE(chain.cleanup_handle_incoming_blocks());
+    ASSERT_TRUE(admitted) << "block admission at " << expected_height;
+    ASSERT_TRUE(bvc.m_added_to_main_chain);
+  }
+  ASSERT_EQ(HF_VERSION_TESTNET_TREASURY_PROOFS,
+            chain.get_current_hard_fork_version());
+  ASSERT_EQ(303u, chain.get_current_blockchain_height());
+
+  // Pick an actual miner-owned output from height 1 for which the LMDB
+  // has at least 16 *mature* outputs of the same denomination.
+  const crypto::public_key funding_pub =
+      cryptonote::get_tx_pub_key_from_extra(funding.miner_tx);
+  crypto::key_derivation derivation{};
+  ASSERT_TRUE(crypto::generate_key_derivation(
+      funding_pub, miner.get_keys().m_view_secret_key, derivation));
+  cryptonote::tx_source_entry source{};
+  bool found = false;
+  for (size_t output_index = 0;
+       output_index < funding.miner_tx.vout.size() && !found; ++output_index) {
+    const auto& out = funding.miner_tx.vout[output_index];
+    crypto::public_key derived{}, actual{};
+    if (!crypto::derive_public_key(
+            derivation, output_index,
+            miner.get_keys().m_account_address.m_spend_public_key,
+            derived) ||
+        !cryptonote::get_output_public_key(out, actual) ||
+        derived != actual || out.amount < 10000000)
+      continue;
+
+    std::vector<uint64_t> indices;
+    uint64_t real_index = 0;
+    bool real_included = false;
+    const uint64_t count = chain.m_db->get_num_outputs(out.amount);
+    for (uint64_t index = 0; index < count; ++index) {
+      const auto data = chain.m_db->get_output_key(out.amount, index);
+      if (data.unlock_time > chain.get_current_blockchain_height())
+        continue;
+      const auto reference = chain.m_db->get_output_tx_and_index(out.amount, index);
+      if (reference.first == cryptonote::get_transaction_hash(funding.miner_tx) &&
+          reference.second == output_index) {
+        real_index = index;
+        real_included = true;
+      }
+      indices.push_back(index);
+    }
+    if (!real_included || indices.size() < 16) continue;
+    std::vector<uint64_t> selected;
+    selected.push_back(real_index);
+    for (const uint64_t index : indices)
+      if (index != real_index && selected.size() < 16)
+        selected.push_back(index);
+    if (selected.size() != 16) continue;
+    std::sort(selected.begin(), selected.end());
+    source.amount = out.amount;
+    source.real_out_tx_key = funding_pub;
+    source.real_output_in_tx_index = output_index;
+    source.rct = false;
+    source.mask = rct::identity();
+    for (size_t n = 0; n < selected.size(); ++n) {
+      const auto data = chain.m_db->get_output_key(out.amount, selected[n]);
+      source.push_output(selected[n], data.pubkey, out.amount);
+      if (selected[n] == real_index) source.real_output = n;
+    }
+    found = true;
+  }
+  ASSERT_TRUE(found) << "No mature 16-output same-denomination miner ring "
+                     << "in the actual v18-to-v21 LMDB; do not fake inputs";
+
+  const auto construct = [&](cryptonote::transaction& tx) {
+    std::vector<cryptonote::tx_source_entry> inputs{source};
+    std::vector<cryptonote::tx_destination_entry> outputs;
+    const uint64_t spendable = source.amount - source.amount / 5;
+    outputs.emplace_back(spendable / 2,
+                         recipient.get_keys().m_account_address, false);
+    outputs.emplace_back(spendable - spendable / 2,
+                         miner.get_keys().m_account_address, false);
+    std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subs;
+    subs[miner.get_keys().m_account_address.m_spend_public_key] = {0, 0};
+    crypto::secret_key tx_key{};
+    std::vector<crypto::secret_key> additional_keys;
+    const rct::RCTConfig config{rct::RangeProofPaddedBulletproof, 5};
+    return cryptonote::construct_tx_and_get_tx_key(
+        miner.get_keys(), subs, inputs, outputs,
+        miner.get_keys().m_account_address, std::vector<uint8_t>{},
+        tx, tx_key, additional_keys, true, config, true);
+  };
+  cryptonote::transaction first{};
+  ASSERT_TRUE(construct(first));
+  ASSERT_EQ(rct::RCTTypeBulletproofPlus_FullCommit, first.rct_signatures.type);
+  ASSERT_TRUE(rct::verRctSimple(first.rct_signatures));
+
+  cryptonote::tx_memory_pool pool(chain);
+  ASSERT_TRUE(pool.init());
+  cryptonote::tx_verification_context accepted{};
+  ASSERT_TRUE(pool.add_tx(first, accepted, cryptonote::relay_method::local,
+                          false, HF_VERSION_TESTNET_TREASURY_PROOFS));
+  ASSERT_FALSE(accepted.m_verifivation_failed);
+  ASSERT_TRUE(accepted.m_added_to_pool);
+  ASSERT_EQ(1u, pool.get_transactions_count(true));
+
+  cryptonote::transaction second{};
+  ASSERT_TRUE(construct(second));
+  ASSERT_NE(cryptonote::get_transaction_hash(first),
+            cryptonote::get_transaction_hash(second));
+  cryptonote::tx_verification_context rejected{};
+  EXPECT_FALSE(pool.add_tx(second, rejected, cryptonote::relay_method::local,
+                           false, HF_VERSION_TESTNET_TREASURY_PROOFS));
+  EXPECT_TRUE(rejected.m_verifivation_failed);
+  EXPECT_FALSE(rejected.m_added_to_pool);
+  EXPECT_EQ(1u, pool.get_transactions_count(true));
+  ASSERT_TRUE(pool.deinit());
+  ASSERT_TRUE(chain.deinit());
+}
 } // namespace
