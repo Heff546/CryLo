@@ -135,6 +135,10 @@ jobs:
           export MSYSTEM=MINGW64
           export PATH="/mingw64/bin:/usr/bin"
           export MONERO_RANDOMX_UMASK=1
+          export PATH="$PATH:/c/Program Files/Git/cmd"
+
+          command -v git
+          command -v python
 
           cd "$1"
 
