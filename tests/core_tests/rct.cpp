@@ -95,8 +95,13 @@ bool gen_rct_tx_validation_base::generate_with_full(std::vector<test_event_entry
     sources.resize(1);
     tx_source_entry& src = sources.back();
 
-    const size_t index_in_tx = 5;
-    src.amount = 30000000000000;
+    // CryLo adds three treasury outputs after the miner's outputs.
+    // The historical fixture spent output 5 (Liquidity treasury)
+    // with a non-CryLo amount. Spend the miner-owned output 3 instead.
+    const size_t index_in_tx = 3;
+    src.amount = blocks[n].miner_tx.vout.at(index_in_tx).amount;
+    CHECK_AND_ASSERT_MES(src.amount > 4 * uint64_t{40000000000},
+        false, "CryLo fixture miner output is insufficient");
     for (int m = 0; m < 4; ++m) {
       crypto::public_key output_public_key;
       cryptonote::get_output_public_key(blocks[m].miner_tx.vout[index_in_tx], output_public_key);
@@ -111,7 +116,7 @@ bool gen_rct_tx_validation_base::generate_with_full(std::vector<test_event_entry
     //fill outputs entry
     tx_destination_entry td;
     td.addr = miner_accounts[n].get_keys().m_account_address;
-    td.amount = 7390000000000;
+    td.amount = 40000000000;
     std::vector<tx_destination_entry> destinations;
     destinations.push_back(td);
     destinations.push_back(td);
@@ -181,7 +186,7 @@ bool gen_rct_tx_validation_base::generate_with_full(std::vector<test_event_entry
     src.real_output = 0;
     if (out_idx[out_idx_idx]) {
       // rct
-      src.amount = 7390000000000;
+      src.amount = 40000000000;
       src.real_out_tx_key = get_tx_pub_key_from_extra(rct_txes[rct_idx/4]);
       src.real_output_in_tx_index = rct_idx&3;
       src.mask = rct_tx_masks[rct_idx];
@@ -200,13 +205,13 @@ bool gen_rct_tx_validation_base::generate_with_full(std::vector<test_event_entry
     else
     {
       // pre rct
-      src.amount = 5000000000000;
+      src.amount = blocks[pre_rct_idx].miner_tx.vout.at(3).amount;
       src.real_out_tx_key = cryptonote::get_tx_pub_key_from_extra(blocks[pre_rct_idx].miner_tx);
-      src.real_output_in_tx_index = 4;
+      src.real_output_in_tx_index = 3;
       src.mask = rct::identity();
       src.rct = false;
       for (int m = 0; m <= mixin; ++m) {
-        src.push_output(m, boost::get<txout_to_key>(blocks[pre_rct_idx].miner_tx.vout[4].target).key, src.amount);
+        src.push_output(m, boost::get<txout_to_key>(blocks[pre_rct_idx].miner_tx.vout[3].target).key, src.amount);
         ++pre_rct_idx;
       }
     }

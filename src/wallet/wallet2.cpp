@@ -10441,6 +10441,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   ptx.construction_data.use_rct = true;
   ptx.construction_data.rct_config = {
     rct::RangeProofPaddedBulletproof,
+    use_fork_rules(HF_VERSION_BP_PLUS_FULL_COMMIT, 0) ? 5 :
     use_fork_rules(HF_VERSION_BULLETPROOF_PLUS, -10) ? 4 : 3
   };
   ptx.construction_data.use_view_tags = use_fork_rules(get_view_tag_fork(), 0);
@@ -11202,7 +11203,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   const bool clsag = use_fork_rules(get_clsag_fork(), 0);
   const rct::RCTConfig rct_config {
     rct::RangeProofPaddedBulletproof,
-    bulletproof_plus ? 4 : 3
+    bulletproof_plus_full_commit ? 5 : bulletproof_plus ? 4 : 3
   };
   const bool use_view_tags = use_fork_rules(get_view_tag_fork(), 0);
   std::unordered_set<crypto::public_key> valid_public_keys_cache;
@@ -11970,7 +11971,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
   const bool clsag = use_fork_rules(get_clsag_fork(), 0);
   const rct::RCTConfig rct_config {
     rct::RangeProofPaddedBulletproof,
-    bulletproof_plus ? 4 : 3
+    bulletproof_plus_full_commit ? 5 : bulletproof_plus ? 4 : 3
   };
   const bool use_view_tags = use_fork_rules(get_view_tag_fork(), 0);
   const uint64_t base_fee  = get_base_fee(priority);
@@ -12196,9 +12197,32 @@ void wallet2::cold_sign_tx(const std::vector<pending_tx>& ptx_vector, signed_tx_
   hw::wallet_shim wallet_shim;
   setup_shim(&wallet_shim, this);
   aux_data.tx_recipients = dsts_info;
-  aux_data.bp_version = (use_fork_rules(HF_VERSION_BULLETPROOF_PLUS, -10) ? 4 : use_fork_rules(HF_VERSION_CLSAG, -10) ? 3 : use_fork_rules(HF_VERSION_SMALLER_BP, -10) ? 2 : 1);
+  // Match the wallet's normal HF21 RingCT construction. Cold signing must
+  // never request legacy BP+ (4) when a FullCommit (5) transaction is
+  // required. Device/firmware support for bp_version 5 remains a separate
+  // compatibility gate; the device must reject unsupported versions.
+  aux_data.bp_version = use_fork_rules(HF_VERSION_BP_PLUS_FULL_COMMIT, 0) ? 5 :
+      use_fork_rules(HF_VERSION_BULLETPROOF_PLUS, -10) ? 4 :
+      use_fork_rules(HF_VERSION_CLSAG, -10) ? 3 :
+      use_fork_rules(HF_VERSION_SMALLER_BP, -10) ? 2 : 1;
   aux_data.hard_fork = get_current_hard_fork();
   dev_cold->tx_sign(&wallet_shim, txs, exported_txs, aux_data);
+  // A device can accept the signing request yet return a transaction type
+  // unsupported at this fork. Fail closed before exposing or relaying the
+  // signed set; do not silently downgrade HF21 FullCommit to legacy BP+.
+  CHECK_AND_ASSERT_THROW_MES(exported_txs.ptx.size() == txs.txes.size(),
+      "Cold signer returned an unexpected number of transactions");
+  if (aux_data.bp_version == 5)
+  {
+    for (const auto &signed_ptx : exported_txs.ptx)
+    {
+      CHECK_AND_ASSERT_THROW_MES(
+          signed_ptx.tx.version == 2 &&
+          signed_ptx.tx.rct_signatures.type ==
+              rct::RCTTypeBulletproofPlus_FullCommit,
+          "Cold signer did not return an HF21 FullCommit transaction");
+    }
+  }
   tx_device_aux = aux_data.tx_device_aux;
 
   MDEBUG("Signed tx data from hw: " << exported_txs.ptx.size() << " transactions");

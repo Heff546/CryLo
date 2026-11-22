@@ -32,12 +32,18 @@
 #include <random>
 #include "include_base_utils.h"
 #include "string_tools.h"
+// Required by the canonical v21 tx_extra_nonce string serialization.
+#include "serialization/string.h"
 using namespace epee;
 
 #include "common/apply_permutation.h"
 #include "cryptonote_tx_utils.h"
 #include "cryptonote_config.h"
 #include "blockchain.h"
+// Unreleased TESTNET v21+ public treasury-recipient proof helpers.
+#include "crylo_testnet_gas_treasury_proof.h"
+#include "crylo_testnet_liquidity_proof.h"
+#include "crylo_testnet_dev_fund_proof.h"
 #include "cryptonote_basic/miner.h"
 #include "cryptonote_basic/tx_extra.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
@@ -83,9 +89,31 @@ namespace cryptonote
 
     keypair txkey = keypair::generate(hw::get_device("default"));
     add_tx_pub_key_to_extra(tx, txkey.pub);
-    if(!extra_nonce.empty())
-      if(!add_extra_nonce_to_tx_extra(tx.extra, extra_nonce))
+    if (!extra_nonce.empty())
+    {
+      if (m_nettype == TESTNET &&
+          hard_fork_version >= HF_VERSION_TESTNET_TREASURY_PROOFS &&
+          height > 0)
+      {
+        // V21 proof fields must remain last. Canonically serialize the
+        // nonce BEFORE signing the final coinbase prefix. Older Testnet
+        // V4 and all other networks keep the original writer.
+        if (extra_nonce.size() > TX_EXTRA_NONCE_MAX_COUNT)
+          return false;
+        tx_extra_nonce canonical_nonce{};
+        canonical_nonce.nonce = extra_nonce;
+        std::ostringstream stream;
+        binary_archive<true> ar(stream);
+        uint8_t nonce_tag = TX_EXTRA_NONCE;
+        if (!::do_serialize(ar, nonce_tag) ||
+            !::do_serialize(ar, canonical_nonce))
+          return false;
+        const std::string bytes = stream.str();
+        tx.extra.insert(tx.extra.end(), bytes.begin(), bytes.end());
+      }
+      else if (!add_extra_nonce_to_tx_extra(tx.extra, extra_nonce))
         return false;
+    }
     if (!sort_tx_extra(tx.extra, tx.extra))
       return false;
 
@@ -327,6 +355,30 @@ namespace cryptonote
       tx.unlock_time = height + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW;
     }
     tx.vin.push_back(in);
+
+    // Only the explicit future TESTNET v21 hardfork will require this
+    // canonical proof suffix. The live V4 hardfork schedule ends at v20.
+    // Existing Testnet treasury PUBLIC keys are retained for local proofs;
+    // no private wallet key is used, and old outputs are never rewritten.
+    if (m_nettype == TESTNET && height > 0 &&
+        hard_fork_version >= HF_VERSION_TESTNET_TREASURY_PROOFS)
+    {
+      if (dev_fund_amount == 0 || liquidity_fund_amount == 0 ||
+          gas_treasury_amount == 0 ||
+          !add_crylo_testnet_dev_fund_proof(
+              tx, height, txkey.sec, dev_fund_addr.m_view_public_key,
+              dev_fund_addr.m_spend_public_key, 2) ||
+          !add_crylo_testnet_liquidity_proof(
+              tx, height, txkey.sec, liquidity_fund_addr.m_view_public_key,
+              liquidity_fund_addr.m_spend_public_key, 3) ||
+          !add_crylo_testnet_treasury_proof(
+              tx, height, txkey.sec, gas_treasury_addr.m_view_public_key,
+              gas_treasury_addr.m_spend_public_key, 4))
+      {
+        LOG_ERROR("Testnet v21 coinbase three-recipient proof failed");
+        return false;
+      }
+    }
 
     tx.invalidate_hashes();
 
