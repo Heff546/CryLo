@@ -560,9 +560,14 @@ TEST(ringct, CryLoHF21FullCommitSignedProofGenerationAndVerification)
     const uint64_t outputs[] = {3000, 1999};
 
     const rctSig legacy = make_sample_simple_rct_sig(1, inputs, 2, outputs, 1, 4);
-    ASSERT_EQ(RCTTypeBulletproofPlus_FullCommit, legacy.type);
+    ASSERT_EQ(RCTTypeBulletproofPlus, legacy.type);
     ASSERT_EQ(1u, legacy.p.bulletproofs_plus.size());
     ASSERT_TRUE(verRctSimple(legacy));
+
+    const rctSig full = make_sample_simple_rct_sig(1, inputs, 2, outputs, 1, 5);
+    ASSERT_EQ(RCTTypeBulletproofPlus_FullCommit, full.type);
+    ASSERT_EQ(1u, full.p.bulletproofs_plus.size());
+    ASSERT_TRUE(verRctSimple(full));
 }
 
 
