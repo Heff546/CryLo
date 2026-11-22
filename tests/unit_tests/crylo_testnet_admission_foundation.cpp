@@ -9,7 +9,9 @@
 #include <memory>
 #include <string>
 #include "blockchain_db/lmdb/db_lmdb.h"
+#define IN_UNIT_TESTS
 #include "cryptonote_core/cryptonote_core.h"
+#undef IN_UNIT_TESTS
 #include "cryptonote_config.h"
 
 namespace {
@@ -39,7 +41,7 @@ TEST(CryLoTestnetV21AdmissionFoundation, RealTestnetGenesisInDisposableLMDB) {
                          true /* offline */, nullptr /* no FAKECHAIN */,
                          1 /* fixed difficulty, test only */));
   EXPECT_EQ(1u, chain.get_current_blockchain_height());
-  EXPECT_EQ(cryptonote::TESTNET, chain.get_network_type());
+  EXPECT_EQ(cryptonote::TESTNET, chain.m_nettype);
   EXPECT_EQ(17u, chain.get_current_hard_fork_version());
 
   ASSERT_TRUE(chain.deinit());
