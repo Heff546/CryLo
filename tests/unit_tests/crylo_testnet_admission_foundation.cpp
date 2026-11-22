@@ -463,9 +463,10 @@ TEST(CryLoTestnetV21AdmissionFoundation, BulletproofPlusVersionGatesAtHF21) {
   recipient.generate();
   cryptonote::txout_to_tagged_key target{};
   target.key = recipient.get_keys().m_account_address.m_spend_public_key;
-  tx.vout.push_back(cryptonote::tx_out{});
-  tx.vout.back().amount = 0;
-  tx.vout.back().target = target;
+  // Construct the tagged target directly instead of assigning a new
+  // boost::variant alternative to the default script target. GCC 12
+  // otherwise emits -Wmaybe-uninitialized in Boost's move-assignment path.
+  tx.vout.push_back(cryptonote::tx_out{0, target});
 
   cryptonote::tx_verification_context tvc{};
   tx.rct_signatures.type = rct::RCTTypeBulletproofPlus_FullCommit;
