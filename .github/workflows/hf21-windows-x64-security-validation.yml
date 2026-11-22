@@ -204,6 +204,45 @@ jobs:
             ldd "$testbin" || true
           fi
 
+          echo "===== WINDOWS NATIVE DLL LOADER PROBE ====="
+          python - "$testbin" <<'DLLPROBE'
+          import ctypes
+          import re
+          import subprocess
+          import sys
+
+          exe = sys.argv[1]
+          output = subprocess.check_output(
+              ["objdump", "-p", exe],
+              text=True,
+              errors="replace"
+          )
+
+          names = sorted(set(
+              re.findall(r"DLL Name:\\s*(\\S+)", output),
+              key=str.lower
+          ))
+
+          kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+          kernel.LoadLibraryW.argtypes = [ctypes.c_wchar_p]
+          kernel.LoadLibraryW.restype = ctypes.c_void_p
+          kernel.FreeLibrary.argtypes = [ctypes.c_void_p]
+
+          print(f"Direct imports: {len(names)}", flush=True)
+
+          for name in names:
+              handle = kernel.LoadLibraryW(name)
+              if handle:
+                  print(f"LOAD OK: {name}", flush=True)
+                  kernel.FreeLibrary(handle)
+              else:
+                  error = ctypes.get_last_error()
+                  print(f"LOAD FAILED: {name}, Win32={error}",
+                        flush=True)
+
+          print("DLL loader probe complete", flush=True)
+          DLLPROBE
+
           echo "===== LAUNCH HF21 TESTS WITH EXIT DIAGNOSTICS ====="
           python - "$testbin" <<'RUNTEST'
           from pathlib import Path
