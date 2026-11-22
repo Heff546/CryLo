@@ -93,6 +93,27 @@ jobs:
             mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst \
             mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst \
             mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst
+          echo "===== RESTORE CANONICAL LIBICONV 1.19 ====="
+          iconv_pkg="mingw-w64-x86_64-libiconv-1.19-1-any.pkg.tar.zst"
+          iconv_url="https://repo.msys2.org/mingw/mingw64/$iconv_pkg"
+
+          curl --fail --location --retry 3 --connect-timeout 15 \
+            --max-time 180 --output "$iconv_pkg" "$iconv_url"
+          curl --fail --location --retry 3 --connect-timeout 15 \
+            --max-time 180 --output "$iconv_pkg.sig" "$iconv_url.sig"
+
+          gpgv --keyring /etc/pacman.d/gnupg/pubring.gpg \
+            "$iconv_pkg.sig" "$iconv_pkg"
+
+          test "$(pacman -Qp "$iconv_pkg")" = \
+            "mingw-w64-x86_64-libiconv 1.19-1"
+
+          pacman -U --noconfirm "$iconv_pkg"
+
+          test "$(pacman -Q mingw-w64-x86_64-libiconv)" = \
+            "mingw-w64-x86_64-libiconv 1.19-1"
+          echo "PASS: Canonical libiconv 1.19-1 installed and verified"
+
           cat > versions.txt <<'VERSIONS'
           mingw-w64-x86_64-hidapi 0.15.0
           mingw-w64-x86_64-libusb 1.0.30
