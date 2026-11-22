@@ -36,6 +36,42 @@ struct TemporaryTestnetDB {
   }
 };
 
+// Exercise the *production* Blockchain::check_tx_outputs HF type gate.
+// These are deliberately minimal type-only fixtures, not spendable txs.
+// The full signed transaction and real-mempool negative control are tested
+// separately. HF22 is future-only and is not activated on Testnet.
+TEST(CryLoTestnetV21AdmissionFoundation, RingCTTypeAdmissionAcrossHF20HF21HF22) {
+  cryptonote::transaction tx{};
+  tx.version = 2;
+  const auto check = [&tx](uint8_t hf, rct::RCTType type) {
+    tx.rct_signatures.type = type;
+    cryptonote::tx_verification_context tvc{};
+    const bool permitted = cryptonote::Blockchain::check_tx_outputs(tx, tvc, hf);
+    return std::make_pair(permitted, tvc.m_invalid_output);
+  };
+
+  const auto before = check(20, rct::RCTTypeBulletproofPlus);
+  EXPECT_TRUE(before.first);
+  EXPECT_FALSE(before.second);
+  const auto forbidden_early = check(20, rct::RCTTypeBulletproofPlus_FullCommit);
+  EXPECT_FALSE(forbidden_early.first);
+  EXPECT_TRUE(forbidden_early.second);
+
+  const auto legacy_transition = check(21, rct::RCTTypeBulletproofPlus);
+  EXPECT_TRUE(legacy_transition.first);
+  EXPECT_FALSE(legacy_transition.second);
+  const auto full_transition = check(21, rct::RCTTypeBulletproofPlus_FullCommit);
+  EXPECT_TRUE(full_transition.first);
+  EXPECT_FALSE(full_transition.second);
+
+  const auto forbidden_late = check(22, rct::RCTTypeBulletproofPlus);
+  EXPECT_FALSE(forbidden_late.first);
+  EXPECT_TRUE(forbidden_late.second);
+  const auto full_late = check(22, rct::RCTTypeBulletproofPlus_FullCommit);
+  EXPECT_TRUE(full_late.first);
+  EXPECT_FALSE(full_late.second);
+}
+
 TEST(CryLoTestnetV21AdmissionFoundation, RealTestnetGenesisInDisposableLMDB) {
   TemporaryTestnetDB tmp;
   cryptonote::core core(nullptr);
