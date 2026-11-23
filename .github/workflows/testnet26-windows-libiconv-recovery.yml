@@ -1,7 +1,7 @@
-name: CryLo Testnet.26 Windows pinned libiconv recovery — unsigned
+name: CryLo HF21 Windows pinned libiconv recovery — unsigned
 
 # Build only Windows against the EXACT source used by all four candidates
-# in five-platform run 44946150836. No source edits, signatures or release.
+# in HF21 five-platform run 45099176651. No source edits, signatures or release.
 on:
   push:
     branches:
@@ -24,12 +24,12 @@ jobs:
           persist-credentials: false
           set-safe-directory: false
           submodules: recursive
-          ref: 27c8c3b1fe974f00e7f1c2ce196562135837831f
-      - name: Verify frozen shared Testnet.26 source revision
+          ref: e2b37014d7b31d100003b28e2e2b9df76cbe1ffe
+      - name: Verify frozen shared HF21 source revision
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = '27c8c3b1fe974f00e7f1c2ce196562135837831f'
+          test "$(git rev-parse HEAD)" = 'e2b37014d7b31d100003b28e2e2b9df76cbe1ffe'
           test -z "$(git status --porcelain --untracked-files=all)"
           echo 'PASS: Windows source exactly matches Linux and macOS candidate source'
       - name: Verify exact trusted OpenSSL patch bytes on Windows checkout
@@ -251,7 +251,7 @@ jobs:
       - name: Retain unsigned Windows candidate only
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: crylo-testnet26-win-x64-pinned-recovery-UNSIGNED
+          name: crylo-hf21-win-x64-pinned-recovery-UNSIGNED
           path: |
             build/win-x64/bin/CryLo-daemon.exe
             build/win-x64/bin/CryLo-wallet.exe
