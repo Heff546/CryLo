@@ -1,4 +1,4 @@
-name: CryLo Testnet.26 unified five-platform unsigned candidate builds
+name: CryLo Testnet.27 unified five-platform unsigned candidate builds
 
 # A single source revision across Windows x64, Linux x64/ARM64,
 # macOS Intel/Apple Silicon. No keys, no tags, no signing, no release.
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: crylo-testnet26-five-${{ github.ref }}
+  group: crylo-testnet27-five-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -32,6 +32,7 @@ jobs:
       - name: Checkout approved CryLo source and submodules without credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: e2b37014d7b31d100003b28e2e2b9df76cbe1ffe
           persist-credentials: false
           set-safe-directory: false
           submodules: recursive
@@ -42,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(uname -m)" = "$EXPECTED_MACHINE"
-          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = 'e2b37014d7b31d100003b28e2e2b9df76cbe1ffe'
           test -z "$(git status --porcelain --untracked-files=all)"
           sh -n ./crylo
           node --check scripts/release/crylo-release.js
@@ -131,9 +132,16 @@ jobs:
       - name: Checkout exact source and submodules
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: e2b37014d7b31d100003b28e2e2b9df76cbe1ffe
           persist-credentials: false
           set-safe-directory: false
           submodules: recursive
+      - name: Verify frozen Testnet.27 HF21 source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'e2b37014d7b31d100003b28e2e2b9df76cbe1ffe'
+          test -z "$(git status --porcelain --untracked-files=all)"
       - name: Verify exact trusted OpenSSL patch bytes on Windows checkout
         shell: cmd
         run: |
@@ -194,6 +202,7 @@ jobs:
           mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst 89fb61549a437d65076a092a367fcb264fc7045ee9ebef48cd81f5a76a5588f8
           mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst 124edc26b009678a4c5e759481a364abf63ed7f2f49a53092e8bd0a47c0c0740
           mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst 4d737e09dd1137bb318e2d563962ddcbe511de02155e5835affc1f09d174c6a3
+          mingw-w64-x86_64-libiconv-1.19-1-any.pkg.tar.zst 21e334d0911f25de75d3e18e0697648bcecfa9658256d600cad0827d719c2f35
           PINS
           while read -r file hash; do
             url="https://repo.msys2.org/mingw/mingw64/$file"
@@ -209,7 +218,8 @@ jobs:
             mingw-w64-x86_64-abseil-cpp-20260817.0-1-any.pkg.tar.zst \
             mingw-w64-x86_64-hidapi-0.15.0-2-any.pkg.tar.zst \
             mingw-w64-x86_64-libusb-1.0.30-1-any.pkg.tar.zst \
-            mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst
+            mingw-w64-x86_64-unbound-1.26.1-1-any.pkg.tar.zst \
+            mingw-w64-x86_64-libiconv-1.19-1-any.pkg.tar.zst
           cat > versions.txt <<'VERSIONS'
           mingw-w64-x86_64-hidapi 0.15.0
           mingw-w64-x86_64-libusb 1.0.30
@@ -364,16 +374,16 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   mac-x64:
-    name: "CryLo Testnet.26 exact source \u2014 mac-x64"
+    name: "CryLo Testnet.27 exact source \u2014 mac-x64"
     runs-on: macos-15-intel
     timeout-minutes: 240
     steps:
-    - name: Checkout exact CryLo Testnet.26 source
+    - name: Checkout exact CryLo Testnet.27 source
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       with:
         persist-credentials: false
         submodules: recursive
-        ref: ${{ github.sha }}
+        ref: e2b37014d7b31d100003b28e2e2b9df76cbe1ffe
         set-safe-directory: false
     - name: Pinned packaging Node
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -383,7 +393,7 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+        test "$(git rev-parse HEAD)" = 'e2b37014d7b31d100003b28e2e2b9df76cbe1ffe'
         test "$(uname -m)" = 'x86_64'
         test -z "$(git status --porcelain --untracked-files=all)"
         test "$(node --version)" = v24.21.0
@@ -753,14 +763,14 @@ jobs:
       run: |
         set -euo pipefail
         out="$RUNNER_TEMP/crylo-final-parity"
-        test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+        test "$(git rev-parse HEAD)" = 'e2b37014d7b31d100003b28e2e2b9df76cbe1ffe'
         shasum -a 256 build/mac-x64/bin/CryLo-daemon build/mac-x64/bin/CryLo-wallet build/mac-x64/bin/CryLo-wallet-rpc > "$out/NATIVE-SHA256SUMS.txt"
         shasum -a 256 electron/dist/*.pkg > "$out/PKG-SHA256SUMS.txt"
         git diff --exit-code HEAD -- src external cmake contrib/depends CMakeLists.txt tests translations electron/package.json electron/package-lock.json node-operator/runtime/package-lock.json
     - name: Retain exact-baseline native binaries, PKG and provenance
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: crylo-testnet26-mac-x64-UNSIGNED
+        name: crylo-testnet27-mac-x64-UNSIGNED
         path: |-
           build/mac-x64/bin/CryLo-daemon
           build/mac-x64/bin/CryLo-wallet
@@ -771,17 +781,17 @@ jobs:
         retention-days: 30
         compression-level: 0
   mac-arm64:
-    name: "CryLo Testnet.26 exact source \u2014 mac-arm64"
+    name: "CryLo Testnet.27 exact source \u2014 mac-arm64"
     runs-on: macos-15
     timeout-minutes: 240
     steps:
-    - name: Checkout exact CryLo Testnet.26 source
+    - name: Checkout exact CryLo Testnet.27 source
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       with:
         persist-credentials: false
         set-safe-directory: false
         submodules: recursive
-        ref: ${{ github.sha }}
+        ref: e2b37014d7b31d100003b28e2e2b9df76cbe1ffe
     - name: Pinned packaging Node
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
       with:
@@ -790,7 +800,7 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+        test "$(git rev-parse HEAD)" = 'e2b37014d7b31d100003b28e2e2b9df76cbe1ffe'
         test "$(uname -m)" = 'arm64'
         test -z "$(git status --porcelain --untracked-files=all)"
         test "$(node --version)" = v24.21.0
@@ -1200,14 +1210,14 @@ jobs:
       run: |
         set -euo pipefail
         out="$RUNNER_TEMP/crylo-final-parity"
-        test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+        test "$(git rev-parse HEAD)" = 'e2b37014d7b31d100003b28e2e2b9df76cbe1ffe'
         shasum -a 256 build/mac-arm64/bin/CryLo-daemon build/mac-arm64/bin/CryLo-wallet build/mac-arm64/bin/CryLo-wallet-rpc > "$out/NATIVE-SHA256SUMS.txt"
         shasum -a 256 electron/dist/*.pkg > "$out/PKG-SHA256SUMS.txt"
         git diff --exit-code HEAD -- src external cmake contrib/depends CMakeLists.txt tests translations electron/package.json electron/package-lock.json node-operator/runtime/package-lock.json
     - name: Retain exact-baseline native binaries, PKG and provenance
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: crylo-testnet26-mac-arm64-UNSIGNED
+        name: crylo-testnet27-mac-arm64-UNSIGNED
         path: |-
           build/mac-arm64/bin/CryLo-daemon
           build/mac-arm64/bin/CryLo-wallet
