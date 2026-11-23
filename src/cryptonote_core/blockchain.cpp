@@ -1911,7 +1911,8 @@ bool Blockchain::create_block_template(block& b, const crypto::hash *from_block,
   else
   {
     height = m_db->height();
-    b.major_version = m_hardfork->get_ideal_version(height);
+    // Mine using the active fork; vote for the latest scheduled fork.
+    b.major_version = m_hardfork->get_current_version();
     b.minor_version = m_hardfork->get_ideal_version();
     b.prev_id = get_tail_id();
     median_weight = m_current_block_cumul_weight_limit / 2;
@@ -2101,7 +2102,8 @@ bool Blockchain::get_miner_data(uint8_t& major_version, uint64_t& height, crypto
   prev_id = m_db->top_block_hash(&height);
   ++height;
 
-  major_version = m_hardfork->get_ideal_version(height);
+  // Advertise the active consensus version to miners.
+  major_version = m_hardfork->get_current_version();
 
   seed_hash = crypto::null_hash;
   if (m_hardfork->get_current_version() >= RX_BLOCK_VERSION)
