@@ -6,21 +6,25 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   TESTNET_CHAIN_ID,
+  TESTNET_BLOCKCHAIN_ID,
   validateBundledNexusConfig,
   resolveNexusFoundationOrigin,
-  expectedNexusChainId
+  expectedNexusChainId,
+  expectedNexusBlockchainId
 } = require('../security/nexus-foundation-bootstrap');
 
 const shipped = require('../security/nexus-foundation-endpoints.json');
 function configured(origin) {
   return { schema: 1, network: 'testnet',
-    chainId: TESTNET_CHAIN_ID, foundationApiOrigin: origin };
+    chainId: TESTNET_CHAIN_ID, blockchainId: TESTNET_BLOCKCHAIN_ID,
+    foundationApiOrigin: origin };
 }
 
 test('signed release config is network-bound, HTTPS-only, and fails closed if not deployed', () => {
   assert.equal(shipped.schema, 1);
   assert.equal(shipped.network, 'testnet');
   assert.equal(expectedNexusChainId(shipped), 5546);
+  assert.equal(expectedNexusBlockchainId(shipped), TESTNET_BLOCKCHAIN_ID);
   validateBundledNexusConfig(shipped);
   if (shipped.foundationApiOrigin === null) {
     assert.throws(
@@ -58,6 +62,7 @@ test('unsigned or malicious external endpoint settings never silently become pro
   for (const malformed of [
     null, {}, { ...configured(null), network: 'mainnet' },
     { ...configured(null), chainId: 546 },
+    { ...configured(null), blockchainId: 'wrong' },
     { ...configured(null), schema: 99 },
     { ...configured(null), foundationApiOrigin: undefined }
   ]) {
@@ -94,6 +99,7 @@ test('main-process bridge endpoints consume signed bootstrap and reject wrong ne
   assert.match(main, /resolveNexusFoundationOrigin\(BUNDLED_NEXUS_CONFIG\)/);
   assert.match(main, /data\.cryloL1Network !== BUNDLED_NEXUS_CONFIG\.network/);
   assert.match(main, /chainId !== expectedNexusChainId\(BUNDLED_NEXUS_CONFIG\)/);
+  assert.match(main, /data\.blockchainId !== expectedNexusBlockchainId\(BUNDLED_NEXUS_CONFIG\)/);
   assert.doesNotMatch(main, /process\.env\.CRYLONEXUS_API_URL \|\|/);
   assert.doesNotMatch(main, /http:\/\/34\.19\.201\.107/);
 });
