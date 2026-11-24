@@ -26,7 +26,8 @@ const {
 } = require('./security/nexus-endpoint-policy');
 const {
   resolveNexusFoundationOrigin,
-  expectedNexusChainId
+  expectedNexusChainId,
+  expectedNexusBlockchainId
 } = require('./security/nexus-foundation-bootstrap');
 const BUNDLED_NEXUS_CONFIG = require('./security/nexus-foundation-endpoints.json');
 
@@ -159,6 +160,7 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
 
   if (!Number.isSafeInteger(chainId) ||
       chainId !== expectedNexusChainId(BUNDLED_NEXUS_CONFIG) ||
+      data.blockchainId !== expectedNexusBlockchainId(BUNDLED_NEXUS_CONFIG) ||
       data.cryloL1Network !== BUNDLED_NEXUS_CONFIG.network) {
     throw new Error('CryLoNexus Foundation network identity does not match this signed Testnet wallet.');
   }
