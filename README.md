@@ -6,6 +6,8 @@
 >
 > Supported Testnet.27 release targets: Windows x64, Linux x64, Linux ARM64, macOS Intel, and macOS Apple Silicon. The macOS installer packages are unsigned/unnotarized and require user approval. Existing supported installations update with `crylo update`. Published packages do not guarantee active public peers or an active relay.
 
+**Testnet security completion:** See [the Testnet security gates](docs/security/TESTNET_SECURITY_COMPLETION_GATES.md) for the L1 treasury-proof, Electron/Nexus private-bridge, staking, gas and proxy checks still required before Mainnet development.
+
 **For contributors:** See [Testnet-to-Mainnet source policy](docs/TESTNET_MAINNET_CONTRIBUTING.md) for which changes belong on `testnet`, which remain Mainnet-only, how Testnet V4 consensus is protected, and what evidence is still required before Mainnet release.
 
 CryLo is a CPU-mined blockchain ecosystem built around accessible solo mining, long-term network participation, and user-controlled infrastructure.
