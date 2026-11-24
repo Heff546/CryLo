@@ -2999,16 +2999,16 @@ function pollCryLoBridgeStatus() {
 
           deposit.lastStatusError = '';
 
-          if (res.processed) {
+          // Nexus Testnet returns only a private lifecycle status.
+          // Never expose native transaction IDs or recipient metadata.
+          if (res.status === 'minted') {
             deposit.processed = true;
-            deposit.nexusTx =
-              res.processed.nexus_tx_hash ||
-              res.processed.nexusTxHash ||
-              res.processed.txHash ||
-              res.processed.mintTxHash ||
-              'processed';
-
+            deposit.nexusTx = 'minted';
             deposit.submissionState = 'processed';
+            changed = true;
+          } else if (res.status === 'failed') {
+            deposit.lastStatusError =
+              'Bridge requires operator reconciliation; the deposit remains recorded.';
             changed = true;
           }
         } catch (error) {
