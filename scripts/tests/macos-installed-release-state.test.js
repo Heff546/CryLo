@@ -90,24 +90,26 @@ test('real Installer receipt and payload authenticate a full CI-only v20 -> v21 
    assert.throws(()=>complete(s20,20,oldReceipt),/Installer has not completed/);
    assert.equal(fs.existsSync(statePath),false);
    call('/usr/bin/sudo',['/usr/sbin/installer','-pkg',first.pkg,'-target','/']);
-   const a20=complete(s20,20,oldReceipt);
+   assert.equal(s20.minimumSequence,20);
+   const a20=complete(s20,s20.minimumSequence,oldReceipt);
    assert.equal(a20.state.highestAcceptedReleaseSequence,20);
    assert.equal(currentReleaseFloor({home,userData,network:'testnet'}),20);
    const s21=stage(second,20);
    const before21=receiptSnapshot();
-   assert.throws(()=>complete(s21,20,before21),/Installer has not completed/);
+   assert.throws(()=>complete(s21,s21.minimumSequence,before21),/Installer has not completed/);
    assert.equal(JSON.parse(fs.readFileSync(statePath)).highestAcceptedReleaseSequence,20);
    call('/bin/sleep',['2']);
    call('/usr/bin/sudo',['/usr/sbin/installer','-pkg',second.pkg,'-target','/']);
    const installed='/Applications/CryLo Wallet.app/Contents/Resources/app.asar';
    call('/usr/bin/sudo',['/bin/sh','-c',
      "printf attack >> '/Applications/CryLo Wallet.app/Contents/Resources/app.asar'"]);
-   assert.throws(()=>complete(s21,20,before21),/payload hash mismatch/);
+   assert.throws(()=>complete(s21,s21.minimumSequence,before21),/payload hash mismatch/);
    assert.equal(JSON.parse(fs.readFileSync(statePath)).highestAcceptedReleaseSequence,20);
    call('/usr/bin/sudo',['/bin/cp',
      path.join(second.dir,'root','Applications','CryLo Wallet.app','Contents',
        'Resources','app.asar'),installed]);
-   const a21=complete(s21,20,before21);
+   assert.equal(s21.minimumSequence,20);
+   const a21=complete(s21,s21.minimumSequence,before21);
    assert.equal(a21.state.highestAcceptedReleaseSequence,21);
    assert.equal(currentReleaseFloor({home,userData,network:'testnet'}),21);
    assert.throws(()=>complete(s20,21,oldReceipt),/rollback floor/);
