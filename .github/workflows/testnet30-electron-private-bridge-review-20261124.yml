@@ -11,6 +11,9 @@ on:
       - electron/security/nexus-endpoint-policy.js
       - electron/security/nexus-foundation-bootstrap.js
       - electron/security/nexus-foundation-endpoints.json
+      - electron/security/nexus-foundation-public-proof.js
+      - electron/scripts/verify-nexus-foundation-https.js
+      - electron/test/nexus-foundation-public-proof.test.js
       - electron/test/nexus-foundation-bootstrap.test.js
       - electron/test/testnet-bridge-status-security.test.js
       - .github/workflows/testnet30-electron-private-bridge-review-20261124.yml
@@ -55,7 +58,7 @@ jobs:
           test "$(git rev-parse FETCH_HEAD^{commit})" = 1e5875bd6553260c7f9b9682243b264690864734
           git diff --name-only FETCH_HEAD^{commit} HEAD | while IFS= read -r file; do
             case "$file" in
-              electron/main.js|electron/src/app.js|electron/security/bridge-status-store.js|electron/security/nexus-endpoint-policy.js|electron/security/nexus-foundation-bootstrap.js|electron/security/nexus-foundation-endpoints.json|electron/test/nexus-foundation-bootstrap.test.js|electron/test/testnet-bridge-status-security.test.js|.github/workflows/testnet30-electron-private-bridge-review-20261124.yml) ;;
+              electron/main.js|electron/src/app.js|electron/security/bridge-status-store.js|electron/security/nexus-endpoint-policy.js|electron/security/nexus-foundation-bootstrap.js|electron/security/nexus-foundation-endpoints.json|electron/security/nexus-foundation-public-proof.js|electron/scripts/verify-nexus-foundation-https.js|electron/test/nexus-foundation-public-proof.test.js|electron/test/nexus-foundation-bootstrap.test.js|electron/test/testnet-bridge-status-security.test.js|.github/workflows/testnet30-electron-private-bridge-review-20261124.yml) ;;
               *) echo "FAIL: non-Electron source changed: $file"; exit 1 ;;
             esac
           done
@@ -70,6 +73,8 @@ jobs:
           node --check electron/security/bridge-status-store.js
           node --check electron/security/nexus-endpoint-policy.js
           node --check electron/security/nexus-foundation-bootstrap.js
+          node --check electron/security/nexus-foundation-public-proof.js
+          node --check electron/scripts/verify-nexus-foundation-https.js
       - name: Execute private bridge security and existing Electron regressions
         shell: bash
         run: |
@@ -77,6 +82,7 @@ jobs:
           node --test \
             electron/test/testnet-bridge-status-security.test.js \
             electron/test/nexus-foundation-bootstrap.test.js \
+            electron/test/nexus-foundation-public-proof.test.js \
             electron/test/renderer-security.test.js \
             electron/test/node-center-facts.test.js \
             electron/test/node-center-state.test.js \
