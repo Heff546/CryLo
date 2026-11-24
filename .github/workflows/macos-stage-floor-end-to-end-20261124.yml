@@ -1,0 +1,73 @@
+name: CryLo macOS staged rollback-floor and Installer end-to-end gate
+
+on:
+  push:
+    branches:
+      - fix/macos-verified-stage-preserve-rollback-floor-20261124
+    paths:
+      - .github/workflows/macos-stage-floor-end-to-end-20261124.yml
+      - scripts/release/macos-unsigned-update-stage.js
+      - scripts/tests/macos-update-staging.test.js
+      - scripts/tests/macos-installed-release-state.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crylo-macos-stage-floor-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Staged floor, signed PKG receipt and tampering — ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x64, runner: macos-15-intel, machine: x86_64}
+          - {arch: arm64, runner: macos-15, machine: arm64}
+    steps:
+      - name: Checkout isolated fix without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Use pinned node for native macOS tests
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.21.0
+      - name: Verify platform and patch integrity
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          node -e 'if(process.platform!=="darwin"||process.arch!==process.env.EXPECTED_ARCH)throw Error("Mac native architecture mismatch")'
+          node --check scripts/release/macos-unsigned-update-stage.js
+          node --check scripts/release/macos-installed-release-state.js
+          node --check scripts/release/macos-installed-update.js
+          node --check scripts/tests/macos-installed-release-state.test.js
+          node --check scripts/tests/macos-update-staging.test.js
+      - name: Test signed installer staging, release trust, rollback floor
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            scripts/tests/macos-package-trust.test.js \
+            scripts/tests/macos-update-staging.test.js \
+            scripts/tests/macos-installed-command.test.js \
+            electron/test/macos-installed-updater.test.js
+      - name: Real signed Installer receipt, payload and rollback regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This integration test generates its own temporary Ed25519 key and
+          # synthetic unsigned CI package, installs on disposable runner only,
+          # checks payload hashes and wallet sentinel, then tests rollback.
+          node --test scripts/tests/macos-installed-release-state.test.js
+          echo "PASS: macOS ${{ matrix.arch }} stage-to-receipt handoff"
