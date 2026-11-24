@@ -55,10 +55,20 @@ test('actual Foundation request/status/config routes interoperable with Electron
   const { nexusApiUrl } = require(path.join(SECURITY, 'nexus-endpoint-policy.js'));
 
   const temp = mkdtempSync(path.join(tmpdir(), 'crylo-foundation-routes-'));
+  let db;
+  let httpServer;
+  t.after(async () => {
+    if (httpServer?.listening) {
+      await new Promise((resolve, reject) =>
+        httpServer.close(err => err ? reject(err) : resolve()));
+    }
+    if (db?.open) db.close();
+    rmSync(temp, {recursive: true, force: true});
+  });
   const databaseFile = path.join(temp, 'bridge.sqlite');
   const walletData = path.join(temp, 'wallet-data');
   mkdirSync(walletData, {mode: 0o700});
-  let db = new Sqlite(databaseFile);
+  db = new Sqlite(databaseFile);
   chmodSync(databaseFile, 0o600);
   db.exec([
     'CREATE TABLE bridge_requests (',
@@ -114,15 +124,6 @@ test('actual Foundation request/status/config routes interoperable with Electron
   }
   assert.equal(routes.size, 4, 'All four exact Foundation source routes must register');
 
-  let httpServer;
-  t.after(async () => {
-    if (httpServer?.listening) {
-      await new Promise((resolve, reject) =>
-        httpServer.close(err => err ? reject(err) : resolve()));
-    }
-    if (db?.open) db.close();
-    rmSync(temp, {recursive: true, force: true});
-  });
   httpServer = createServer(async (req, res) => {
     const handler = routes.get(req.method + ' ' + req.url);
     if (!handler) {
