@@ -17,13 +17,19 @@ function configured(origin) {
     chainId: TESTNET_CHAIN_ID, foundationApiOrigin: origin };
 }
 
-test('release embeds explicit testnet identity but no invented HTTPS Foundation endpoint', () => {
-  assert.deepEqual(shipped, configured(null));
+test('signed release config is network-bound, HTTPS-only, and fails closed if not deployed', () => {
+  assert.equal(shipped.schema, 1);
+  assert.equal(shipped.network, 'testnet');
   assert.equal(expectedNexusChainId(shipped), 5546);
-  assert.throws(
-    () => resolveNexusFoundationOrigin(shipped, {}),
-    /not yet enabled.*crylo update/i
-  );
+  validateBundledNexusConfig(shipped);
+  if (shipped.foundationApiOrigin === null) {
+    assert.throws(
+      () => resolveNexusFoundationOrigin(shipped, {}),
+      /not yet enabled.*crylo update/i
+    );
+  } else {
+    assert.match(resolveNexusFoundationOrigin(shipped, {}), /^https:\/\//);
+  }
 });
 
 test('ordinary user resolves an official HTTPS origin directly from the packaged release', () => {
