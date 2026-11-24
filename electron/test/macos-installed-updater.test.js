@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   TRUSTED_KEY_FINGERPRINT,
+  githubRequestHeaders,
   safeHttpsUrl,
   expectedGithubAssetUrl,
   trustFiles,
@@ -72,6 +73,27 @@ test('only exact HTTPS GitHub release paths and redirect hosts are allowed',()=>
     'CryLo-1.1.1-mac-arm64-unsigned.pkg'),
     'https://github.com/Heff546/CryLo/releases/download/v1.1.1-testnet.20/CryLo-1.1.1-mac-arm64-unsigned.pkg');
   assert.throws(()=>expectedGithubAssetUrl('dev','../unsafe.pkg'));
+});
+
+test('GitHub releases metadata uses JSON Accept while actual installers use binary Accept',()=>{
+  const api=githubRequestHeaders(
+    'https://api.github.com/repos/Heff546/CryLo/releases?per_page=50'
+  );
+  assert.equal(api.Accept, 'application/vnd.github+json');
+  assert.equal(api['User-Agent'], 'CryLoWallet-MacReleaseVerifier/1.1');
+
+  const installer=githubRequestHeaders(expectedGithubAssetUrl(
+    'v1.1.1-testnet.28','CryLo-1.1.1-mac-x64-unsigned.pkg'
+  ));
+  assert.equal(installer.Accept, 'application/octet-stream');
+
+  const signedMetadata=githubRequestHeaders(expectedGithubAssetUrl(
+    'v1.1.1-testnet.28','crylo-release-manifest.json'
+  ));
+  assert.equal(signedMetadata.Accept, 'application/octet-stream');
+
+  assert.throws(()=>githubRequestHeaders('http://api.github.com/repos/a/b/releases'),
+    /Untrusted/);
 });
 
 test('rollback floor respects existing GUI and legacy CryLo states',()=>{
