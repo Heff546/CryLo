@@ -8,11 +8,13 @@ const {
 } = require('./nexus-endpoint-policy');
 
 const TESTNET_CHAIN_ID = 5546;
+const TESTNET_BLOCKCHAIN_ID = 'EPA2TKpkcmYRdaa4QKMYdFHkjzy5SWuGHEiBwznNspdTqexrQ';
 
 function validateBundledNexusConfig(config) {
   if (!config || Array.isArray(config) || typeof config !== 'object' ||
       config.schema !== 1 || config.network !== 'testnet' ||
       config.chainId !== TESTNET_CHAIN_ID ||
+      config.blockchainId !== TESTNET_BLOCKCHAIN_ID ||
       !Object.hasOwn(config, 'foundationApiOrigin')) {
     throw new Error('Signed wallet Nexus Testnet configuration is invalid.');
   }
@@ -56,9 +58,15 @@ function expectedNexusChainId(config) {
   return validateBundledNexusConfig(config).chainId;
 }
 
+function expectedNexusBlockchainId(config) {
+  return validateBundledNexusConfig(config).blockchainId;
+}
+
 module.exports = Object.freeze({
   TESTNET_CHAIN_ID,
+  TESTNET_BLOCKCHAIN_ID,
   validateBundledNexusConfig,
   resolveNexusFoundationOrigin,
-  expectedNexusChainId
+  expectedNexusChainId,
+  expectedNexusBlockchainId
 });
