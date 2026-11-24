@@ -24,6 +24,11 @@ const {
   nexusApiUrl: buildNexusApiUrl,
   verifyNexusRpcUrl
 } = require('./security/nexus-endpoint-policy');
+const {
+  resolveNexusFoundationOrigin,
+  expectedNexusChainId
+} = require('./security/nexus-foundation-bootstrap');
+const BUNDLED_NEXUS_CONFIG = require('./security/nexus-foundation-endpoints.json');
 
 // All renderer-to-main IPC handlers, including wallet RPC, bridge, staking,
 // miner and local file actions, are gated to the top-level local wallet page.
@@ -69,11 +74,14 @@ function formatNexusGasUnits(amount) {
   return ethers.formatUnits(amount, NEXUS_GAS_DECIMALS);
 }
 
-// No embedded plaintext public fallback: bridge requests contain sensitive
-// L1 addresses and private bridge-status bearer capabilities.
-const BRIDGE_API_URL = process.env.CRYLONEXUS_API_URL || '';
+// Production endpoints are bundled in the signed Electron release. Ordinary
+// users never configure environment variables or download Nexus files; when no
+// official HTTPS Foundation endpoint is deployed, bridge features fail closed.
+// Explicit operator overrides remain strictly HTTPS/loopback validated.
 function nexusApiUrl(pathname) {
-  return buildNexusApiUrl(BRIDGE_API_URL, pathname);
+  return buildNexusApiUrl(
+    resolveNexusFoundationOrigin(BUNDLED_NEXUS_CONFIG), pathname
+  );
 }
 
 const NEXUS_RUNTIME_CACHE_MS = 60_000;
@@ -149,8 +157,10 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
   // Never pass an insecure remote RPC URI to an ethers provider.
   verifyNexusRpcUrl(rpc);
 
-  if (!Number.isSafeInteger(chainId) || chainId <= 0) {
-    throw new Error('CryLoNexus Foundation returned an invalid chain ID.');
+  if (!Number.isSafeInteger(chainId) ||
+      chainId !== expectedNexusChainId(BUNDLED_NEXUS_CONFIG) ||
+      data.cryloL1Network !== BUNDLED_NEXUS_CONFIG.network) {
+    throw new Error('CryLoNexus Foundation network identity does not match this signed Testnet wallet.');
   }
 
   const contracts = {};
