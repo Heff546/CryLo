@@ -6,7 +6,7 @@ name: CryLo Testnet.30 macOS HTTP415 correction — native binaries preserved
 on:
   push:
     branches:
-      - release/testnet30-macos-http415-packaging-20261123
+      - release/testnet30-macos-stage-floor-correction-20261124
     paths:
       - .github/workflows/testnet30-mac-unsigned-repackage.yml
   workflow_dispatch:
