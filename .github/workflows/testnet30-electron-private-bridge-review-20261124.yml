@@ -31,6 +31,7 @@ jobs:
         include:
           - {platform: windows-x64, runner: windows-2025}
           - {platform: linux-x64, runner: ubuntu-24.04}
+          - {platform: linux-arm64, runner: ubuntu-24.04-arm}
           - {platform: mac-x64, runner: macos-15-intel}
           - {platform: mac-arm64, runner: macos-15}
     steps:
@@ -48,8 +49,8 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin refs/tags/v1.1.1-testnet.30
-          test "$(git rev-parse FETCH_HEAD)" = 1e5875bd6553260c7f9b9682243b264690864734
-          git diff --name-only FETCH_HEAD HEAD | while IFS= read -r file; do
+          test "$(git rev-parse FETCH_HEAD^{commit})" = 1e5875bd6553260c7f9b9682243b264690864734
+          git diff --name-only FETCH_HEAD^{commit} HEAD | while IFS= read -r file; do
             case "$file" in
               electron/main.js|electron/src/app.js|electron/security/bridge-status-store.js|electron/security/nexus-endpoint-policy.js|electron/test/testnet-bridge-status-security.test.js|.github/workflows/testnet30-electron-private-bridge-review-20261124.yml) ;;
               *) echo "FAIL: non-Electron source changed: $file"; exit 1 ;;
