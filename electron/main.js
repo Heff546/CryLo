@@ -16,6 +16,14 @@ const {
   trustedIpcSender,
   safeExternalHttpsUrl
 } = require('./security/renderer-policy');
+const {
+  saveBridgeStatusCapability,
+  getBridgeStatusCapability
+} = require('./security/bridge-status-store');
+const {
+  nexusApiUrl: buildNexusApiUrl,
+  verifyNexusRpcUrl
+} = require('./security/nexus-endpoint-policy');
 
 // All renderer-to-main IPC handlers, including wallet RPC, bridge, staking,
 // miner and local file actions, are gated to the top-level local wallet page.
@@ -61,9 +69,12 @@ function formatNexusGasUnits(amount) {
   return ethers.formatUnits(amount, NEXUS_GAS_DECIMALS);
 }
 
-const BRIDGE_API_URL =
-  process.env.CRYLONEXUS_API_URL ||
-  'http://34.19.201.107/crylonexus-api';
+// No embedded plaintext public fallback: bridge requests contain sensitive
+// L1 addresses and private bridge-status bearer capabilities.
+const BRIDGE_API_URL = process.env.CRYLONEXUS_API_URL || '';
+function nexusApiUrl(pathname) {
+  return buildNexusApiUrl(BRIDGE_API_URL, pathname);
+}
 
 const NEXUS_RUNTIME_CACHE_MS = 60_000;
 
@@ -104,11 +115,12 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
   }
 
   const response = await fetch(
-    `${BRIDGE_API_URL}/nexus/bridge-config`,
+    nexusApiUrl('/nexus/bridge-config'),
     {
       headers: {
         Accept: 'application/json'
-      }
+      },
+      redirect: 'error'
     }
   );
 
@@ -134,9 +146,8 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
   const chainId = Number(data.chainId);
   const sourceContracts = data.contracts || {};
 
-  if (!/^https?:\/\//i.test(rpc)) {
-    throw new Error('CryLoNexus Foundation returned an invalid RPC URL.');
-  }
+  // Never pass an insecure remote RPC URI to an ethers provider.
+  verifyNexusRpcUrl(rpc);
 
   if (!Number.isSafeInteger(chainId) || chainId <= 0) {
     throw new Error('CryLoNexus Foundation returned an invalid chain ID.');
@@ -582,8 +593,9 @@ async function performBoundNexusWalletRegistration(wallet) {
   }
 
   const challengeResponse = await fetch(
-    `${BRIDGE_API_URL}/nexus/onboarding-challenge`,
+    nexusApiUrl('/nexus/onboarding-challenge'),
     {
+      redirect: 'error',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -607,8 +619,9 @@ async function performBoundNexusWalletRegistration(wallet) {
     await wallet.signMessage(challenge.message);
 
   const registerResponse = await fetch(
-    `${BRIDGE_API_URL}/nexus/register-bound-wallet`,
+    nexusApiUrl('/nexus/register-bound-wallet'),
     {
+      redirect: 'error',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1280,7 +1293,8 @@ secureIpcHandle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloA
 
 secureIpcHandle('bridge-request', async (_, payload) => {
   try {
-    const res = await fetch(`${BRIDGE_API_URL}/bridge/request`, {
+    const res = await fetch(nexusApiUrl('/bridge/request'), {
+      redirect: 'error',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1294,7 +1308,11 @@ secureIpcHandle('bridge-request', async (_, payload) => {
       return { ok: false, error: data.error || text || `HTTP ${res.status}` };
     }
 
-    return { ok: true, ...data };
+    // Persist the private bearer capability in Electron's main process before
+    // the renderer can send any funds. Never expose it to renderer JS or logs.
+    saveBridgeStatusCapability(getUserDataPath(), data.paymentId, data.statusToken);
+    const { statusToken: _privateStatusToken, ...safeData } = data;
+    return { ok: true, ...safeData };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -1302,17 +1320,30 @@ secureIpcHandle('bridge-request', async (_, payload) => {
 
 secureIpcHandle('bridge-status', async (_, paymentId) => {
   try {
-    const res = await fetch(`${BRIDGE_API_URL}/bridge/status/${encodeURIComponent(paymentId)}`);
-
+    const token = getBridgeStatusCapability(getUserDataPath(), paymentId);
+    if (!token) {
+      return {
+        ok: false,
+        error: 'Legacy deposit has no private status capability; manual reconciliation is required.'
+      };
+    }
+    const res = await fetch(nexusApiUrl('/bridge/status'), {
+      redirect: 'error',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Bridge-Status-Token': token
+      },
+      body: JSON.stringify({ paymentId })
+    });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
-
     if (!res.ok) {
-      return { ok: false, error: data.error || text || `HTTP ${res.status}` };
+      return { ok: false, error: data.error || `HTTP ${res.status}` };
     }
-
-    return { ok: true, ...data };
+    // Private status API intentionally never exposes native or Nexus tx IDs.
+    return { ok: true, status: data.status };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -1321,7 +1352,7 @@ secureIpcHandle('bridge-status', async (_, paymentId) => {
 
 secureIpcHandle('bridge-release-status', async (_, nexusTxHash) => {
   try {
-    const res = await fetch(`${BRIDGE_API_URL}/bridge/release-status/${encodeURIComponent(nexusTxHash)}`);
+    const res = await fetch(nexusApiUrl(`/bridge/release-status/${encodeURIComponent(nexusTxHash)}`), { redirect: 'error' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
