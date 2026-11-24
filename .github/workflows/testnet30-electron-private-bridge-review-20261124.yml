@@ -24,7 +24,7 @@ permissions:
 
 concurrency:
   group: crylo-testnet30-electron-bridge-review-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   bridge-source-gate:
