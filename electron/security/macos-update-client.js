@@ -33,6 +33,19 @@ function safeHttpsUrl(value) {
   return u;
 }
 
+// Release listing and signed metadata requests need GitHub's JSON media type.
+// Octet-stream is reserved for actual release-asset downloads. GitHub can
+// reject octet-stream on its /releases JSON endpoint with HTTP 415.
+function githubRequestHeaders(url) {
+  const target = safeHttpsUrl(url);
+  return {
+    'User-Agent': 'CryLoWallet-MacReleaseVerifier/1.1',
+    Accept: target.hostname.toLowerCase() === 'api.github.com'
+      ? 'application/vnd.github+json'
+      : 'application/octet-stream'
+  };
+}
+
 function retrieve(url, maximumBytes, dest = null, redirects = 0) {
   const target = safeHttpsUrl(url);
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1 ||
@@ -41,8 +54,7 @@ function retrieve(url, maximumBytes, dest = null, redirects = 0) {
   }
   return new Promise((resolve, reject) => {
     const req = https.get(target, {
-      headers: { 'User-Agent': 'CryLoWallet-MacReleaseVerifier/1.1',
-        Accept: 'application/octet-stream' },
+      headers: githubRequestHeaders(target.href),
       timeout: 30000
     }, res => {
       const code = res.statusCode;
@@ -293,6 +305,7 @@ async function downloadAndStageMacUpdate(context,candidate) {
 }
 
 module.exports=Object.freeze({
+  githubRequestHeaders,
   TRUSTED_KEY_FINGERPRINT,
   RELEASE_LIST,
   safeHttpsUrl,
