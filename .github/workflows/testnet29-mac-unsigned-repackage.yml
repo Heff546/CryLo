@@ -34,11 +34,8 @@ jobs:
       ORIGINAL_SOURCE: e2b37014d7b31d100003b28e2e2b9df76cbe1ffe
       ORIGINAL_CI_COMMIT: d40d367d446ea1c9377a5ea5ce033f7fe9d9e931
       ORIGINAL_RUN: '45100788862'
-      CRYLO_RELEASE_BIN: ${{ runner.temp }}/crylo-preserved-native/bin
       CRYLO_NETWORK: testnet
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      INPUT_ROOT: ${{ runner.temp }}/crylo-original-artifact
-      OUTPUT_ROOT: ${{ runner.temp }}/crylo-mac29-output
       TARGET_ARCH: ${{ matrix.arch }}
       TARGET_HOST: ${{ matrix.host }}
     steps:
@@ -53,6 +50,13 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24.21.0
+      - name: Initialize private runner-local staging paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "CRYLO_RELEASE_BIN=$RUNNER_TEMP/crylo-preserved-native/bin" >> "$GITHUB_ENV"
+          echo "INPUT_ROOT=$RUNNER_TEMP/crylo-original-artifact" >> "$GITHUB_ENV"
+          echo "OUTPUT_ROOT=$RUNNER_TEMP/crylo-mac29-output" >> "$GITHUB_ENV"
       - name: Validate targeted source change and Mac regression tests
         shell: bash
         run: |
