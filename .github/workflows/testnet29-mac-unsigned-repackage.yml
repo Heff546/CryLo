@@ -64,6 +64,10 @@ jobs:
           test "$(uname -m)" = "$TARGET_HOST"
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
           test -z "$(git status --porcelain --untracked-files=all)"
+          # Actions checks out a shallow commit; explicitly fetch only the
+          # immutable Testnet.28 source tree needed for the narrow diff gate.
+          git fetch --no-tags --depth=1 origin "$ORIGINAL_SOURCE"
+          test "$(git rev-parse FETCH_HEAD)" = "$ORIGINAL_SOURCE"
           git diff --name-only "$ORIGINAL_SOURCE" HEAD | while IFS= read -r file; do
             case "$file" in
               electron/security/macos-update-client.js|electron/test/macos-installed-updater.test.js|.github/workflows/testnet29-mac-unsigned-repackage.yml) ;;
