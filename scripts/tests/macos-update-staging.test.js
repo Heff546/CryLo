@@ -56,6 +56,10 @@ test('stages authenticated unsigned Mac PKG only under user-private directory',(
     const result=stageVerifiedMacPackage(x.settings);
     assert.equal(result.installation,'user-approval-required');
     assert.equal(result.releaseSecurityStateAdvanced,false);
+    // Used by the real installed CryLo CLI after Installer approval. If
+    // omitted, final verification fails before checking the receipt.
+    assert.equal(result.minimumSequence,x.settings.minimumSequence);
+    assert.equal(result.releaseSequence,20);
     assert.equal(result.appleDeveloperIdRequired,false);
     assert.ok(result.stagedPath.startsWith(path.join(x.data,'verified-updates')+path.sep));
     assert.deepEqual(fs.readFileSync(result.stagedPath),fs.readFileSync(x.pkg));
