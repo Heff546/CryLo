@@ -1,0 +1,81 @@
+name: CryLo Testnet.30 Electron private bridge source gate (NO RELEASE)
+
+on:
+  push:
+    branches:
+      - integration/testnet30-electron-private-bridge-20261124
+    paths:
+      - electron/main.js
+      - electron/src/app.js
+      - electron/security/bridge-status-store.js
+      - electron/security/nexus-endpoint-policy.js
+      - electron/test/testnet-bridge-status-security.test.js
+      - .github/workflows/testnet30-electron-private-bridge-review-20261124.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crylo-testnet30-electron-bridge-review-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bridge-source-gate:
+    name: Private bridge regression — ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: windows-x64, runner: windows-2025}
+          - {platform: linux-x64, runner: ubuntu-24.04}
+          - {platform: mac-x64, runner: macos-15-intel}
+          - {platform: mac-arm64, runner: macos-15}
+    steps:
+      - name: Checkout proposed Electron-only integration
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          set-safe-directory: false
+      - name: Setup deterministic Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.21.0
+      - name: Source scope must preserve signed Testnet.30 L1 and updater
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin refs/tags/v1.1.1-testnet.30
+          test "$(git rev-parse FETCH_HEAD)" = 1e5875bd6553260c7f9b9682243b264690864734
+          git diff --name-only FETCH_HEAD HEAD | while IFS= read -r file; do
+            case "$file" in
+              electron/main.js|electron/src/app.js|electron/security/bridge-status-store.js|electron/security/nexus-endpoint-policy.js|electron/test/testnet-bridge-status-security.test.js|.github/workflows/testnet30-electron-private-bridge-review-20261124.yml) ;;
+              *) echo "FAIL: non-Electron source changed: $file"; exit 1 ;;
+            esac
+          done
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Check main-process, renderer and private bridge security syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check electron/main.js
+          node --check electron/src/app.js
+          node --check electron/preload.js
+          node --check electron/security/bridge-status-store.js
+          node --check electron/security/nexus-endpoint-policy.js
+      - name: Execute private bridge security and existing Electron regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            electron/test/testnet-bridge-status-security.test.js \
+            electron/test/renderer-security.test.js \
+            electron/test/node-center-facts.test.js \
+            electron/test/node-center-state.test.js \
+            electron/test/node-center-renderer.test.js
+      - name: Preserve launch hold
+        shell: bash
+        run: |
+          echo "Source/JS tests only; no live Nexus bridge, no wallet transfer, no native build, no signed release"
