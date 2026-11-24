@@ -77,6 +77,10 @@ function stageVerifiedMacPackage({
     return Object.freeze({
       ...checked,
       stagedPath: destination,
+      // Preserve the validated rollback floor across the explicit macOS
+      // Installer approval round-trip. The installed command passes this
+      // value to completeInstalledMacRelease for fresh receipt verification.
+      minimumSequence,
       installation: 'user-approval-required',
       releaseSecurityStateAdvanced: false
     });
