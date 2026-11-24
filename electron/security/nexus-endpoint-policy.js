@@ -39,4 +39,4 @@ function verifyNexusRpcUrl(configuredRpc) {
   return origin.href;
 }
 
-module.exports = { nexusApiUrl, verifyNexusRpcUrl };
+module.exports = { trustedEndpoint, nexusApiUrl, verifyNexusRpcUrl };
