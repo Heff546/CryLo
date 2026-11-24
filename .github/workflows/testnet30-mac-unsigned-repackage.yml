@@ -1,0 +1,185 @@
+name: CryLo Testnet.30 macOS HTTP415 correction — native binaries preserved
+
+# Only rebuild two macOS Electron installers. Preserve exact verified
+# Testnet.28 native executables from successful 45100788862 CI.
+# NO signatures, no tags, no releases or live network changes.
+on:
+  push:
+    branches:
+      - release/testnet30-macos-http415-packaging-20261123
+    paths:
+      - .github/workflows/testnet30-mac-unsigned-repackage.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: crylo-testnet30-macos-unsigned-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package-macos:
+    name: Mac package-only — ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: macos-15-intel, host: x86_64, artifact: crylo-testnet27-mac-x64-UNSIGNED, artifact_id: 14787958366 }
+          - { arch: arm64, runner: macos-15, host: arm64, artifact: crylo-testnet27-mac-arm64-UNSIGNED, artifact_id: 14786820499 }
+    env:
+      ORIGINAL_SOURCE: e2b37014d7b31d100003b28e2e2b9df76cbe1ffe
+      ORIGINAL_CI_COMMIT: d40d367d446ea1c9377a5ea5ce033f7fe9d9e931
+      ORIGINAL_RUN: '45100788862'
+      CRYLO_NETWORK: testnet
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      TARGET_ARCH: ${{ matrix.arch }}
+      TARGET_HOST: ${{ matrix.host }}
+    steps:
+      - name: Checkout exact reviewed macOS updater correction
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          submodules: false
+          set-safe-directory: false
+          ref: ${{ github.sha }}
+      - name: Pinned Electron packaging runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.21.0
+      - name: Initialize private runner-local staging paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "CRYLO_RELEASE_BIN=$RUNNER_TEMP/crylo-preserved-native/bin" >> "$GITHUB_ENV"
+          echo "INPUT_ROOT=$RUNNER_TEMP/crylo-original-artifact" >> "$GITHUB_ENV"
+          echo "OUTPUT_ROOT=$RUNNER_TEMP/crylo-mac30-output" >> "$GITHUB_ENV"
+      - name: Validate targeted source change and Mac regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "$TARGET_HOST"
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          # Actions checks out a shallow commit; explicitly fetch only the
+          # immutable Testnet.28 source tree needed for the narrow diff gate.
+          git fetch --no-tags --depth=1 origin "$ORIGINAL_SOURCE"
+          test "$(git rev-parse FETCH_HEAD)" = "$ORIGINAL_SOURCE"
+          git diff --name-only "$ORIGINAL_SOURCE" HEAD | while IFS= read -r file; do
+            case "$file" in
+              electron/security/macos-update-client.js|electron/test/macos-installed-updater.test.js|scripts/release/macos-unsigned-update-stage.js|scripts/tests/macos-update-staging.test.js|scripts/tests/macos-installed-release-state.test.js|.github/workflows/testnet29-mac-unsigned-repackage.yml|.github/workflows/macos-stage-floor-end-to-end-20261124.yml|.github/workflows/testnet30-mac-unsigned-repackage.yml) ;;
+              *) echo "ERROR: Unexpected source modification: $file"; exit 1 ;;
+            esac
+          done
+          node --check electron/security/macos-update-client.js
+          node --check scripts/release/macos-installed-update.js
+          node --test electron/test/macos-installed-updater.test.js scripts/tests/macos-installed-command.test.js scripts/tests/macos-package-trust.test.js scripts/tests/macos-update-staging.test.js
+          npm install --global --no-audit --no-fund --ignore-scripts npm@12.1.0
+          test "$(npm --version)" = "12.1.0"
+      - name: Download exact verified Testnet.28 native binary inputs, not existing Mac installer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_ARTIFACT: ${{ matrix.artifact }}
+          INPUT_ARTIFACT_ID: ${{ matrix.artifact_id }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/Heff546/CryLo/actions/runs/$ORIGINAL_RUN --jq '.head_sha')" = "$ORIGINAL_CI_COMMIT"
+          test "$(gh api repos/Heff546/CryLo/actions/runs/$ORIGINAL_RUN --jq '.conclusion')" = "success"
+          test "$(gh api repos/Heff546/CryLo/actions/artifacts/$INPUT_ARTIFACT_ID --jq '.name')" = "$INPUT_ARTIFACT"
+          test "$(gh api repos/Heff546/CryLo/actions/artifacts/$INPUT_ARTIFACT_ID --jq '.workflow_run.id')" = "$ORIGINAL_RUN"
+          test "$(gh api repos/Heff546/CryLo/actions/artifacts/$INPUT_ARTIFACT_ID --jq '.expired')" = "false"
+          mkdir -p "$INPUT_ROOT" "$CRYLO_RELEASE_BIN" "$OUTPUT_ROOT"
+          gh run download "$ORIGINAL_RUN" --repo Heff546/CryLo --name "$INPUT_ARTIFACT" --dir "$INPUT_ROOT"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, shutil, subprocess
+          root=pathlib.Path(os.environ['INPUT_ROOT'])
+          out=pathlib.Path(os.environ['CRYLO_RELEASE_BIN'])
+          def only(name):
+              results=[p for p in root.rglob(name) if p.is_file() and not p.is_symlink()]
+              assert len(results)==1,(name,results)
+              return results[0]
+          assert only('SOURCE-COMMIT.txt').read_text().strip()==os.environ['ORIGINAL_SOURCE']
+          receipt={}
+          for line in only('NATIVE-SHA256SUMS.txt').read_text().splitlines():
+              digest,name=line.split(None,1)
+              base=pathlib.Path(name.strip().lstrip('*')).name
+              assert base not in receipt
+              assert len(digest)==64
+              receipt[base]=digest
+          assert set(receipt)=={'CryLo-daemon','CryLo-wallet','CryLo-wallet-rpc'}
+          native={}
+          for name in sorted(receipt):
+              source=only(name)
+              sha=hashlib.sha256(source.read_bytes()).hexdigest()
+              assert sha==receipt[name],f'Native hash mismatch: {name}'
+              destination=out/name
+              shutil.copyfile(source,destination)
+              destination.chmod(0o755)
+              assert hashlib.sha256(destination.read_bytes()).hexdigest()==sha
+              native[name]=sha
+              subprocess.run(['/usr/bin/lipo','-archs',str(destination)],check=True)
+              version=subprocess.check_output([str(destination),'--version'],text=True).strip()
+              assert 'e2b37014d' in version and 'Testnet' in version,(name,version)
+              print('PASS preserved',name,sha)
+          data={'classification':'UNSIGNED_MAC_REPACKAGE_ONLY',
+                'originalNativeCommit':os.environ['ORIGINAL_SOURCE'],
+                'originalBuildRun':int(os.environ['ORIGINAL_RUN']),
+                'packagingSourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                'architecture':os.environ['TARGET_ARCH'],
+                'nativeSha256':native,'signed':False,'published':False}
+          (pathlib.Path(os.environ['OUTPUT_ROOT'])/'PROVENANCE.json').write_text(json.dumps(data,indent=2)+'\n')
+          PY
+      - name: Package macOS Electron app and unsigned installer without native compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run --prefix electron "build-mac-$TARGET_ARCH"
+      - name: Verify exact updated CLI, preserved native binaries and unsigned package
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="electron/dist/mac/CryLo Wallet.app"
+          if [ "$TARGET_ARCH" = arm64 ]; then app="electron/dist/mac-arm64/CryLo Wallet.app"; fi
+          pkg="electron/dist/CryLo-1.1.1-mac-$TARGET_ARCH-unsigned.pkg"
+          test -s "$pkg"
+          test "$(lipo -archs "$app/Contents/MacOS/CryLo Wallet")" = "$TARGET_HOST"
+          cmp electron/security/macos-update-client.js "$app/Contents/Resources/macos-update/macos-update-client.js"
+          for name in CryLo-daemon CryLo-wallet-rpc; do
+            test "$(lipo -archs "$CRYLO_RELEASE_BIN/$name")" = "$TARGET_HOST"
+            cmp "$CRYLO_RELEASE_BIN/$name" "$app/Contents/Resources/bin/mac/$name"
+          done
+          pkgutil --payload-files "$pkg" | grep -F 'usr/local/bin/crylo'
+          pkgutil --payload-files "$pkg" | grep -F 'CryLo Wallet.app'
+          pkgutil --payload-files "$pkg" | grep -F 'CryLo Daemon.app'
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          app=Path('electron/dist/mac/CryLo Wallet.app')
+          if os.environ['TARGET_ARCH']=='arm64':
+              app=Path('electron/dist/mac-arm64/CryLo Wallet.app')
+          s=(app/'Contents/Resources/macos-update/macos-update-client.js').read_text()
+          assert 'application/vnd.github+json' in s
+          assert 'headers: githubRequestHeaders(target.href)' in s
+          assert "TRUSTED_KEY_FINGERPRINT" in s
+          stage=(app/'Contents/Resources/macos-update/macos-unsigned-update-stage.js').read_text()
+          assert "minimumSequence," in stage
+          assert "stagedPath: destination," in stage
+          installed=(app/'Contents/Resources/macos-update/macos-installed-update.js').read_text()
+          assert "minimumSequence:staged.minimumSequence" in installed
+          print('PASS: signed-release client and rollback floor handoff embedded')
+          PY
+          cp "$pkg" "$OUTPUT_ROOT/"
+          (cd "$OUTPUT_ROOT" && shasum -a 256 "$(basename "$pkg")" > PKG-SHA256SUMS.txt)
+          echo "PASS: macOS $TARGET_ARCH repackaging from verified unchanged HF21 natives"
+      - name: Retain unsigned Mac corrective installer for Pi1 review, not publication
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: crylo-testnet30-mac-${{ matrix.arch }}-UNSIGNED-DO-NOT-PUBLISH
+          path: ${{ env.OUTPUT_ROOT }}/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
