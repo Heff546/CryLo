@@ -11,6 +11,9 @@ const { spawn, spawnSync } = require('child_process');
 const http = require('http');
 const os = require('os');
 const { ethers } = require('ethers');
+const { privateReleaseCommitment, requireBridgeApiUrl } = require('./security/private-bridge');
+const { rememberBridgeStatusCapability, bridgeStatusCapability } = require('./security/bridge-status-capabilities');
+const NEXUS_PROFILE = require('./security/nexus-network-profile.json');
 const {
   isWalletDocument,
   trustedIpcSender,
@@ -61,9 +64,19 @@ function formatNexusGasUnits(amount) {
   return ethers.formatUnits(amount, NEXUS_GAS_DECIMALS);
 }
 
-const BRIDGE_API_URL =
-  process.env.CRYLONEXUS_API_URL ||
-  'http://34.19.201.107/crylonexus-api';
+const BRIDGE_API_URL = process.env.CRYLONEXUS_API_URL || NEXUS_PROFILE.bridgeApiUrl;
+function bridgeApiEndpoint() { return requireBridgeApiUrl(BRIDGE_API_URL); }
+function assertPinnedTestnetNexusProfile() {
+  if (NEXUS_PROFILE.network !== 'testnet' ||
+      NEXUS_PROFILE.l1Network !== 'testnet' ||
+      NEXUS_PROFILE.bridgePrivacyVersion !== 'private-v3' ||
+      !Number.isSafeInteger(NEXUS_PROFILE.chainId) ||
+      NEXUS_PROFILE.chainId <= 0 || NEXUS_PROFILE.chainId === 5546 ||
+      !ethers.isHexString(NEXUS_PROFILE.genesisHash, 32)) {
+    throw new Error('Nexus Private V3 chain identity not yet pinned into this Electron release');
+  }
+}
+
 
 const NEXUS_RUNTIME_CACHE_MS = 60_000;
 
@@ -93,6 +106,7 @@ const OPTIONAL_NEXUS_CONTRACTS = [
 ];
 
 async function getNexusRuntimeConfig(forceRefresh = false) {
+  assertPinnedTestnetNexusProfile();
   const now = Date.now();
 
   if (
@@ -104,7 +118,7 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
   }
 
   const response = await fetch(
-    `${BRIDGE_API_URL}/nexus/bridge-config`,
+    `${bridgeApiEndpoint()}/nexus/bridge-config`,
     {
       headers: {
         Accept: 'application/json'
@@ -134,12 +148,12 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
   const chainId = Number(data.chainId);
   const sourceContracts = data.contracts || {};
 
-  if (!/^https?:\/\//i.test(rpc)) {
-    throw new Error('CryLoNexus Foundation returned an invalid RPC URL.');
-  }
+  requireBridgeApiUrl(rpc);
 
-  if (!Number.isSafeInteger(chainId) || chainId <= 0) {
-    throw new Error('CryLoNexus Foundation returned an invalid chain ID.');
+  if (!Number.isSafeInteger(chainId) || chainId !== NEXUS_PROFILE.chainId ||
+      data.bridgePrivacyVersion !== 'private-v3' ||
+      data.cryloL1Network !== NEXUS_PROFILE.l1Network) {
+    throw new Error('Nexus bridge API does not match the signed Electron network identity');
   }
 
   const contracts = {};
@@ -205,12 +219,18 @@ async function getNexusRuntimeConfig(forceRefresh = false) {
     );
   }
 
+  const genesis = await provider.getBlock(0);
+  if (!genesis || genesis.hash.toLowerCase() !== NEXUS_PROFILE.genesisHash.toLowerCase()) {
+    throw new Error('Nexus genesis mismatch: refusing to connect this wallet');
+  }
   const runtime = Object.freeze({
     platform: data.platform,
     configVersion: data.configVersion,
     environment: data.environment,
     networkName: data.networkName,
     version: data.version,
+    bridgePrivacyVersion: data.bridgePrivacyVersion,
+    cryloL1Network: data.cryloL1Network,
     chainId,
     chainIdHex: data.chainIdHex,
     blockchainId: data.blockchainId,
@@ -1406,15 +1426,15 @@ secureIpcHandle('nexus-pending-rewards', async (_, linkedAddress) => {
     }
 
     const runtime = await getNexusRuntimeConfig();
-    const stakingArtifact = require('./src/abis/CryLoStaking.json');
+    const vaultArtifact = require('./src/abis/RewardVault.json');
 
-    const staking = new ethers.Contract(
-      runtime.contracts.Staking,
-      stakingArtifact.abi,
+    const vault = new ethers.Contract(
+      runtime.contracts.RewardVault,
+      vaultArtifact.abi,
       runtime.provider
     );
 
-    const rewards = await staking.pendingRewards(linkedAddress);
+    const rewards = await vault.pendingRewards(linkedAddress);
 
     return {
       ok: true,
@@ -1433,15 +1453,15 @@ secureIpcHandle('nexus-claim-rewards', async (_, walletName, cryloAddress) => {
       cryloAddress
     ).connect(runtime.provider);
 
-    const stakingArtifact = require('./src/abis/CryLoStaking.json');
+    const vaultArtifact = require('./src/abis/RewardVault.json');
 
-    const staking = new ethers.Contract(
-      runtime.contracts.Staking,
-      stakingArtifact.abi,
+    const vault = new ethers.Contract(
+      runtime.contracts.RewardVault,
+      vaultArtifact.abi,
       wallet
     );
 
-    const tx = await staking.claimRewards();
+    const tx = await vault.claim();
     const receipt = await tx.wait();
 
     return {
