@@ -101,28 +101,24 @@
       "anonymous": false,
       "inputs": [
         {
-          "indexed": true,
-          "internalType": "bytes32",
           "name": "burnId",
-          "type": "bytes32"
+          "type": "bytes32",
+          "indexed": true
         },
         {
-          "indexed": true,
-          "internalType": "address",
           "name": "from",
-          "type": "address"
+          "type": "address",
+          "indexed": true
         },
         {
-          "indexed": false,
-          "internalType": "string",
-          "name": "cryloAddress",
-          "type": "string"
+          "name": "destinationCommitment",
+          "type": "bytes32",
+          "indexed": false
         },
         {
-          "indexed": false,
-          "internalType": "uint256",
           "name": "amount",
-          "type": "uint256"
+          "type": "uint256",
+          "indexed": false
         }
       ],
       "name": "BurnedForCryLo",
@@ -132,34 +128,24 @@
       "anonymous": false,
       "inputs": [
         {
-          "indexed": true,
-          "internalType": "bytes32",
           "name": "burnId",
-          "type": "bytes32"
+          "type": "bytes32",
+          "indexed": true
         },
         {
-          "indexed": true,
-          "internalType": "address",
           "name": "nexusAddress",
-          "type": "address"
+          "type": "address",
+          "indexed": true
         },
         {
-          "indexed": false,
-          "internalType": "string",
-          "name": "cryloAddress",
-          "type": "string"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
           "name": "amount",
-          "type": "uint256"
+          "type": "uint256",
+          "indexed": false
         },
         {
-          "indexed": false,
-          "internalType": "string",
-          "name": "cryloTxHash",
-          "type": "string"
+          "name": "payoutTag",
+          "type": "bytes32",
+          "indexed": false
         }
       ],
       "name": "CryLoReleaseCompleted",
@@ -448,8 +434,8 @@
         },
         {
           "internalType": "string",
-          "name": "cryloAddress",
-          "type": "string"
+          "name": "destinationCommitment",
+          "type": "bytes32"
         },
         {
           "internalType": "uint256",
@@ -471,8 +457,8 @@
         },
         {
           "internalType": "string",
-          "name": "cryloTxHash",
-          "type": "string"
+          "name": "payoutTag",
+          "type": "bytes32"
         }
       ],
       "name": "completeCryLoRelease",
