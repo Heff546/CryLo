@@ -1245,76 +1245,77 @@ secureIpcHandle('nexus-burn-for-crylo', async (_, amountText, walletName, cryloA
   try {
     const runtime = await getNexusRuntimeConfig();
     const provider = runtime.provider;
+    const wallet = loadBoundNexusWallet(walletName, cryloAddress).connect(provider);
+    if (typeof cryloAddress !== 'string' ||
+        cryloAddress.length < 50 || cryloAddress.length > 128) {
+      throw new Error('A valid private CryLo destination is required');
+    }
+    const amount = parseWcryloUnits(amountText);
+    if (amount <= 0n) throw new Error('Invalid reverse bridge amount');
 
-    const wallet = loadBoundNexusWallet(
-      walletName,
-      cryloAddress
-    ).connect(provider);
+    const burnId = ethers.hexlify(ethers.randomBytes(32));
+    const salt = ethers.hexlify(ethers.randomBytes(32));
+    const fields = { chainId: runtime.chainId,
+      bridgeManager: runtime.contracts.BridgeManager, burnId,
+      nexusAddress: wallet.address, amountAtomic: amount.toString(),
+      cryloAddress, salt };
+    const commitment = privateReleaseCommitment(fields);
+    const signature = await wallet.signMessage(ethers.getBytes(commitment));
+
+    // Store the owner-signed private payout intent before any public burn.
+    const response = await fetch(`${bridgeApiEndpoint()}/bridge/outbound-intent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        burnId, nexusAddress: wallet.address,
+        amountAtomic: amount.toString(), cryloAddress, salt, signature
+      })
+    });
+    const raw = await response.text();
+    let privateIntent;
+    try { privateIntent = JSON.parse(raw); }
+    catch (_) { throw new Error('Private bridge service returned invalid JSON; no burn submitted'); }
+    if (!response.ok || !privateIntent?.ok ||
+        privateIntent.burnId?.toLowerCase() !== burnId.toLowerCase() ||
+        privateIntent.destinationCommitment?.toLowerCase() !== commitment.toLowerCase()) {
+      throw new Error('Private payout intent could not be verified; no burn submitted');
+    }
 
     const bridgeArtifact = require('./src/abis/BridgeManager.json');
-
     const bridge = new ethers.Contract(
-      runtime.contracts.BridgeManager,
-      bridgeArtifact.abi,
-      wallet
+      runtime.contracts.BridgeManager, bridgeArtifact.abi, wallet
     );
-
-    const amount = parseWcryloUnits(amountText);
     const nonce = await provider.getTransactionCount(wallet.address, 'pending');
-
-    const burnId = ethers.keccak256(
-      ethers.solidityPacked(
-        ['address', 'string', 'uint256', 'uint256'],
-        [
-          wallet.address,
-          cryloAddress,
-          amount,
-          BigInt(Date.now())
-        ]
-      )
-    );
-
-    const tx = await bridge.burnForCryLo(
-      burnId,
-      cryloAddress,
-      amount,
-      { nonce }
-    );
-
+    const tx = await bridge.burnForCryLo(burnId, commitment, amount, { nonce });
     const receipt = await tx.wait();
-
-    return {
-      ok: true,
-      txHash: tx.hash,
-      blockNumber: receipt.blockNumber,
-      burnId
-    };
+    if (!receipt || receipt.status !== 1) throw new Error('Nexus burn was not confirmed');
+    return { ok: true, txHash: tx.hash, blockNumber: receipt.blockNumber, burnId };
   } catch (e) {
-    return {
-      ok: false,
-      error: e.shortMessage || e.reason || e.message
-    };
+    return { ok: false, error: e.shortMessage || e.reason || e.message };
   }
 });
 
-
 secureIpcHandle('bridge-request', async (_, payload) => {
   try {
-    const res = await fetch(`${BRIDGE_API_URL}/bridge/request`, {
+    await getNexusRuntimeConfig();
+    const res = await fetch(`${bridgeApiEndpoint()}/bridge/request`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload)
     });
-
-    const text = await res.text();
+    const raw = await res.text();
     let data;
-    try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
-
-    if (!res.ok) {
-      return { ok: false, error: data.error || text || `HTTP ${res.status}` };
+    try { data = JSON.parse(raw); }
+    catch (_) { throw new Error('Bridge request returned invalid JSON'); }
+    if (!res.ok || !data?.paymentId || !data?.integratedAddress ||
+        !data?.statusToken) {
+      return { ok: false, error: data?.error || 'Incomplete private bridge request' };
     }
-
-    return { ok: true, ...data };
+    // Never return the 256-bit status bearer capability to renderer localStorage.
+    // If persistence fails, never expose this address for a native deposit.
+    rememberBridgeStatusCapability(getUserDataPath(), data.paymentId, data.statusToken);
+    const { statusToken, ...publicResult } = data;
+    return { ok: true, ...publicResult };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -1322,40 +1323,37 @@ secureIpcHandle('bridge-request', async (_, payload) => {
 
 secureIpcHandle('bridge-status', async (_, paymentId) => {
   try {
-    const res = await fetch(`${BRIDGE_API_URL}/bridge/status/${encodeURIComponent(paymentId)}`);
-
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
-
-    if (!res.ok) {
-      return { ok: false, error: data.error || text || `HTTP ${res.status}` };
+    await getNexusRuntimeConfig();
+    const token = bridgeStatusCapability(getUserDataPath(), paymentId);
+    const res = await fetch(`${bridgeApiEndpoint()}/bridge/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+        'X-Bridge-Status-Token': token },
+      body: JSON.stringify({ paymentId })
+    });
+    const data = await res.json();
+    if (!res.ok || !data?.ok) {
+      return { ok: false, error: data?.error || `Bridge status HTTP ${res.status}` };
     }
-
-    return { ok: true, ...data };
+    return { ok: true, status: data.status };
   } catch (e) {
     return { ok: false, error: e.message };
   }
 });
-
 
 secureIpcHandle('bridge-release-status', async (_, nexusTxHash) => {
   try {
-    const res = await fetch(`${BRIDGE_API_URL}/bridge/release-status/${encodeURIComponent(nexusTxHash)}`);
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
-
-    if (!res.ok) {
-      return { ok: false, error: data.error || text || `HTTP ${res.status}` };
+    await getNexusRuntimeConfig();
+    const res = await fetch(`${bridgeApiEndpoint()}/bridge/release-status/${encodeURIComponent(nexusTxHash)}`);
+    const data = await res.json();
+    if (!res.ok || !data?.ok) {
+      return { ok: false, error: data?.error || `Release status HTTP ${res.status}` };
     }
-
-    return { ok: true, ...data };
+    return { ok: true, status: data.status };
   } catch (e) {
     return { ok: false, error: e.message };
   }
 });
-
 
 secureIpcHandle('nexus-wcrylo-balance', async (_, linkedAddress) => {
   try {
