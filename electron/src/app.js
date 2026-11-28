@@ -2228,10 +2228,8 @@ function pollBridgeReleaseStatus(nexusTxHash) {
         clearInterval(bridgeReleasePollTimer);
         bridgeReleasePollTimer = null;
 
-        const l1Tx =
-          res.releaseTxHash ||
-          res.cryloTxHash ||
-          'released';
+        // Private V3 intentionally never reveals L1 payout transaction IDs.
+        const l1Tx = 'private payout confirmed';
 
         const pendingRaw =
           localStorage.getItem(
@@ -2248,7 +2246,7 @@ function pollBridgeReleaseStatus(nexusTxHash) {
         } catch (_) {}
 
         setBridgeOutStatus(
-          `✅ Release completed. CryLo TX: ${l1Tx}`
+          `✅ Release completed. ${l1Tx}`
         );
 
         setBridgeComplete(
@@ -2256,7 +2254,7 @@ function pollBridgeReleaseStatus(nexusTxHash) {
           pendingAmount || 'Requested amount',
           'wCryLo',
           'CryLo',
-          `CryLo TX: ${l1Tx}`
+          `${l1Tx}`
         );
 
         localStorage.removeItem(
@@ -2999,16 +2997,12 @@ function pollCryLoBridgeStatus() {
 
           deposit.lastStatusError = '';
 
-          if (res.processed) {
+          // Private V3 status reveals a state only; neither native L1
+          // identifiers nor an unprotected Nexus mint hash are returned.
+          if (res.status === 'minted') {
             deposit.processed = true;
-            deposit.nexusTx =
-              res.processed.nexus_tx_hash ||
-              res.processed.nexusTxHash ||
-              res.processed.txHash ||
-              res.processed.mintTxHash ||
-              'processed';
-
-            deposit.submissionState = 'processed';
+            deposit.nexusTx = 'private mint confirmed';
+            deposit.submissionState = 'minted';
             changed = true;
           }
         } catch (error) {
