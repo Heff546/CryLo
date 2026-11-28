@@ -5801,96 +5801,80 @@ secureIpcHandle('nexus-transactions', async (_, linkedAddress) => {
     ]);
 
     const gasIface = new ethers.Interface([
-      'event DailyGasClaimed(address indexed wallet,uint256 amount)',
-      'event GasPurchased(address indexed wallet,uint256 wcryloAmount,uint256 nativeGasAmount)',
+      'event GasClaimed(uint256 indexed epochId,address indexed wallet,uint256 amount)',
+      'event GasPurchased(address indexed wallet,uint256 wCryloAmount,uint256 cryloGasAmount)',
       'event StarterGasSent(address indexed wallet,uint256 amount)'
     ]);
-
     const stakingIface = new ethers.Interface([
       'event Staked(address indexed user,uint256 amount)',
-      'event Unstaked(address indexed user,uint256 amount)',
-      'event RewardsClaimed(address indexed user,uint256 amount)',
-      'event OperatorRegistered(address indexed user)',
-      'event ValidatorRegistered(address indexed user)'
+      'event Unstaked(address indexed user,uint256 amount)'
     ]);
-
+    const nodeIface = new ethers.Interface([
+      'event NodeRegistered(address indexed account,uint8 tier,uint256 amount)',
+      'event NodeUnregistered(address indexed account,uint256 amount)',
+      'event NodeActivationRenewed(address indexed account,uint64 activatedAt,uint64 expiresAt)'
+    ]);
+    const rewardIface = new ethers.Interface([
+      'event RewardClaimed(address indexed account,uint256 amount)'
+    ]);
     const zeroTopicUser = ethers.zeroPadValue(user, 32);
-
     const logs = [];
-
     async function safeLogs(filter, parser, label) {
       try {
-        const got = await provider.getLogs(filter);
-        for (const log of got) {
-          try {
-            const parsed = parser.parseLog(log);
-            logs.push({ log, parsed, label });
-          } catch (_) {}
+        const found = await provider.getLogs(filter);
+        for (const log of found) {
+          try { logs.push({ log, parsed: parser.parseLog(log), label }); }
+          catch (_) {}
         }
-      } catch (_) {}
+      } catch (error) {
+        console.warn('Nexus history query unavailable for', label, error?.message);
+      }
     }
 
     await safeLogs({
-      address: wcrylo,
-      fromBlock,
-      toBlock: latest,
+      address: wcrylo, fromBlock, toBlock: latest,
       topics: [erc20Iface.getEvent('Transfer').topicHash, zeroTopicUser]
     }, erc20Iface, 'wCryLo Sent');
-
     await safeLogs({
-      address: wcrylo,
-      fromBlock,
-      toBlock: latest,
+      address: wcrylo, fromBlock, toBlock: latest,
       topics: [erc20Iface.getEvent('Transfer').topicHash, null, zeroTopicUser]
     }, erc20Iface, 'wCryLo Received');
 
-    for (const eventName of ['DailyGasClaimed', 'GasPurchased', 'StarterGasSent']) {
-      await safeLogs({
-        address: gasManager,
-        fromBlock,
-        toBlock: latest,
+    for (const eventName of ['GasPurchased', 'StarterGasSent']) {
+      await safeLogs({ address: gasManager, fromBlock, toBlock: latest,
         topics: [gasIface.getEvent(eventName).topicHash, zeroTopicUser]
       }, gasIface, eventName);
     }
+    await safeLogs({address:gasManager,fromBlock,toBlock:latest,
+      topics:[gasIface.getEvent('GasClaimed').topicHash,null,zeroTopicUser]
+    },gasIface,'GasClaimed');
 
-    for (const eventName of ['Staked', 'Unstaked', 'RewardsClaimed']) {
-      await safeLogs({
-        address: staking,
-        fromBlock,
-        toBlock: latest,
+    for (const eventName of ['Staked', 'Unstaked']) {
+      await safeLogs({ address: staking, fromBlock, toBlock: latest,
         topics: [stakingIface.getEvent(eventName).topicHash, zeroTopicUser]
       }, stakingIface, eventName);
     }
-
-    for (const eventName of ['OperatorRegistered', 'ValidatorRegistered', 'RewardsClaimed']) {
-      await safeLogs({
-        address: nodeStaking,
-        fromBlock,
-        toBlock: latest,
-        topics: [stakingIface.getEvent(eventName).topicHash, zeroTopicUser]
-      }, stakingIface, eventName);
+    for (const eventName of ['NodeRegistered','NodeUnregistered','NodeActivationRenewed']) {
+      await safeLogs({ address: nodeStaking, fromBlock, toBlock: latest,
+        topics: [nodeIface.getEvent(eventName).topicHash, zeroTopicUser]
+      }, nodeIface, eventName);
+    }
+    if (contracts.RewardVault) {
+      await safeLogs({address:contracts.RewardVault,fromBlock,toBlock:latest,
+        topics:[rewardIface.getEvent('RewardClaimed').topicHash,zeroTopicUser]
+      },rewardIface,'RewardClaimed');
     }
 
-
-    const bridge = contracts.BridgeManager;
     const bridgeIface = new ethers.Interface([
-      'event MintedFromCryLo(bytes32 indexed depositId,address indexed to,uint256 amount)',
-      'event BurnedForCryLo(address indexed from,string cryloAddress,uint256 amount,uint256 indexed nonce)'
+      'event MintedFromCryLo(bytes32 indexed depositId,address indexed to,uint256 amount,uint8 intent)',
+      'event BurnedForCryLo(bytes32 indexed burnId,address indexed from,bytes32 destinationCommitment,uint256 amount)',
+      'event CryLoReleaseCompleted(bytes32 indexed burnId,address indexed nexusAddress,uint256 amount,bytes32 payoutTag)'
     ]);
-
-    await safeLogs({
-      address: bridge,
-      fromBlock,
-      toBlock: latest,
-      topics: [bridgeIface.getEvent('MintedFromCryLo').topicHash, null, zeroTopicUser]
-    }, bridgeIface, 'Bridge Minted');
-
-    await safeLogs({
-      address: bridge,
-      fromBlock,
-      toBlock: latest,
-      topics: [bridgeIface.getEvent('BurnedForCryLo').topicHash, zeroTopicUser]
-    }, bridgeIface, 'Bridge Burned');
+    for (const eventName of ['MintedFromCryLo','BurnedForCryLo','CryLoReleaseCompleted']) {
+      await safeLogs({address:contracts.BridgeManager,fromBlock,toBlock:latest,
+        topics:[bridgeIface.getEvent(eventName).topicHash,null,zeroTopicUser]
+      },bridgeIface,eventName);
+    }
 
     const txs = [];
 
@@ -5901,10 +5885,10 @@ secureIpcHandle('nexus-transactions', async (_, linkedAddress) => {
 
       if (p.name === 'Transfer') {
         amount = formatWcryloUnits(p.args.value) + ' wCryLo';
-      } else if (p.name === 'MintedFromCryLo' || p.name === 'BurnedForCryLo') {
+      } else if (['MintedFromCryLo', 'BurnedForCryLo', 'CryLoReleaseCompleted'].includes(p.name)) {
         amount = formatWcryloUnits(p.args.amount) + ' wCryLo';
       } else if (p.args.amount != null) {
-        if (p.name === 'DailyGasClaimed' || p.name === 'StarterGasSent') {
+        if (p.name === 'GasClaimed' || p.name === 'StarterGasSent') {
           amount = formatNexusGasUnits(p.args.amount) + ' CRYLO';
         } else {
           amount = formatWcryloUnits(p.args.amount) + ' wCryLo';
@@ -5913,7 +5897,7 @@ secureIpcHandle('nexus-transactions', async (_, linkedAddress) => {
         amount =
           formatWcryloUnits(p.args.wcryloAmount) +
           ' wCryLo → ' +
-          formatNexusGasUnits(p.args.nativeGasAmount) +
+          formatNexusGasUnits(p.args.cryloGasAmount) +
           ' CRYLO';
       }
 
