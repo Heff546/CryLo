@@ -71,8 +71,15 @@ test('testnet Electron cannot enable Private V3 before new chain is pinned',()=>
  assert.equal(profile.network,'testnet');
  assert.equal(profile.l1Network,'testnet');
  assert.equal(profile.bridgePrivacyVersion,'private-v3');
- assert.equal(profile.chainId,null);
- assert.equal(profile.genesisHash,'');
+ if (profile.chainId === null) {
+   // Development branch: no network is configured and all RPCs fail closed.
+   assert.equal(profile.genesisHash,'');
+ } else {
+   // Release candidate: the new chain is pinned and cannot be legacy 5546.
+   assert.ok(Number.isSafeInteger(profile.chainId) && profile.chainId > 0);
+   assert.notEqual(profile.chainId,5546);
+   assert.match(profile.genesisHash,/^0x[a-f0-9]{64}$/i);
+ }
  assert.match(main,/assertPinnedTestnetNexusProfile\(\)/);
  assert.match(main,/genesis\.hash\.toLowerCase\(\)/);
  assert.match(main,/data\.bridgePrivacyVersion !== 'private-v3'/);
