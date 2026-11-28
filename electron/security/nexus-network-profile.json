@@ -2,7 +2,7 @@
   "network": "testnet",
   "l1Network": "testnet",
   "bridgePrivacyVersion": "private-v3",
-  "chainId": null,
-  "genesisHash": "",
+  "chainId": 5546,
+  "genesisHash": "0x16c03e3e40a1c648e85df92d3ddc8ffae9b584d69d204a37933a46fc68f3f175",
   "bridgeApiUrl": ""
 }
