@@ -5802,7 +5802,7 @@ secureIpcHandle('nexus-transactions', async (_, linkedAddress) => {
 
     const gasIface = new ethers.Interface([
       'event GasClaimed(uint256 indexed epochId,address indexed wallet,uint256 amount)',
-      'event GasPurchased(address indexed wallet,uint256 wCryloAmount,uint256 cryloGasAmount)',
+      'event GasPurchased(address indexed wallet,uint256 wCryLoAmount,uint256 cryloGasAmount)',
       'event StarterGasSent(address indexed wallet,uint256 amount)'
     ]);
     const stakingIface = new ethers.Interface([
@@ -5893,9 +5893,9 @@ secureIpcHandle('nexus-transactions', async (_, linkedAddress) => {
         } else {
           amount = formatWcryloUnits(p.args.amount) + ' wCryLo';
         }
-      } else if (p.args.wcryloAmount != null) {
+      } else if (p.args.wCryLoAmount != null) {
         amount =
-          formatWcryloUnits(p.args.wcryloAmount) +
+          formatWcryloUnits(p.args.wCryLoAmount) +
           ' wCryLo → ' +
           formatNexusGasUnits(p.args.cryloGasAmount) +
           ' CRYLO';
