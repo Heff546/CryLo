@@ -71,7 +71,7 @@ function assertPinnedTestnetNexusProfile() {
       NEXUS_PROFILE.l1Network !== 'testnet' ||
       NEXUS_PROFILE.bridgePrivacyVersion !== 'private-v3' ||
       !Number.isSafeInteger(NEXUS_PROFILE.chainId) ||
-      NEXUS_PROFILE.chainId <= 0 || NEXUS_PROFILE.chainId === 5546 ||
+      NEXUS_PROFILE.chainId !== 5546 ||
       !ethers.isHexString(NEXUS_PROFILE.genesisHash, 32)) {
     throw new Error('Nexus Private V3 chain identity not yet pinned into this Electron release');
   }
