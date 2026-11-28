@@ -1,0 +1,8 @@
+{
+  "network": "testnet",
+  "l1Network": "testnet",
+  "bridgePrivacyVersion": "private-v3",
+  "chainId": null,
+  "genesisHash": "",
+  "bridgeApiUrl": ""
+}
