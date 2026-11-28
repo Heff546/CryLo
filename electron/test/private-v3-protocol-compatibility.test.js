@@ -67,20 +67,15 @@ test('Private V3 history matches privacy-safe bridge, gas and node events',()=>{
  assert.doesNotMatch(main,/event DailyGasClaimed\(/);
 });
 
-test('testnet Electron cannot enable Private V3 before new chain is pinned',()=>{
+test('Electron Private V3 pins the original Nexus 5546 genesis and keeps the bridge disabled pending migration',()=>{
  assert.equal(profile.network,'testnet');
  assert.equal(profile.l1Network,'testnet');
  assert.equal(profile.bridgePrivacyVersion,'private-v3');
- if (profile.chainId === null) {
-   // Development branch: no network is configured and all RPCs fail closed.
-   assert.equal(profile.genesisHash,'');
- } else {
-   // Release candidate: the new chain is pinned and cannot be legacy 5546.
-   assert.ok(Number.isSafeInteger(profile.chainId) && profile.chainId > 0);
-   assert.notEqual(profile.chainId,5546);
-   assert.match(profile.genesisHash,/^0x[a-f0-9]{64}$/i);
- }
+ assert.equal(profile.chainId,5546);
+ assert.equal(profile.genesisHash,'0x16c03e3e40a1c648e85df92d3ddc8ffae9b584d69d204a37933a46fc68f3f175');
+ assert.equal(profile.bridgeApiUrl,'');
  assert.match(main,/assertPinnedTestnetNexusProfile\(\)/);
+ assert.match(main,/NEXUS_PROFILE\.chainId !== 5546/);
  assert.match(main,/genesis\.hash\.toLowerCase\(\)/);
  assert.match(main,/data\.bridgePrivacyVersion !== 'private-v3'/);
  assert.match(main,/data\.cryloL1Network !== NEXUS_PROFILE\.l1Network/);
